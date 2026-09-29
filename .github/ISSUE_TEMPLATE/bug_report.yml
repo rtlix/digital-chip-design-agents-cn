@@ -1,18 +1,18 @@
-name: "🐞 Bug Report"
-description: Report an issue with agents, workflows, or design outputs
+name: "🐞 Bug 报告"
+description: 报告 Agent、workflow 或设计输出中的问题
 title: "[BUG] "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Report unexpected behavior in agents, workflows, or generated design artifacts.
+        请报告 Agent、workflow 或生成的设计 artifact 中出现的非预期行为。
 
   - type: input
     id: component
     attributes:
-      label: Affected Component
-      description: Which part of the repo is impacted?
+      label: 受影响组件
+      description: 仓库的哪个部分受到影响？
       placeholder: "agent / workflow / script / config / docs"
     validations:
       required: true
@@ -20,43 +20,43 @@ body:
   - type: textarea
     id: description
     attributes:
-      label: Issue Description
-      description: What went wrong?
+      label: 问题描述
+      description: 出现了什么问题？
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: Steps to Reproduce
-      description: Provide a minimal reproducible flow
+      label: 复现步骤
+      description: 请提供最小可复现流程
       placeholder: |
-        1. Run agent/workflow...
-        2. Provide input...
-        3. Observe output...
+        1. 运行 agent/workflow...
+        2. 提供输入...
+        3. 观察输出...
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected Behavior
-      description: What should have happened?
+      label: 预期行为
+      description: 正确情况下应该发生什么？
     validations:
       required: true
 
   - type: textarea
     id: artifacts
     attributes:
-      label: Relevant Artifacts
-      description: Logs, generated files, configs, or outputs
+      label: 相关 Artifact
+      description: Log、生成文件、配置或输出
 
   - type: dropdown
     id: impact
     attributes:
-      label: Impact
+      label: 影响程度
       options:
-        - Minor inconvenience
-        - Affects workflow
-        - Blocks usage
-        - Critical (system unusable)
+        - 轻微不便
+        - 影响工作流程
+        - 阻塞使用
+        - 严重（系统不可用)
