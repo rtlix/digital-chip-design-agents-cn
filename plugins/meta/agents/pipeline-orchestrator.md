@@ -160,7 +160,7 @@ detect_open_fix_requests → dispatch_to_producer → await_completion → re_ve
 }
 ```
 
-## 行为规则
+## Behaviour Rules
 
 1. 第一阶段前读取 pipeline-orchestration Skill。
 2. **Anti-recursion guard**：如果本 Agent 是被另一个 Orchestrator 以监控/检查目的被动启动，且触发原因不是 verification/formal_escalation 这类真正需要 dispatch RTL 的路径，则只读取 `design_state.json` 并返回 open fix_request 的只读摘要，不得再启动子 Agent。仅当 `triggering_reason=="formal_escalation"` 或 `"verification"` 时允许继续 dispatch。
