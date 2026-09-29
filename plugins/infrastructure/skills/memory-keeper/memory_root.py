@@ -106,13 +106,13 @@ def resolve_memory_root(explicit: str | None = None, *, create: bool = True,
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Resolve (and optionally seed) the chip-design memory root.")
+        description="解析芯片设计 Memory root，并可选择初始化 seed 数据。")
     ap.add_argument("--memory-root", default=None,
-                    help="Explicit memory root (highest precedence).")
+                    help="显式指定 Memory root（最高优先级）。")
     ap.add_argument("--no-seed", action="store_true",
-                    help="Do not copy seed knowledge.md files into the resolved root.")
+                    help="不要把 seed knowledge.md 复制到解析后的 Memory root。")
     ap.add_argument("--init", action="store_true",
-                    help="Seed knowledge.md and migrate any repo-local runtime data, then report.")
+                    help="初始化 knowledge.md，并迁移仓库内已有 runtime 数据，然后输出结果。")
     args = ap.parse_args(argv)
 
     root = resolve_memory_root(args.memory_root, create=True, seed=not args.no_seed)
@@ -120,10 +120,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.init:
         seeded = seed_if_absent(SEED_ROOT, root)
         moved = migrate_repo_local(SEED_ROOT, root)
-        print(f"memory root: {root}")
-        print(f"flavor:      {FLAVOR}")
-        print(f"seeded:      {', '.join(seeded) if seeded else '(none — all present)'}")
-        print(f"migrated:    {', '.join(moved) if moved else '(none)'}")
+        print(f"Memory root： {root}")
+        print(f"类型：        {FLAVOR}")
+        print(f"已初始化：    {', '.join(seeded) if seeded else '（无——全部已存在）'}")
+        print(f"已迁移：      {', '.join(moved) if moved else '（无）'}")
     else:
         print(root)
     return 0
