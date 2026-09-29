@@ -1,73 +1,63 @@
-# Installation
+# 安装
 
-Choose the install path that fits your setup. For most users, **Option A (npm)**
-is the simplest — no clone and no Python required.
+请选择适合你当前环境的安装方式。对大多数用户来说，**方案 A（npm）** 最简单：无需 clone，也不需要 Python。
 
-## Option A — npm (recommended, no clone)
+## 方案 A —— npm（推荐，无需 clone）
 
-If you have Node.js (≥18), run a single command — no `git clone` and no Python
-required. With no flags the installer **detects which AI coding agents you have
-installed** (Claude Code, OpenAI Codex, OpenCode, Gemini, GitHub Copilot), shows
-what it found and where each would write, and installs to them after a
-confirmation:
+如果已经安装 Node.js（≥18），只需执行一条命令，无需 `git clone`，也无需 Python。未带参数时，安装器会**自动检测已安装的 AI 编程 Agent**（Claude Code、OpenAI Codex、OpenCode、Gemini、GitHub Copilot），显示检测结果及各自写入位置，确认后执行安装：
 
 ```bash
-npx digital-chip-design-agents            # detect installed agents + confirm
-npx digital-chip-design-agents --yes      # detect + install, no prompt (CI-friendly)
+npx digital-chip-design-agents            # 检测已安装 Agent + 确认
+npx digital-chip-design-agents --yes      # 检测并直接安装，不询问（适合 CI）
 ```
 
-Detection treats an agent as installed if its CLI is on `PATH` **or** its config
-directory exists (e.g. `~/.claude`, `~/.codex`, `~/.config/opencode`,
-`~/.gemini`). For Claude Code it copies every plugin into your plugin cache and
-enables them in `settings.json`; for the others it generates the matching context
-files (see Option D). All five targets are handled natively in Node — no Python.
+只要某个 Agent 的 CLI 位于 `PATH` 中，**或者**其配置目录存在（例如 `~/.claude`、`~/.codex`、`~/.config/opencode`、`~/.gemini`），就会被视为已安装。
 
-To target a specific agent (or all of them) explicitly and skip detection:
+对于 Claude Code，安装器会把全部插件复制到插件缓存并在 `settings.json` 中启用；对于其他工具，会生成相应的 context 文件（参见方案 D）。五类目标都由 Node 原生处理，不依赖 Python。
+
+若要明确指定某个 Agent（或全部 Agent），可以跳过自动检测：
 
 ```bash
-npx digital-chip-design-agents --ide claude     # or codex | opencode | gemini | copilot | all
+npx digital-chip-design-agents --ide claude     # 也可用 codex | opencode | gemini | copilot | all
 npx digital-chip-design-agents --ide gemini --global
 ```
 
-Re-run any of these to pick up future updates. Works identically on macOS, Linux,
-and Windows (a single Node process copies plugins sequentially, so there is no
-concurrent-write contention on the cache directory).
+后续需要获取更新时重新运行对应命令即可。macOS、Linux、Windows 行为一致。单个 Node 进程会顺序复制插件，因此不会发生多个安装过程同时写插件缓存的问题。
 
-## Option B — Install script
+## 方案 B —— 安装脚本
 
-Clone the repo and run one script. Like the npm installer, running it with no
-flags **auto-detects your installed agents** and installs to them after a
-confirmation (add `--yes` / `-y` on `install.sh`, or `-Yes` on `install.ps1`, to
-skip the prompt). The shell scripts require `python3`; for a Python-free install
-use the npm path (Option A).
+clone 仓库后运行一个脚本即可。与 npm 安装器相同，不带参数时会**自动检测已安装的 Agent**，确认后安装。若不希望交互确认，可在 `install.sh` 使用 `--yes` / `-y`，在 `install.ps1` 使用 `-Yes`。
 
-**macOS / Linux / Git Bash:**
+Shell 安装脚本需要 `python3`；如果希望完全不依赖 Python，请使用方案 A。
+
+**macOS / Linux / Git Bash：**
+
 ```bash
 git clone https://github.com/chuanseng-ng/digital-chip-design-agents.git
 cd digital-chip-design-agents
 bash install.sh
 ```
 
-**Windows (PowerShell):**
+**Windows（PowerShell）：**
+
 ```powershell
 git clone https://github.com/chuanseng-ng/digital-chip-design-agents.git
 cd digital-chip-design-agents
 .\install.ps1
 ```
 
-Restart Claude Code after running — all 17 skills and 16 agents will be active.
+安装完成后重启 Claude Code，全部 17 个 Skill 和 16 个 Agent 将可用。
 
-## Option C — Marketplace (selective install)
+## 方案 C —— Marketplace（选择性安装）
 
-If you only need specific domains, install them individually via the Claude Code
-marketplace. First register the marketplace, then install the domains you need:
+如果只需要部分领域，可以通过 Claude Code Marketplace 单独安装。先注册 Marketplace，再安装需要的领域：
 
 ```text
 /plugin marketplace add github:chuanseng-ng/digital-chip-design-agents
 ```
 
 <details>
-<summary>Individual plugin install commands (click to expand)</summary>
+<summary>展开查看各插件安装命令</summary>
 
 ```text
 /plugin install chip-design-architecture@digital-chip-design-agents
@@ -88,43 +78,39 @@ marketplace. First register the marketplace, then install the domains you need:
 
 </details>
 
-## Option D — Other AI assistants (Copilot / Gemini / OpenCode / Codex CLI)
+## 方案 D —— 其他 AI 助手（Copilot / Gemini / OpenCode / Codex CLI）
 
-These targets are auto-detected by Options A and B, but you can also install one
-explicitly. The npm installer (`npx digital-chip-design-agents --ide <target>`)
-and the shell scripts both support every target natively; run from your chip
-design project directory with `--ide`:
+方案 A 和 B 会自动检测这些工具，也可以显式安装到某个目标。npm 安装器（`npx digital-chip-design-agents --ide <target>`）和 shell 脚本都原生支持全部目标；请在你的芯片设计项目目录中使用 `--ide`：
 
 ```bash
-# GitHub Copilot — creates .github/instructions/ in your project
+# GitHub Copilot —— 在项目中创建 .github/instructions/
 bash /path/to/digital-chip-design-agents/install.sh --ide copilot
-# Commit the generated .github/ files to share rules with your team.
+# 可将生成的 .github/ 文件提交到版本库，与团队共享规则。
 
-# Gemini Code Assist — creates GEMINI.md in your project (or ~/GEMINI.md with --global)
+# Gemini Code Assist —— 在项目中创建 GEMINI.md；使用 --global 时创建 ~/GEMINI.md
 bash /path/to/digital-chip-design-agents/install.sh --ide gemini
 
-# OpenCode — creates opencode.json in your project; use /mode chip-<domain> to activate
+# OpenCode —— 在项目中创建 opencode.json；使用 /mode chip-<domain> 激活领域
 bash /path/to/digital-chip-design-agents/install.sh --ide opencode
 
-# OpenAI Codex CLI — creates AGENTS.md in your project (or ~/.codex/instructions.md with --global)
+# OpenAI Codex CLI —— 在项目中创建 AGENTS.md；使用 --global 时创建 ~/.codex/instructions.md
 bash /path/to/digital-chip-design-agents/install.sh --ide codex
 
-# All IDEs at once (also installs Claude Code)
+# 同时安装到所有 IDE（也包括 Claude Code）
 bash /path/to/digital-chip-design-agents/install.sh --ide all
 ```
 
-**Windows (PowerShell):** replace `bash install.sh` with `.\install.ps1` and `--ide` with `-IDE`.
+**Windows（PowerShell）：** 将 `bash install.sh` 替换为 `.\install.ps1`，将 `--ide` 替换为 `-IDE`。
 
-Domain knowledge is loaded directly from the plugin source files — no duplicate content.
-Re-run the install command to pick up any future updates.
+领域知识会直接从插件源文件加载，不复制冗余内容。今后重新运行安装命令即可获取更新。
 
-## Usage — describe your task in natural language
+## 使用方式 —— 用自然语言描述任务
 
 ```
-Run the RTL design flow for my AXI DMA controller block
-Analyse timing violations on this routed DEF and suggest ECOs
-Generate ATPG patterns for this DFT-inserted netlist
-Build a UVM testbench for my FIFO block
+为我的 AXI DMA 控制器模块运行 RTL 设计流程
+分析 routed DEF 中的时序违例并给出 ECO 建议
+为已完成 DFT 插入的网表生成 ATPG pattern
+为 FIFO 模块构建 UVM testbench
 ```
 
-Claude automatically loads the correct skill before executing.
+Claude 会在执行前自动加载正确的 Skill。
