@@ -1,11 +1,11 @@
-# FPGA Emulation & Prototyping Flow — Full Architecture Design
+# FPGA 仿真与原型验证流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven flow for porting an ASIC design to an FPGA prototype platform. Enables pre-silicon hardware/software co-development, performance validation, and early firmware bring-up — months before silicon is available.
+> **目的**：AI 驱动的 ASIC→FPGA 原型移植流程。用于流片前硬件/软件协同开发、性能验证和早期固件 bring-up，在硅片可用前数月提前发现问题。
 
 ---
 
-## 1. Shared State Object
+## 1. 共享状态对象
 
 ```json
 {
@@ -37,7 +37,7 @@
 
 ---
 
-## 2. Stage Sequence
+## 2. Stage Sequence（阶段顺序）
 
 ```
 [RTL Adaptation] ──► [Partitioning] ──► [FPGA Synthesis]
@@ -52,7 +52,7 @@
 
 ---
 
-## 3. Skill File Specifications
+## 3. Skill 文件说明
 
 ### 3.1 `sv-fpga-rtl-adapt/SKILL.md`
 
@@ -60,42 +60,41 @@
 # Skill: FPGA — RTL Adaptation
 
 ## Purpose
-Modify ASIC RTL to be FPGA-compatible, replacing ASIC-specific
-elements with FPGA equivalents.
+修改 ASIC RTL，使其兼容 FPGA，并把 ASIC 专用元素替换为 FPGA 等价资源。
 
 ## ASIC → FPGA Substitutions
-| ASIC Element              | FPGA Replacement                        |
-|---------------------------|-----------------------------------------|
-| Memory macros (SRAM)      | Block RAM (BRAM) or URAM                |
-| Clock PLLs (analog)       | FPGA MMCM/PLL primitives                |
-| IO pad cells              | FPGA IOB + IOBUF primitives             |
-| Analog/mixed-signal       | Stub model or remove                    |
-| DFT scan logic            | Bypass or remove scan                   |
-| Power management cells    | Remove (FPGA handles internally)        |
-| Custom standard cells     | Generic behavioral model                |
+| ASIC 元素 | FPGA 替代 |
+|---|---|
+| SRAM memory macro | BRAM 或 URAM |
+| Analog PLL | FPGA MMCM/PLL primitive |
+| IO pad cell | FPGA IOB + IOBUF |
+| Analog/mixed-signal | Stub model 或移除 |
+| DFT scan logic | Bypass 或移除 |
+| Power-management cell | 移除，由 FPGA 内部处理 |
+| Custom standard cell | Generic behavioral model |
 
 ## Memory Replacement Rules
-1. Single-port SRAM → simple_dual_port or true_dual_port BRAM
-2. Match port widths: BRAM has fixed width (36Kb, 18Kb)
-3. Verify read latency: BRAM has 1-cycle read latency (vs 0 for some ASICs)
-4. Register output option: can pipeline for timing closure
-5. Large memories (> BRAM budget): use DRAM via MIG/DDR controller
+1. Single-port SRAM → simple_dual_port 或 true_dual_port BRAM
+2. 匹配 port width；BRAM 有固定容量/宽度限制
+3. 验证 read latency；BRAM 常见为 1-cycle read
+4. 必要时注册 output，换取 timing closure
+5. 大型 memory 超出 BRAM budget 时使用 MIG/DDR controller 连接外部 DRAM
 
 ## Clock Adaptation
-1. Replace ASIC PLL with MMCM (Xilinx) or ALTPLL (Intel)
-2. Scale all clocks to FPGA prototype frequency (typically 50–100MHz)
-3. Multi-clock designs: maintain same ratio between domains
-4. FPGA clock routing: use BUFG for global clocks, BUFR for regional
+1. ASIC PLL 替换为 Xilinx MMCM 或 Intel ALTPLL
+2. 全部 clock 缩放到 prototype frequency，通常 50–100 MHz
+3. Multi-clock design 尽量保持 domain 间比例
+4. Global clock 走 BUFG，regional clock 走 BUFR
 
 ## QoR Metrics
-- No ASIC-specific primitives in adapted RTL
-- All memories mapped to FPGA resources
-- Adapted RTL: lint clean
-- Functional equivalence vs ASIC RTL (behavioral sim match)
+- Adapted RTL 中无 ASIC-specific primitive
+- Memory 全部映射到 FPGA resource
+- Adapted RTL lint clean
+- Behavioral simulation 与 ASIC RTL 功能一致
 
 ## Output Required
 - Adapted RTL file set
-- Substitution log (what was replaced and why)
+- Substitution log
 - BRAM utilization estimate
 ```
 
@@ -107,36 +106,35 @@ elements with FPGA equivalents.
 # Skill: FPGA — Multi-FPGA Partitioning
 
 ## Purpose
-If the design exceeds a single FPGA capacity, partition it across
-multiple FPGAs with correct inter-FPGA communication.
+当设计超出单片 FPGA 容量时，将其拆分到多片 FPGA，并保证跨 FPGA 通信正确。
 
 ## Partitioning Guidelines
-1. Aim for < 70% LUT utilization per FPGA (leave room for debug)
-2. Minimize inter-FPGA signal count (each signal = physical connector pin)
-3. Cut logic paths, not timing-critical paths
-4. Keep clock domains intact within a single FPGA where possible
-5. Inter-FPGA protocol: Aurora, GTH SERDES, or GPIO + sync
+1. 每片 FPGA LUT utilization 目标 <70%，为 debug 预留空间
+2. 尽量减少 inter-FPGA signal 数量
+3. 尽量切 logic boundary，不切 timing-critical path
+4. 完整 clock domain 尽量保留在同一 FPGA
+5. Inter-FPGA protocol 使用 Aurora、GTH SERDES 或 GPIO + sync
 
 ## Partitioning Strategies
-| Strategy          | Best For                                  |
-|-------------------|-------------------------------------------|
-| Hierarchical      | Clean block boundaries in design          |
-| Functional        | CPU on one FPGA, memory/IO on another     |
-| Pipeline-based    | Deep pipelines with natural stage cuts    |
+| 策略 | 适用场景 |
+|---|---|
+| Hierarchical | 设计 block boundary 清晰 |
+| Functional | CPU、memory/IO 等功能天然分区 |
+| Pipeline-based | 深 pipeline 有自然 stage cut |
 
 ## Inter-FPGA Interface
-1. Serialize wide buses across high-speed SERDES
-2. Flow control: handshake for every inter-FPGA transaction
-3. Latency budget: inter-FPGA adds latency — model in simulation
-4. Debug: route status signals to FPGA LEDs or UART
+1. Wide bus 通过高速 SERDES 序列化
+2. 每个 transaction 需要 flow-control handshake
+3. Inter-FPGA latency 必须在 simulation 中建模
+4. Debug status 可路由到 FPGA LED/UART
 
 ## QoR Metrics
-- Per FPGA: < 70% LUT, < 80% BRAM, < 80% DSP
-- Inter-FPGA signal count: within connector pin budget
-- No clock domain splits at partition boundary (unless CDC bridge)
+- 每片 FPGA：LUT <70%、BRAM <80%、DSP <80%
+- Inter-FPGA signal 数量不超过 connector pin budget
+- 不跨 partition 切分 clock domain，除非有 CDC bridge
 
 ## Output Required
-- Partition plan (block → FPGA mapping)
+- Partition plan
 - Inter-FPGA signal list
 - Physical connector pin assignment
 ```
@@ -149,40 +147,39 @@ multiple FPGAs with correct inter-FPGA communication.
 # Skill: FPGA — FPGA Synthesis and Implementation
 
 ## Purpose
-Synthesize and implement the adapted RTL for the target FPGA,
-achieving timing closure at prototype frequency.
+针对目标 FPGA 综合和实现 adapted RTL，并在 prototype frequency 下完成 timing closure。
 
 ## FPGA Implementation Flow (Xilinx Vivado)
-1. Synthesis: vivado -mode batch -source synth.tcl
-2. Implementation: opt_design → place_design → route_design → phys_opt_design
-3. Timing analysis: report_timing_summary
-4. Bitstream: write_bitstream
+1. Synthesis：`vivado -mode batch -source synth.tcl`
+2. Implementation：opt_design → place_design → route_design → phys_opt_design
+3. Timing：report_timing_summary
+4. Bitstream：write_bitstream
 
 ## Timing Closure Techniques
-1. Reduce prototype clock frequency if timing fails
-2. Add pipeline registers at critical paths (accept latency increase)
-3. Use Pblock constraints to locate related logic near BRAMs/DSPs
-4. Avoid long routing: break large fanout nets with BUFG
-5. Phys_opt_design: rerun with -directive AggressiveExplore
+1. Timing fail 时优先降低 prototype clock frequency
+2. Critical path 增加 pipeline register，接受额外 latency
+3. 用 Pblock 把相关 logic 靠近 BRAM/DSP
+4. 高扇出长线使用 BUFG/专用 clock resource
+5. 最后可尝试 `phys_opt_design -directive AggressiveExplore`
 
 ## Debug Infrastructure
-1. ILA (Integrated Logic Analyzer): add to critical signals
-   - Max 64 probes per ILA core; use multiple cores
-   - Trigger on: protocol errors, state machine states
-2. VIO (Virtual IO): drive/sample test signals from PC
-3. Debug bridge: JTAG-to-AXI for register access from PC
+1. ILA：连接关键 signal
+   - 单个 ILA probe 数量有限，可使用多个 core
+   - Trigger：protocol error、FSM state
+2. VIO：PC 端驱动/采样 test signal
+3. JTAG-to-AXI：无需重综合即可访问 register
 
 ## QoR Metrics
-- Timing: WNS ≥ 0 at prototype frequency
-- Utilization: LUT < 70%, BRAM < 80%, DSP < 80%
-- Bitstream: generates without DRC errors
-- ILA: configured on key debug signals
+- Prototype frequency 下 WNS ≥0
+- LUT <70%、BRAM <80%、DSP <80%
+- Bitstream 生成时无 DRC error
+- 关键 debug signal 已接 ILA
 
 ## Output Required
-- Bitstream (.bit file)
+- Bitstream（.bit）
 - Timing summary report
 - Utilization report
-- ILA probe definitions
+- ILA probe definition
 ```
 
 ---
@@ -193,42 +190,41 @@ achieving timing closure at prototype frequency.
 # Skill: FPGA — Prototype Bring-up
 
 ## Purpose
-Bring the FPGA prototype to a functional state, validating
-hardware before running software.
+把 FPGA prototype 带到可工作的状态，并在运行软件前验证硬件。
 
 ## Bring-up Sequence
-1. Power-on: verify power rails, current draw within spec
-2. FPGA configuration: load bitstream via JTAG or flash
-3. Clock verification: measure prototype clock with oscilloscope
-4. Reset sequence: verify all blocks come out of reset
-5. Register access: read/write peripheral registers via JTAG-to-AXI
-6. Memory test: write/read BRAM and external DDR
-7. UART console: verify CPU boots and outputs boot messages
-8. Minimal OS/RTOS: load and run boot firmware
+1. Power-on：确认 rail、电流
+2. 通过 JTAG/flash 加载 bitstream
+3. 用示波器确认 prototype clock
+4. 验证 reset sequence
+5. 通过 JTAG-to-AXI 读写 peripheral register
+6. BRAM / external DDR memory test
+7. UART console：确认 CPU boot message
+8. 加载并运行最小 firmware/RTOS
 
 ## Debug Methodology
-1. Start with known-good test: simple register read (chip ID register)
-2. If fails: check clock, reset, power, bitstream loading
-3. Use ILA to capture bus transactions in real-time
-4. Use VIO to inject stimulus without re-synthesizing
-5. Oscilloscope: check IO signal levels and timing
+1. 从 known-good test 开始，例如读取 chip-ID register
+2. 失败时依次检查 clock、reset、power、bitstream
+3. 用 ILA 捕获 bus transaction
+4. 用 VIO 注入 stimulus，减少重新综合
+5. 用 oscilloscope 检查 IO level/timing
 
 ## Common Bring-up Issues
-- Clock not running: MMCM lock bit not set → check PLL configuration
-- CPU not booting: wrong reset vector or memory map → check linker script
-- Register returns 0x00000000: base address wrong or bus not connected
-- Register returns 0xDEADBEEF: out-of-range access returning DECERR value
+- MMCM 不 lock：检查 PLL/MMCM 配置和输入频率
+- CPU 不 boot：检查 reset vector、memory map、linker script
+- Register 恒为 0：base address 错或 bus 未连接
+- 返回 0xDEADBEEF：越界访问/DECERR
 
 ## QoR Metrics
-- All clock domains: running at correct frequency (measured)
-- CPU: boots to firmware shell/UART prompt
-- All peripheral registers: readable/writable via JTAG
-- DDR: memory test passes (if external memory present)
+- 所有 clock 实测频率正确
+- CPU 启动到 firmware shell/UART prompt
+- 全部 peripheral register 可通过 JTAG 读写
+- DDR memory test PASS
 
 ## Output Required
-- Bring-up test results log
-- ILA capture for any failures
-- Known issues list with workarounds
+- Bring-up test log
+- Failure 的 ILA capture
+- Known issue 与 workaround
 ```
 
 ---
@@ -239,44 +235,43 @@ hardware before running software.
 # Skill: FPGA — Software Validation on Prototype
 
 ## Purpose
-Run the firmware and software stack on the FPGA prototype
-to validate both hardware and software functionality.
+在 FPGA prototype 上运行 firmware/software stack，同时验证硬件与软件功能。
 
 ## Software Validation Tiers
-1. BSP validation: all drivers work on FPGA prototype
-2. RTOS validation: RTOS boots, all tasks run
-3. Application validation: target application executes correctly
-4. Performance profiling: measure real execution times
+1. BSP validation：全部 driver 在 prototype 上工作
+2. RTOS validation：RTOS boot，全部 task 运行
+3. Application validation：目标应用输出正确
+4. Performance profiling：实测执行时间
 
 ## Performance Scaling
-- FPGA runs at 50MHz vs ASIC at 1GHz = 20x slower
-- Timing-sensitive SW: scale timeouts by frequency ratio
-- Performance numbers: note all measurements are at prototype frequency
+- FPGA 50 MHz、ASIC 1 GHz 时约慢 20×
+- Timing-sensitive software 的 timeout 按频率比例缩放
+- 所有性能数值必须注明 prototype frequency
 
 ## Key Validation Tests
-- Peripheral loopback: UART, SPI, I2C self-tests
-- DMA throughput: measure at FPGA frequency
-- Interrupt latency: measure IRQ-to-handler entry
-- Memory bandwidth: measure DDR throughput
-- Application correctness: output matches golden reference
+- UART/SPI/I2C peripheral loopback
+- DMA throughput
+- Interrupt latency
+- DDR memory bandwidth
+- Application output vs golden reference
 
 ## Hardware Bug vs Software Bug Triage
-1. Is the register map correct? (compare datasheet vs implementation)
-2. Does the RTL simulation agree with FPGA behavior?
-3. Is the timing margin sufficient? (check FPGA timing report)
-4. Is the bug reproducible? (deterministic = likely HW)
-5. Does it happen in RTL simulation? (yes → RTL bug, no → prototype issue)
+1. Register map 是否正确
+2. RTL simulation 与 FPGA 行为是否一致
+3. FPGA timing margin 是否充足
+4. Bug 是否 deterministic reproduce
+5. RTL simulation 是否也失败：是→RTL bug；否→prototype/adaptation 问题
 
 ## QoR Metrics
-- All driver tests: PASS on prototype
-- Application: produces correct output
-- No hard lockups or unexpected resets
-- Performance profiling: baseline established for silicon comparison
+- Driver test 全 PASS
+- Application 输出正确
+- 无 hard lockup/unexpected reset
+- 已建立 silicon 对比用 performance baseline
 
 ## Output Required
 - Software validation report
-- Performance baseline measurements
-- Bug list (HW vs SW classification)
+- Performance baseline
+- HW/SW 分类 bug list
 ```
 
 ---
@@ -303,3 +298,5 @@ LOOP-BACK RULES:
 Output: Working FPGA prototype + SW validation report +
         bug list for RTL team + performance baseline for silicon comparison.
 ```
+
+> Stage 名、状态值和固定机器接口保留英文，正文含义已中文化。
