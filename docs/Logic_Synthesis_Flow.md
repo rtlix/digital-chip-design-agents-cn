@@ -1,11 +1,11 @@
-# Logic Synthesis Flow — Full Architecture Design
+# 逻辑综合流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven logic synthesis flow from RTL to gate-level netlist. Covers constraint setup, synthesis optimization (speed/area/power), netlist quality check, and handoff to physical design.
+> **目的**：AI 驱动的 RTL→gate-level netlist 逻辑综合流程。覆盖 constraint setup、speed/area/power optimization、netlist quality check，以及 Physical Design handoff。
 
 ---
 
-## 1. Shared State Object
+## 1. 共享状态对象
 
 ```json
 {
@@ -52,16 +52,16 @@
 
 ### Loop-Back Rules
 
-| Failure                          | Loop Back To      | Max |
-|----------------------------------|-------------------|-----|
-| WNS < 0 after compile_final      | compile_final     | 3   |
-| Area > budget                    | compile_explore   | 2   |
-| Netlist QC: unmapped cells       | compile_final     | 2   |
-| Power > budget                   | compile_explore   | 2   |
+| 失败 | 回退到 | 最大次数 |
+|---|---|---:|
+| compile_final 后 WNS <0 | compile_final | 3 |
+| Area 超预算 | compile_explore | 2 |
+| Netlist 有 unmapped cell | compile_final | 2 |
+| Power 超预算 | compile_explore | 2 |
 
 ---
 
-## 3. Skill File Specifications
+## 3. Skill 文件说明
 
 ### 3.1 `sv-synth-constraints/SKILL.md`
 
@@ -69,35 +69,35 @@
 # Skill: Synthesis — Constraint Setup (SDC)
 
 ## Purpose
-Create and validate all SDC constraints before synthesis.
+在综合前建立并验证所有 SDC constraint。
 
 ## Domain Rules
-1. create_clock: all primary clocks with period, waveform, name
-2. create_generated_clock: all derived/divided clocks
-3. set_clock_uncertainty: setup (pre-CTS) = skew + jitter (typ. 200–500ps)
-4. set_clock_latency: set if known from CTS estimates
-5. set_input_delay / set_output_delay: all primary IOs constrained
-6. set_false_path: multi-cycle paths, test modes, async resets
-7. set_multicycle_path: correctly constrained (both setup and hold)
-8. set_dont_touch: IPs, memory macros, hand-crafted cells
-9. set_max_fanout: per library recommendation (typ. 32)
-10. set_max_transition: per technology rule
-11. Operating conditions: explicitly set (not relying on defaults)
+1. create_clock：全部 primary clock，明确 period/waveform/name
+2. create_generated_clock：全部 derived/divided clock
+3. set_clock_uncertainty：pre-CTS setup uncertainty 通常 200–500 ps，或按项目 constraint
+4. set_clock_latency：有 CTS estimate 时明确设置
+5. set_input_delay / set_output_delay：全部 primary IO
+6. set_false_path：仅真实 async/test/reset 等 intent
+7. set_multicycle_path：setup/hold 配套
+8. set_dont_touch：IP、memory macro、手工 cell
+9. set_max_fanout：按 library 建议，常见 32
+10. set_max_transition：按 technology rule
+11. Operating condition 显式设置，禁止依赖默认值
 
-## Common SDC Mistakes to Check
-- Missing generated clocks on clock dividers
-- set_multicycle_path without corresponding hold adjustment
-- Over-constraining IOs (tighter than needed wastes area)
-- Under-constraining IOs (may hide real timing issues)
+## Common SDC Mistakes
+- Generated clock 漏定义
+- MCP 缺 hold adjustment
+- IO 过约束导致 area 浪费
+- IO 欠约束掩盖 timing issue
 
 ## QoR Metrics
-- All clocks defined (check with report_clocks)
-- All IOs constrained (check with report_port -verbose)
-- No unconstrained paths in report_timing
+- report_clocks：全部 clock 定义
+- report_port -verbose：全部 IO constrained
+- report_timing：unconstrained path = 0
 
 ## Output Required
-- Validated SDC file
-- Clock tree summary
+- Validated SDC
+- Clock summary
 - Constraint QA report
 ```
 
@@ -109,46 +109,45 @@ Create and validate all SDC constraints before synthesis.
 # Skill: Synthesis — Compile and Optimization
 
 ## Purpose
-Run logic synthesis with the appropriate effort and optimization
-strategy to meet timing, area, and power targets.
+选择正确 effort/strategy 运行综合，满足 timing、area 和 power target。
 
-## Recommended Flow (Synopsys DC / Genus)
+## Recommended Flow
 1. read_hdl / analyze+elaborate
-2. Check design (report_lint, check_design)
-3. Compile explore (faster, finds architecture)
-4. Incremental compile (targeted path optimization)
-5. Final compile (high effort, all paths)
-6. report_timing, report_area, report_power
+2. check_design / report_lint
+3. Compile explore
+4. Incremental compile
+5. Final high-effort compile
+6. report_timing / report_area / report_power
 
 ## Optimization Strategies
-| Priority  | Strategy                                          |
-|-----------|---------------------------------------------------|
-| Timing    | compile_ultra, path_group weighting, retiming     |
-| Area      | compile -area_effort high, resource sharing       |
-| Power     | compile -power, clock gating insertion            |
-| Balanced  | compile_ultra -no_autoungroup + incremental       |
+| Priority | Strategy |
+|---|---|
+| Timing | compile_ultra、path-group weighting、retiming |
+| Area | high area effort、resource sharing |
+| Power | power-aware compile、clock-gating insertion |
+| Balanced | compile_ultra -no_autoungroup + incremental |
 
 ## Domain Rules
-1. Always compile at worst-case timing corner (SS, low voltage, high temp)
-2. Use multi-scenario compilation if available (setup + hold simultaneously)
-3. Enable clock gating synthesis for sequential power reduction
-4. Preserve hierarchy for blocks with existing placement intent
-5. Ungroup small modules for better optimization across boundaries
-6. Review critical paths manually for RTL restructuring opportunities
+1. Worst-case setup corner 做主综合
+2. 有条件时使用 multi-scenario compile
+3. Enable clock-gating synthesis
+4. 有 placement intent 的 block 保留 hierarchy
+5. 小 module 可 ungroup
+6. Critical path 必须人工审查是否应 RTL restructure
 
 ## QoR Metrics
-- WNS: ≥ 0 at signoff corner (or per agreed target)
-- TNS: = 0 for clean sign-off
-- Area: within budget
-- Power: within budget
-- No unmapped cells in final netlist
+- WNS ≥0 或项目 target
+- TNS =0 或项目 target
+- Area 在 budget 内
+- Power 在 budget 内
+- Final netlist unmapped cell =0
 
 ## Output Required
-- Gate-level netlist (.v)
-- Timing report (setup and hold)
+- Gate-level netlist
+- Setup/hold timing report
 - Area report
 - Power report
-- Synthesis run log
+- Synthesis log
 ```
 
 ---
@@ -159,35 +158,35 @@ strategy to meet timing, area, and power targets.
 # Skill: Synthesis — Netlist Quality Check
 
 ## Purpose
-Verify the gate-level netlist is correct and ready for PD handoff.
+验证 gate-level netlist 正确并可交付 PD。
 
 ## Checks to Perform
-1. Netlist completeness: all modules elaborated and mapped
-2. No black boxes (undefined modules)
-3. All scan chains intact (if DFT-enabled compile)
-4. Power/ground connections correct (tie cells, well ties)
-5. Antenna cells: verify tie-offs for floating gates
-6. Check for combinational loops (report_loop)
-7. Formal equivalence check (RTL vs netlist): PASS required
-8. SDC consistency: netlist SDC matches RTL SDC intent
+1. 全部 module elaborated/mapped
+2. Blackbox =0
+3. DFT 场景 scan chain intact
+4. Power/ground tie 正确
+5. Floating gate/tie-off 合法
+6. Combinational loop =0
+7. RTL vs netlist LEC 必须 PASS
+8. Netlist SDC 与 RTL SDC intent 一致
 
-## Formal Equivalence (LEC / Conformal)
-- Golden: RTL (post-lint, post-CDC-clean)
-- Revised: gate-level netlist
-- Result: all points proven EQUIVALENT
-- Any UNMATCHED point: must be resolved before PD
+## Formal Equivalence
+- Golden：post-lint/post-CDC-clean RTL
+- Revised：gate-level netlist
+- 全部 compare point EQUIVALENT
+- 任何 UNMATCHED point 必须在 PD 前关闭
 
 ## QoR Metrics
-- LEC: 100% equivalent (no unmatched points)
-- No black boxes
-- No combinational loops
-- Scan chain integrity: verified
+- LEC 100% equivalent
+- Blackbox =0
+- Combinational loop =0
+- Scan-chain integrity verified
 
 ## Output Required
-- LEC report (pass/fail)
+- LEC report
 - Netlist QC checklist
-- Final gate netlist (ready for PD)
-- Back-annotated SDC for PD
+- Final gate netlist
+- Back-annotated SDC
 ```
 
 ---
@@ -212,3 +211,5 @@ LOOP-BACK RULES:
 
 On completion: produce PD handoff package (netlist, SDC, constraints doc).
 ```
+
+> 固定 stage 名、枚举和接口文本保留英文。
