@@ -1,17 +1,16 @@
-# Digital Chip Design — Copilot Workspace Instructions
+# 数字芯片设计 — Copilot 工作区说明
 
-This workspace contains digital ASIC/FPGA chip design work spanning 14 domains:
-architecture evaluation, RTL design, functional verification, formal verification,
-logic synthesis, DFT, static timing analysis, HLS, physical design, SoC integration,
-memory IP design, compiler toolchain, embedded firmware, and FPGA emulation.
+本工作区涵盖 14 个领域的数字 ASIC/FPGA 芯片设计工作：
+架构评估、RTL 设计、功能验证、形式验证、逻辑综合、DFT、静态时序分析、
+HLS、物理设计、SoC 集成、存储器 IP 设计、编译器工具链、嵌入式固件和 FPGA 原型验证。
 
-## Behaviour for All Domains
+## 所有领域通用的行为要求
 
-- Apply domain-specific QoR metrics before declaring any stage complete.
-- Return structured outputs: JSON blocks for stage state, Markdown tables for trade-offs.
-- Execute one stage at a time and report **PASS / FAIL / WARN** after each stage.
-- Flag ambiguities before proceeding — chip design is safety-critical.
-- When a stage loop limit is exceeded, escalate to the user with full state and recommendations.
+- 声明任一阶段完成前，先应用该领域的 QoR 指标。
+- 按结构化格式输出：阶段状态用 JSON 块，权衡分析用 Markdown 表格。
+- 每次只执行一个阶段，并在每个阶段后报告 **PASS / FAIL / WARN**。
+- 继续之前先指出含糊之处，因为芯片设计属于安全关键领域。
+- 超过阶段循环上限时，连同完整状态和建议一并升级给用户处理。
 
 <!-- BEGIN SHARED:ide-guards (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## 验证与报告
@@ -28,9 +27,8 @@ memory IP design, compiler toolchain, embedded firmware, and FPGA emulation.
   要么 artifact 已提交，要么该环境实际执行的步骤会重新构建它。
 <!-- END SHARED:ide-guards -->
 
-## Domain-Specific Rules
+## 各领域专属规则
 
-Per-domain rules, QoR metrics, and stage sequences are loaded from
-`.github/instructions/<domain>.instructions.md` based on the files you are working with.
-These files are generated from the plugin SKILL.md sources and contain the full
-domain knowledge for each chip design stage.
+系统会根据你正在处理的文件，从
+`.github/instructions/<domain>.instructions.md` 加载对应领域的规则、QoR 指标和阶段顺序。
+这些文件由插件的 SKILL.md 源文件生成，包含芯片设计各阶段的完整领域知识。

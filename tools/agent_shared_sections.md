@@ -116,7 +116,7 @@ after: ^## Behaviour Rules$
 <!-- BLOCK ide-guards
 targets: files
 files: ides/codex/AGENTS.md, ides/gemini/gemini-header.md, ides/copilot/.github/copilot-instructions.md
-after: ^## (General Behaviour|Behaviour for All Domains)$
+after: ^## (General Behaviour|Behaviour for All Domains|通用行为|所有领域通用的行为要求)$
 -->
 ## 验证与报告
 
