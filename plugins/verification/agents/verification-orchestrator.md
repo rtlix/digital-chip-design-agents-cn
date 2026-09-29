@@ -64,7 +64,7 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 }
 ```
 
-## 行为规则
+## Behaviour Rules
 1. 每执行一个 stage 前，都先读取 functional-verification Skill。
 2. 所有 bug 都记录在 `state bugs_found[]` 中，stage 切换时不得丢弃。
 3. 只要仍有 P0/P1 bug 未关闭，就不得进入 `regression_signoff`。
