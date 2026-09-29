@@ -1,55 +1,53 @@
-# Orchestrator Flows & End-to-End Pipeline
+# Orchestrator 流程与端到端流水线
 
-This page describes how the domain orchestrators sequence their stages and how
-the 14 design domains connect into a full chip design pipeline. For the complete
-per-domain flow detail, see [`MASTER_INDEX.md`](MASTER_INDEX.md).
+本文说明各领域 Orchestrator 如何组织阶段，以及 14 个设计领域如何连接为完整的芯片设计流水线。各领域更详细的流程请参见 [`MASTER_INDEX.md`](MASTER_INDEX.md)。
 
-## Orchestrator Flows
+## Orchestrator 流程
 
-Each orchestrator enforces a strict stage sequence with loop-back rules.
+每个 Orchestrator 都强制执行严格的阶段顺序，并定义明确的 loop-back 规则。
 
-**Physical Design** (example):
+**物理设计（示例）：**
+
 ```
 floorplan → placement → CTS → routing →
 timing_opt → power_opt → area_opt → signoff
 ```
-If routing DRC fails → retry routing (max 3×).
-If signoff timing fails → loop back to timing_opt (max 2×).
-If any loop exceeds its limit → escalate to you with full state + recommendations.
 
-All 14 domain orchestrators follow the same pattern with domain-specific stages
-and criteria.
+如果 routing DRC 失败 → 重新执行 routing（最多 3 次）。  
+如果 signoff timing 失败 → 回退到 timing_opt（最多 2 次）。  
+如果任何循环超过上限 → 携带完整状态和建议升级给用户处理。
 
-## End-to-End Pipeline
+全部 14 个领域 Orchestrator 都采用相同模式，只是各领域使用不同的阶段和通过标准。
 
-The 14 design domains (+ the meta pipeline orchestrator) map to a complete chip
-design pipeline:
+## 端到端流水线
+
+14 个设计领域（加上 Meta Pipeline Orchestrator）共同组成完整的芯片设计流水线：
 
 ```
-[Specification]
+[Specification / 规格]
       │
       ▼
-[1. Architecture Evaluation] ──► microarch doc
+[1. Architecture Evaluation / 架构评估] ──► microarch doc
       │
-      ├──► [2. RTL Design]  ──► [3. HLS] (algorithm blocks)
+      ├──► [2. RTL Design / RTL设计] ──► [3. HLS]（算法模块）
       │           │
-      │           │           ├──► [4. Functional Verification] ◄──┐
-      │           └──► [5. Formal Verification]    ◄──┤
-      │                       │ (bug found)           │ fix_request loop
-      │                       │                    [Meta / Pipeline Orch.]
-      │                       ▼                       │
-      │              [6. Logic Synthesis]          ────┘
+      │           │           ├──► [4. Functional Verification / 功能验证] ◄──┐
+      │           └──► [5. Formal Verification / 形式验证]   ◄──┤
+      │                       │（发现 bug）                    │ fix_request 闭环
+      │                       │                          [Meta / Pipeline Orch.]
+      │                       ▼                              │
+      │              [6. Logic Synthesis / 逻辑综合]       ────┘
       │                       │
       │           ┌───────────┼───────────┐
       │           ▼           ▼           ▼
-      │      [7. DFT]  [8. Physical  [9. STA]
-      │                   Design]
+      │      [7. DFT]   [8. Physical   [9. STA]
+      │                    Design]
       │                       │
       │                   [Tape-out]
       │
-      ├──► [10. SoC IP Integration]  (if SoC-level work)
-      ├──► [11. Memory IP Design]    ──► macros + views ──► DFT / PD / STA
-      ├──► [12. Compiler Toolchain]  (if custom CPU)
-      ├──► [13. Embedded Firmware]
-      └──► [14. FPGA Emulation]      (pre-silicon SW dev)
+      ├──► [10. SoC IP Integration / SoC IP 集成]（SoC 级任务）
+      ├──► [11. Memory IP Design / Memory IP 设计] ──► macros + views ──► DFT / PD / STA
+      ├──► [12. Compiler Toolchain / 编译器工具链]（自定义 CPU 时）
+      ├──► [13. Embedded Firmware / 嵌入式固件]
+      └──► [14. FPGA Emulation / FPGA 原型验证]（流片前软件开发）
 ```
