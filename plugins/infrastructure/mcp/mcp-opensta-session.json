@@ -1,5 +1,5 @@
 {
-  "_comment": "OpenSTA interactive session MCP server — keeps a persistent sta process alive between calls. Exposes load_design, report_timing, report_slack_histogram, check_timing, run_tcl, close_design. Preferred over mcp-opensta.json for multi-corner ECO iteration loops. Replace /absolute/path/to with the actual repo root path.",
+  "_comment": "OpenSTA 交互式 session MCP Server —— 在多次调用之间保持同一个 sta 进程常驻。暴露 load_design、report_timing、report_slack_histogram、check_timing、run_tcl、close_design。对于 multi-corner ECO 迭代，优先于 mcp-opensta.json。请把 /absolute/path/to 替换为本仓库实际绝对路径。",
   "mcpServers": {
     "opensta-session": {
       "type": "stdio",
