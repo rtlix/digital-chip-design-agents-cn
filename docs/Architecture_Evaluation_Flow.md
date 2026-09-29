@@ -1,17 +1,17 @@
-# Architecture Evaluation Flow — Full Architecture Design
+# 架构评估流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven microarchitecture evaluation flow. Covers specification analysis, micro-architecture trade-off exploration, performance modelling, power/area estimation, and architecture sign-off. Designed to feed into RTL Design as the first stage of the digital design pipeline.
+> **目的**：AI 驱动的微架构评估流程。覆盖规格分析、微架构权衡探索、性能建模、功耗/面积估算和架构 sign-off。作为数字设计流水线的第一阶段，为后续 RTL Design 提供输入。
 
 ---
 
-## 1. Architecture Overview
+## 1. 架构总览
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │               ARCHITECTURE EVALUATION ORCHESTRATOR           │
-│  Input:  Product spec, performance targets, power budget      │
-│  Output: Microarchitecture document, validated trade-off      │
+│  输入：Product spec、performance target、power budget         │
+│  输出：Microarchitecture document、已验证的 trade-off          │
 └────────────────────────┬─────────────────────────────────────┘
                          │
      ┌───────────────────┼───────────────────────┐
@@ -32,7 +32,7 @@
 
 ---
 
-## 2. Shared State Object
+## 2. 共享状态对象
 
 ```json
 {
@@ -62,7 +62,7 @@
 
 ---
 
-## 3. Stage Sequence & Loop-Back Logic
+## 3. Stage Sequence 与 Loop-Back 逻辑
 
 ```
 [Spec Analysis] ──► [Arch Exploration] ──► [Perf Modelling]
@@ -85,16 +85,16 @@
 
 ### Loop-Back Rules
 
-| Failure Condition                        | Loop Back To        | Max Iterations |
-|------------------------------------------|---------------------|----------------|
-| Performance targets not met              | Arch Exploration    | 3              |
-| Power/area budget exceeded               | Arch Exploration    | 2              |
-| Risk level too high (unmitigated risks)  | Risk Assessment     | 2              |
-| Sign-off: incomplete coverage of spec    | Spec Analysis       | 1              |
+| 失败条件 | 回退到 | 最大迭代次数 |
+|---|---|---:|
+| Performance target 未满足 | Arch Exploration | 3 |
+| Power/area 超预算 | Arch Exploration | 2 |
+| Risk level 过高且未缓解 | Risk Assessment | 2 |
+| Sign-off：spec coverage 不完整 | Spec Analysis | 1 |
 
 ---
 
-## 4. Skill File Specifications
+## 4. Skill 文件说明
 
 ### 4.1 `sv-arch-spec/SKILL.md`
 
@@ -102,26 +102,26 @@
 # Skill: Architecture — Specification Analysis
 
 ## Purpose
-Decompose product specification into formal architectural requirements,
-identify ambiguities, and produce a structured requirements document.
+将 product specification 拆解为正式的 architecture requirement，
+识别歧义，并生成结构化 requirement document。
 
 ## Domain Rules
-1. Classify requirements: functional, performance, power, area, interface
-2. Identify under-specified areas and flag for clarification
-3. Map use cases to required hardware blocks (datapath, control, memory, IO)
-4. Extract interface requirements: protocols (AXI, PCIe, USB, Ethernet, etc.)
-5. Identify safety/security requirements (ISO 26262, FIPS, etc.) if applicable
-6. Assign priority to each requirement: Must-Have / Should-Have / Nice-to-Have
+1. Requirement 分类：functional、performance、power、area、interface
+2. 找出描述不足的区域并要求澄清
+3. 把 use case 映射到所需硬件 block（datapath、control、memory、IO）
+4. 提取 interface requirement：AXI、PCIe、USB、Ethernet 等协议
+5. 如适用，识别 ISO 26262、FIPS 等 safety/security requirement
+6. 为每项 requirement 标记 Must-Have / Should-Have / Nice-to-Have
 
 ## QoR Metrics
-- Requirements coverage: all spec sections mapped to arch requirement
-- Ambiguity count: flag any unresolved spec ambiguities
-- Interface completeness: all external interfaces identified
+- Requirement coverage：spec 每一章节都映射到 architecture requirement
+- Ambiguity count：所有未解决歧义必须被标记
+- Interface completeness：所有外部 interface 均已识别
 
 ## Output Required
-- Structured requirements document (JSON or Markdown)
-- Interface list with protocols and bandwidths
-- Open questions list for product/system team
+- 结构化 requirement document（JSON 或 Markdown）
+- 含 protocol/bandwidth 的 interface list
+- 给 product/system team 的 open-question list
 ```
 
 ---
@@ -132,33 +132,32 @@ identify ambiguities, and produce a structured requirements document.
 # Skill: Architecture — Microarchitecture Exploration
 
 ## Purpose
-Enumerate and evaluate candidate microarchitecture options against
-performance, power, and area targets.
+枚举并评估候选 microarchitecture，对照 performance、power、area target 做权衡。
 
 ## Domain Rules
-1. Generate at least 3 candidate architectures (conservative, balanced, aggressive)
-2. Evaluate pipeline depth trade-offs (deeper = higher frequency, more area/power)
-3. Evaluate parallelism options: SIMD, superscalar, spatial unrolling
-4. Cache/memory hierarchy: size, associativity, latency vs area trade-off
-5. Interconnect topology: bus, crossbar, NoC — evaluate bandwidth vs complexity
-6. Consider IP reuse: identify available hard macros or licensed IPs
-7. Document assumptions for each candidate
+1. 至少生成 3 个候选：conservative、balanced、aggressive
+2. 评估 pipeline depth：更深通常 frequency 更高，但 area/power 更大
+3. 评估 parallelism：SIMD、superscalar、spatial unrolling
+4. Cache/memory hierarchy：size、associativity、latency 与 area 的权衡
+5. Interconnect topology：bus、crossbar、NoC，比较 bandwidth 与 complexity
+6. 优先考虑已有 hard macro/licensed IP 复用
+7. 记录每个 candidate 的 assumption
 
 ## Trade-off Matrix Template
 | Candidate | Freq Target | Area Est. | Power Est. | Risk | Notes |
-|-----------|-------------|-----------|------------|------|-------|
-| Option A  | 1GHz        | 3mm2      | 300mW      | Low  | ...   |
-| Option B  | 2GHz        | 6mm2      | 700mW      | High | ...   |
+|---|---:|---:|---:|---|---|
+| Option A | 1GHz | 3mm2 | 300mW | Low | ... |
+| Option B | 2GHz | 6mm2 | 700mW | High | ... |
 
 ## QoR Metrics
-- Number of candidates explored: minimum 3
-- Each candidate: performance estimate within 20% of target
-- Recommendation: single preferred candidate with rationale
+- 至少探索 3 个差异明显的 candidate
+- 每个 candidate 的 performance estimate 与 target 偏差在 20% 内
+- 只推荐一个 preferred candidate，并给出量化理由
 
 ## Output Required
 - Trade-off matrix
-- Recommended candidate with justification
-- Assumptions and risks per candidate
+- 推荐 candidate 及 justification
+- 每个 candidate 的 assumption/risk
 ```
 
 ---
@@ -169,28 +168,28 @@ performance, power, and area targets.
 # Skill: Architecture — Performance Modelling
 
 ## Purpose
-Build analytical or simulation-based performance models to validate
-that the selected microarchitecture meets throughput and latency targets.
+建立 analytical 或 simulation-based performance model，
+验证选定 microarchitecture 是否满足 throughput/latency target。
 
 ## Domain Rules
-1. Use analytical models (Amdahl, Roofline) for initial estimates
-2. Build transaction-level models (TLM/SystemC or Python) for complex pipelines
-3. Model all bottlenecks: compute, memory bandwidth, IO throughput
-4. Sweep key parameters: clock frequency, parallelism, cache size
-5. Validate with representative workloads from use-case list
-6. Include best/typical/worst-case scenarios
+1. 初期使用 Amdahl、Roofline 等 analytical model
+2. 复杂 pipeline 使用 TLM/SystemC 或 Python model
+3. 建模 compute、memory bandwidth、IO throughput 等全部 bottleneck
+4. Sweep clock frequency、parallelism、cache size 等关键参数
+5. 使用 use-case list 中有代表性的 workload 验证
+6. 包含 best/typical/worst-case scenario
 
 ## QoR Metrics
-- Throughput: must meet or exceed target by ≥ 10% margin
-- Latency: must meet target at worst-case workload
-- Memory bandwidth: must not exceed DRAM/SRAM bandwidth limit
-- Model confidence: flag if model assumptions are unvalidated
+- Throughput：至少比 target 高 10% margin
+- Latency：worst-case workload 下满足 target
+- Memory bandwidth：不得超过 DRAM/SRAM bandwidth ceiling
+- Model confidence：未验证 assumption 必须标记
 
 ## Output Required
-- Performance model (script or spreadsheet)
-- Throughput/latency results per use case
-- Sensitivity analysis (which parameter matters most)
-- Comparison against targets
+- Performance model（script 或 spreadsheet）
+- 每 use case throughput/latency 结果
+- Sensitivity analysis
+- 与 target 的比较
 ```
 
 ---
@@ -201,47 +200,46 @@ that the selected microarchitecture meets throughput and latency targets.
 # Skill: Architecture — Power and Area Estimation
 
 ## Purpose
-Produce early-stage power and area estimates for the selected
-microarchitecture before RTL is written.
+在 RTL 编写前，为选定 microarchitecture 做早期 power/area 估算。
 
 ## Domain Rules
-1. Use technology library scaling data for area estimates (gates/mm2)
-2. Activity-based dynamic power estimate: P = alpha * C * V^2 * f
-3. Leakage estimate: from library characterization at target Vt mix
-4. Memory area: use compiler estimates (SRAM, ROM, register files)
-5. IO pad area: per pad ring design rules
-6. Apply 15–20% margin to all estimates (RTL is never minimal)
-7. Compare against budget; flag if estimate exceeds 80% of budget
+1. Area estimate 使用目标 technology library scaling data（gates/mm2）
+2. Dynamic power：P = α × C × V² × f
+3. Leakage：根据目标 Vt mix 的 library characterization
+4. Memory area：使用 SRAM/ROM/register-file compiler estimate
+5. IO pad area：依据 pad-ring rule
+6. 全部 estimate 增加 15–20% margin
+7. Estimate 超过 budget 80% 时告警
 
 ## Clock Gating Opportunity Analysis
-Using activity factors already collected for dynamic power:
+利用 dynamic power 已有 activity factor：
 
-1. For each clock domain, record activity factor α from use-case workload sweep.
-2. Classify each domain:
-   - α < 0.15 — **high gating opportunity**: flag as must-have RTL requirement
-   - 0.15 ≤ α < 0.40 — **moderate gating opportunity**: flag as should-have RTL requirement
-   - α ≥ 0.40 — **always-active**: document as always-on; no ICG needed
-3. Produce a `clock_power_budget` table (one row per domain):
+1. 记录每个 clock domain 的 activity factor α
+2. 分类：
+   - α < 0.15：**high gating opportunity**，作为 RTL must-have
+   - 0.15 ≤ α < 0.40：**moderate gating opportunity**，作为 RTL should-have
+   - α ≥ 0.40：**always-active**，记录为 always-on
+3. 生成 `clock_power_budget`：
 
-   | Domain | Frequency | α (activity) | Est. Clock Power (mW) | Gating Class |
-   |--------|-----------|-------------|----------------------|--------------|
-   | core   | 1 GHz     | 0.08        | 45                   | high         |
-   | dsp    | 500 MHz   | 0.55        | 30                   | always-on    |
+| Domain | Frequency | α (activity) | Est. Clock Power (mW) | Gating Class |
+|---|---:|---:|---:|---|
+| core | 1 GHz | 0.08 | 45 | high |
+| dsp | 500 MHz | 0.55 | 30 | always-on |
 
-4. Include `clock_power_budget` table in the RTL hand-off package.
+4. 把 `clock_power_budget` 放入 RTL handoff package。
 
 ## QoR Metrics
-- Area estimate: < 80% of budget (to allow RTL overhead margin)
-- Dynamic power: < 80% of budget
-- Leakage power: < 15% of total estimated power
-- Clock-gating coverage: ≥ 60% of register-bank bits in high-opportunity domains
-- Confidence level: HIGH / MEDIUM / LOW (based on model fidelity)
+- Area estimate < budget 80%
+- Dynamic power < budget 80%
+- Leakage < estimated total power 15%
+- High-opportunity domain clock-gating coverage ≥60% register-bank bit
+- Confidence：HIGH / MEDIUM / LOW
 
 ## Output Required
-- Area breakdown by block
-- Power breakdown: dynamic, leakage, per domain
-- Comparison against targets with margin analysis
-- `clock_power_budget` table (domain → frequency, activity factor, estimated clock power, gating class)
+- 分 block area breakdown
+- Dynamic/leakage/per-domain power breakdown
+- Target margin analysis
+- `clock_power_budget`
 ```
 
 ---
@@ -252,26 +250,24 @@ Using activity factors already collected for dynamic power:
 # Skill: Architecture — Risk Assessment
 
 ## Purpose
-Identify, classify, and propose mitigations for technical risks
-in the selected microarchitecture.
+识别、分类并制定 selected microarchitecture 的技术风险缓解方案。
 
 ## Domain Rules
-1. Risk categories: schedule, technical feasibility, IP availability,
-   tool support, verification complexity, power closure
-2. Score each risk: Probability (1–5) × Impact (1–5) = Risk Score
-3. Flag any risk score ≥ 15 as HIGH — requires mitigation plan
-4. IP risks: verify availability and licensing timeline
-5. Tool risks: verify EDA tool support for chosen technology
-6. Verification risks: estimate TB complexity; flag if > 6 months est.
+1. Risk 类别：schedule、technical feasibility、IP availability、tool support、verification complexity、power closure
+2. 每项 Risk Score = Probability(1–5) × Impact(1–5)
+3. Risk Score ≥15 为 HIGH，必须有 mitigation plan
+4. IP risk：确认 availability 与 licensing timeline
+5. Tool risk：确认目标 technology 的 EDA support
+6. Verification risk：预计 TB complexity >6 个月时告警
 
 ## QoR Metrics
-- No unmitigated HIGH risks at sign-off
-- All risks have assigned owner and mitigation plan
-- Schedule risk: total identified risks vs team capacity
+- Sign-off 时无未缓解 HIGH risk
+- 每项 risk 有 owner 和 mitigation
+- Schedule risk 已结合 team capacity 评估
 
 ## Output Required
-- Risk register (ID, description, score, mitigation, owner)
-- Top 5 risks highlighted for management review
+- Risk register
+- 管理层评审用 Top 5 risk
 ```
 
 ---
@@ -282,34 +278,34 @@ in the selected microarchitecture.
 # Skill: Architecture — Sign-off
 
 ## Purpose
-Confirm that the selected microarchitecture fully satisfies all
-requirements and is ready to proceed to RTL design.
+确认 selected microarchitecture 满足全部 requirement，
+可以进入 RTL Design。
 
 ## Sign-off Checklist
-- [ ] All Must-Have requirements addressed
-- [ ] Performance targets met in model (with margin)
-- [ ] Power/area estimates within budget
-- [ ] All HIGH risks mitigated
-- [ ] Interface specifications complete and agreed
-- [ ] Memory map defined
-- [ ] Clock domains identified and CDC strategy agreed
-- [ ] Reset strategy defined
-- [ ] DFT strategy agreed (scan, BIST, JTAG)
-- [ ] Verification strategy agreed (UVM, formal, emulation split)
-- [ ] `clock_power_budget` table produced; gating class assigned per domain
-- [ ] Clock-gating coverage ≥ 60% of register bits in high-opportunity domains
-- [ ] Hand-off package includes `clock_power_budget` table for RTL team
+- [ ] 所有 Must-Have requirement 已覆盖
+- [ ] Performance model 达标并有 margin
+- [ ] Power/area estimate 在 budget 内
+- [ ] HIGH risk 全部已缓解
+- [ ] Interface specification 完整并达成一致
+- [ ] Memory map 已定义
+- [ ] Clock domain 与 CDC strategy 已明确
+- [ ] Reset strategy 已定义
+- [ ] DFT strategy 已确认
+- [ ] Verification strategy 已确认
+- [ ] 已生成 `clock_power_budget` 并完成每个 domain 分类
+- [ ] High-opportunity domain clock-gating coverage ≥60%
+- [ ] RTL handoff package 包含 `clock_power_budget`
 
 ## Output Required
 - Signed-off microarchitecture document
 - Final trade-off decision record
-- RTL design guidelines derived from architecture
-- Hand-off package for RTL team (includes `clock_power_budget` table)
+- RTL design guideline
+- RTL team handoff package
 ```
 
 ---
 
-## 5. Stage Agent Interface
+## 5. Stage Agent 接口
 
 ```
 INPUT:  { state_object, stage_name, skill_content }
@@ -322,9 +318,11 @@ OUTPUT: {
 }
 ```
 
+机器字段、枚举和值保持英文，以保证与 Agent contract 兼容。
+
 ---
 
-## 6. Orchestrator Specification
+## 6. Orchestrator 规格
 
 ### System Prompt
 
@@ -349,9 +347,11 @@ On completion, produce a microarchitecture document and hand-off
 package for the RTL design team.
 ```
 
+> 上述 stage 名、状态值和固定接口文本属于机器协议，因此保留英文；对应含义均已在正文中文化。
+
 ---
 
-## 7. Output: Microarchitecture Document Template
+## 7. 输出：Microarchitecture 文档模板
 
 ```markdown
 # Microarchitecture Specification: [Design Name]
@@ -371,3 +371,5 @@ package for the RTL design team.
 ## 12. Risk Register (summary)
 ## 13. Open Items
 ```
+
+> 模板中的固定章节名可按项目需要继续中文化；如果该模板被自动脚本解析，建议保持这些英文标题。
