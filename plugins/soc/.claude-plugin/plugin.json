@@ -1,11 +1,18 @@
 {
   "name": "chip-design-soc",
   "version": "1.2.0",
-  "description": "SoC IP integration — procurement, bus fabric, chip-level simulation",
-  "author": { "name": "chuanseng-ng", "url": "https://github.com/chuanseng-ng" },
+  "description": "SoC IP 集成——IP 获取、bus fabric 与 chip-level simulation",
+  "author": {
+    "name": "chuanseng-ng",
+    "url": "https://github.com/chuanseng-ng"
+  },
   "homepage": "https://github.com/chuanseng-ng/digital-chip-design-agents",
   "repository": "https://github.com/chuanseng-ng/digital-chip-design-agents",
   "license": "MIT",
-  "skills": ["./skills/soc-integration"],
-  "agents": ["./agents/soc-integration-orchestrator.md"]
+  "skills": [
+    "./skills/soc-integration"
+  ],
+  "agents": [
+    "./agents/soc-integration-orchestrator.md"
+  ]
 }
