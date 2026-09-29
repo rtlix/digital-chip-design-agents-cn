@@ -1,5 +1,5 @@
 {
-  "_comment": "KLayout batch MCP server — paste the mcpServers block into your .claude/settings.json. Replace /absolute/path/to with the actual repo root path.",
+  "_comment": "KLayout 批处理 MCP Server —— 将 mcpServers 配置块粘贴到 .claude/settings.json。请把 /absolute/path/to 替换为本仓库实际绝对路径。",
   "mcpServers": {
     "klayout": {
       "type": "stdio",
@@ -8,7 +8,7 @@
         "/absolute/path/to/plugins/infrastructure/tools/mcp-adapter.py",
         "--wrapper", "/absolute/path/to/plugins/infrastructure/tools/wrap-klayout.sh",
         "--tool", "klayout",
-        "--description", "Run KLayout DRC/LVS and return compact JSON: drc_total, per-category violation counts"
+        "--description", "运行 KLayout DRC/LVS 并返回紧凑 JSON：drc_total、各 category 的 violation 数量"
       ],
       "env": {
         "KLAYOUT_HOME": "/path/to/klayout",
