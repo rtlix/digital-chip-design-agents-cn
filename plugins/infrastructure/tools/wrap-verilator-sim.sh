@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# wrap-verilator-sim.sh — run Verilator simulation binary and emit a compact JSON summary
-# Usage: wrap-verilator-sim.sh <sim_binary> [args...]
+# wrap-verilator-sim.sh —— 运行 Verilator simulation binary，并输出紧凑 JSON summary
+# 用法： wrap-verilator-sim.sh <sim_binary> [args...]
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -52,9 +52,9 @@ if coverage_m:
 summary["error_count"]   = len(errors)
 summary["warning_count"] = len(warnings)
 
-# PASS needs the testbench's own pass marker; exit 0 alone is not one. An ERROR
-# line does not fail the run by itself, because simulation logs print lines such
-# as "Error count: 0", but it keeps the run from passing silently.
+# PASS 必须看到 testbench 自己的 pass marker；仅 exit 0 不算 PASS。
+# 单独出现 ERROR 字样不能直接判 FAIL，因为仿真日志可能包含 "Error count: 0"；
+# 但它会阻止该运行被静默判为 PASS。
 evidence = bool(passed_m)
 
 if failed_m or exit_code != 0:
