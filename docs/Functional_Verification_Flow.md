@@ -1,17 +1,17 @@
-# Functional Verification Flow — Full Architecture Design
-## Orchestrator + Stage Agents + Skills (UVM-Based)
+# 功能验证流程 — 完整架构设计
+## Orchestrator + Stage Agents + Skills（UVM）
 
-> **Purpose**: AI-driven functional verification flow using UVM. Covers testbench architecture, test planning, stimulus generation, coverage closure, assertion-based verification, and regression sign-off.
+> **目的**：基于 UVM 的 AI 驱动功能验证流程。覆盖 testbench architecture、test planning、stimulus generation、coverage closure、assertion-based verification 和 regression sign-off。
 
 ---
 
-## 1. Architecture Overview
+## 1. 架构总览
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │             VERIFICATION ORCHESTRATOR                        │
-│  Input:  RTL, Microarch doc, verification plan               │
-│  Output: Coverage-closed, regression-passing RTL sign-off    │
+│  输入：RTL、Microarch doc、verification plan                  │
+│  输出：Coverage closed、regression passing 的 RTL sign-off     │
 └────────────────────────┬─────────────────────────────────────┘
                          │
      ┌───────────────────┼───────────────────────┐
@@ -24,7 +24,7 @@
 
 ---
 
-## 2. Shared State Object
+## 2. 共享状态对象
 
 ```json
 {
@@ -60,7 +60,7 @@
 
 ---
 
-## 3. Stage Sequence & Loop-Back Logic
+## 3. Stage Sequence 与 Loop-Back
 
 ```
 [TB Architecture] ──► [Test Planning] ──► [UVM TB Build]
@@ -83,18 +83,18 @@
 
 ### Loop-Back Rules
 
-| Failure Condition                      | Loop Back To          | Max Iterations |
-|----------------------------------------|-----------------------|----------------|
-| UVM TB build error                     | UVM TB Build          | 3              |
-| Directed test failure (DUT bug)        | (Fix RTL, re-run)     | Unlimited      |
-| Functional coverage < target           | Constrained Random    | 5              |
-| Code coverage < 90%                    | Directed Tests        | 3              |
-| Formal: property violation             | (Fix RTL, re-run)     | Unlimited      |
-| Regression failure rate > 0%           | Constrained Random    | 3              |
+| 失败条件 | 回退到 | 最大迭代 |
+|---|---|---:|
+| UVM TB build error | UVM TB Build | 3 |
+| Directed test failure（DUT bug） | Fix RTL, re-run | Unlimited |
+| Functional coverage < target | Constrained Random | 5 |
+| Code coverage <90% | Directed Tests | 3 |
+| Formal property violation | Fix RTL, re-run | Unlimited |
+| Regression failure rate >0% | Constrained Random | 3 |
 
 ---
 
-## 4. Skill File Specifications
+## 4. Skill 文件说明
 
 ### 4.1 `sv-verif-tb-arch/SKILL.md`
 
@@ -102,17 +102,17 @@
 # Skill: Verification — UVM Testbench Architecture
 
 ## Purpose
-Design the UVM testbench structure before any code is written.
+在写代码前先设计完整 UVM testbench structure。
 
 ## Domain Rules
-1. Follow UVM 1.2 standard (IEEE 1800.2)
-2. One UVM agent per DUT interface (driver, monitor, sequencer)
-3. Agents: active (drives stimulus) vs passive (monitors only)
-4. Scoreboard: checks DUT output against reference model
-5. Reference model: functional model of DUT in SV or C++
-6. Coverage collector: separate from scoreboard
-7. Virtual sequencer: coordinates multi-agent scenarios
-8. Configuration object: all TB parameters via uvm_config_db
+1. 遵循 UVM 1.2 / IEEE 1800.2
+2. 每个 DUT interface 一个 UVM agent
+3. Active agent 包含 driver/monitor/sequencer；passive 只 monitor
+4. Scoreboard 对比 DUT output 与 reference model
+5. Reference model 在 SV/C++ 中实现功能预测
+6. Coverage collector 与 scoreboard 分离
+7. Virtual sequencer 协调多 agent scenario
+8. 所有 TB parameter 通过 uvm_config_db 配置
 
 ## UVM TB Hierarchy Template
 ```
@@ -130,14 +130,14 @@ uvm_test
 ```
 
 ## QoR Metrics
-- All DUT interfaces covered by agent
-- Reference model complexity: adequate to check all outputs
-- TB compile: 0 errors
+- 所有 DUT interface 都有 agent
+- Reference model 足以检查全部 output
+- TB compile error = 0
 
 ## Output Required
 - TB architecture diagram
-- UVM component list and hierarchy
-- Interface and agent mapping table
+- UVM component list/hierarchy
+- Interface→agent mapping table
 ```
 
 ---
@@ -148,20 +148,20 @@ uvm_test
 # Skill: Verification — Test Planning
 
 ## Purpose
-Produce a comprehensive verification plan (V-plan) that maps
-every spec requirement to a test or property.
+生成完整 V-plan，把每条 spec requirement 映射到 test 或 property。
 
 ## Domain Rules
-1. Every functional requirement → at least one test
-2. Every interface → protocol compliance test
-3. Error/exception cases: explicit tests (not just random)
-4. Corner cases: boundary values, max/min, overflow, underflow
-5. Concurrency: multi-threaded stimulus for pipeline stress
-6. Back-pressure: test DUT under flow control conditions
-7. Reset: in-operation resets, reset during transaction
-8. Coverage model: define covergroups before writing tests
+1. 每条 functional requirement 至少一个 test
+2. 每个 interface 有 protocol compliance test
+3. Error/exception 用 explicit test，不只依赖 random
+4. Corner case：boundary/max/min/overflow/underflow
+5. Concurrency：多线程 stimulus 压测 pipeline
+6. Back-pressure：验证 flow-control 场景
+7. Reset：operation 中 reset、transaction 中 reset
+8. Coverage model 在写 test 前定义 covergroup
 
-## V-Plan Template (per feature)
+## V-Plan Template
+```json
 {
   "feature_id": "F001",
   "feature_desc": "AXI write burst handling",
@@ -170,16 +170,17 @@ every spec requirement to a test or property.
   "covergroups": ["burst_len_cg", "burst_type_cg"],
   "priority": "P0"
 }
+```
 
 ## QoR Metrics
-- Requirement coverage: 100% of spec features mapped
-- P0 tests: must pass before any random testing
-- Estimated test count: reasonable vs schedule
+- 100% spec feature 被映射
+- P0 test 在 random 前必须通过
+- Test count 与 schedule 匹配
 
 ## Output Required
-- V-plan document (JSON or Markdown)
-- Covergroup definitions
-- Assertion list with expected behavior
+- V-plan
+- Covergroup definition
+- Assertion list
 ```
 
 ---
@@ -190,42 +191,42 @@ every spec requirement to a test or property.
 # Skill: Verification — UVM Testbench Implementation
 
 ## Purpose
-Build all UVM testbench components following UVM methodology.
+按 UVM methodology 实现完整 testbench。
 
 ## Domain Rules — Sequences
-1. Base sequence: minimum valid transaction
-2. Extended sequences: specific scenarios from V-plan
-3. Sequence library: register all sequences for random selection
-4. Never hard-code values: use randomized fields with constraints
+1. Base sequence 产生最小合法 transaction
+2. Extended sequence 对应 V-plan scenario
+3. 所有 sequence 注册到 library
+4. 不硬编码 stimulus value，使用 random field + constraint
 
 ## Domain Rules — Drivers
-1. Drive signals cycle-accurate to protocol spec
-2. Handle back-pressure: check ready/valid correctly
-3. Protocol assertion in driver: catch illegal stimuli early
+1. 严格按 protocol cycle 驱动
+2. 正确处理 ready/valid back-pressure
+3. Driver 内可放 protocol assertion，尽早捕获非法 stimulus
 
 ## Domain Rules — Monitors
-1. Passive: never drive signals
-2. Capture complete transactions, not individual signals
-3. Write to analysis port for scoreboard and coverage
+1. Passive，绝不驱动 signal
+2. 捕获完整 transaction，不是单 signal
+3. 通过 analysis port 送 scoreboard/coverage
 
 ## Domain Rules — Scoreboard
-1. Predict expected output from reference model before DUT output arrives
-2. Report mismatches with full context (stimulus, expected, actual)
-3. Track: total checks, pass, fail, untriggered
+1. DUT output 到达前生成 expected result
+2. Mismatch 报告 stimulus/expected/actual 全上下文
+3. 统计 total/pass/fail/untriggered
 
-## Domain Rules — Assertions (SVA)
-1. Protocol assertions: in interface, not DUT
-2. Functional assertions: in checker or bind module
-3. All assertions: clearly named with failure message
+## Domain Rules — Assertions
+1. Protocol assertion 放 interface
+2. Functional assertion 放 checker/bind module
+3. Assertion 命名清晰并带 failure message
 
 ## QoR Metrics
-- TB compile: 0 errors, 0 warnings
-- Basic sanity test: passes with known-good RTL
-- All components connected and active in simulation log
+- TB compile：0 error、0 warning
+- Basic sanity test 在 known-good RTL 上 PASS
+- 所有 component 在 simulation log 中连接并 active
 
 ## Output Required
-- UVM component source files
-- SVA assertion files (bind-based)
+- UVM source
+- Bind-based SVA
 - Compile script
 ```
 
@@ -237,39 +238,34 @@ Build all UVM testbench components following UVM methodology.
 # Skill: Verification — Coverage Analysis and Closure
 
 ## Purpose
-Analyze coverage results and drive coverage closure efficiently.
+分析 coverage 并高效驱动 closure。
 
 ## Coverage Types and Targets
-| Type             | Target | Priority |
-|------------------|--------|----------|
+| 类型 | Target | Priority |
+|---|---:|---|
 | Functional (V-plan) | 100% | P0 |
-| Code Line        | ≥ 95%  | P1 |
-| Code Branch      | ≥ 90%  | P1 |
-| Code Toggle      | ≥ 85%  | P2 |
-| FSM State        | 100%   | P0 |
-| FSM Transition   | ≥ 95%  | P0 |
-| Assertion        | 100% triggered | P1 |
+| Code Line | ≥95% | P1 |
+| Code Branch | ≥90% | P1 |
+| Code Toggle | ≥85% | P2 |
+| FSM State | 100% | P0 |
+| FSM Transition | ≥95% | P0 |
+| Assertion | 100% triggered | P1 |
 
 ## Coverage Closure Strategy
-1. Identify uncovered bins after N random seeds
-2. Write targeted directed tests for hard-to-hit bins
-3. Adjust constraints to bias toward uncovered areas
-4. Use coverage-driven test selection (CDTS)
-5. Waive unreachable bins with justification (dead code)
-
-## Waiver Process
-- Unreachable code: justify with static analysis evidence
-- Don't-care state combinations: document in V-plan
-- All waivers approved by verification lead
+1. 多 seed 后找 uncovered bin
+2. 对 hard-to-hit bin 写 targeted directed test
+3. 调 constraint bias 到 uncovered area
+4. 使用 coverage-driven test selection
+5. Unreachable bin 必须有 dead-code/static-analysis evidence 才能 waive
 
 ## QoR Metrics
-- Functional coverage: 100% (no unwaived misses)
-- Code coverage: per targets above
-- Coverage closure rate: tracked per regression
+- Functional coverage 100%，无未批准 miss
+- Code coverage 达到 target
+- 跟踪 regression 的 closure rate
 
 ## Output Required
-- Coverage report (merged across all seeds)
-- Uncovered bin list with closure plan
+- Merged coverage report
+- Uncovered bin + closure plan
 - Waiver file
 ```
 
@@ -281,33 +277,32 @@ Analyze coverage results and drive coverage closure efficiently.
 # Skill: Verification — Formal Verification Assist
 
 ## Purpose
-Use formal property verification to close gaps that simulation
-cannot efficiently reach and to prove absence of bugs.
+用 formal property verification 关闭 simulation 难以触达的 coverage gap，并证明 bug 不存在。
 
 ## Use Cases for Formal
-1. Protocol compliance: prove AXI/APB handshake never violates
-2. Deadlock freedom: prove no state where valid=1 and ready never comes
-3. Liveness: prove every request eventually gets a response
-4. One-hot FSM: prove state encoding never has 0 or >1 bits set
-5. Coverage closure: use formal to hit hard-to-reach simulation bins
-6. Reset verification: prove all registers reach reset state
+1. Protocol compliance
+2. Deadlock freedom
+3. Liveness
+4. One-hot FSM
+5. Coverage closure
+6. Reset verification
 
 ## Domain Rules
-1. Write properties in SVA (concurrent assertions)
-2. Group properties by feature in separate .sva files
-3. Constrain the environment (assumptions) to match valid stimulus
-4. Over-constraining assumptions invalidates the proof — verify with vacuity check
-5. Bounded model checking (BMC): for deep pipelines, set bound = pipeline depth + margin
+1. Property 使用 SVA concurrent assertion
+2. 按 feature 分文件组织
+3. 用 assumption 建模合法环境
+4. 防止 over-constraining，必须做 vacuity check
+5. Deep pipeline 的 BMC bound 至少为 pipeline depth + margin
 
 ## QoR Metrics
-- All properties: PROVEN or UNREACHABLE (no CEX without fix)
-- No vacuous proofs
-- Formal coverage: additional bins closed vs simulation baseline
+- Property 全部 PROVEN 或合理 UNREACHABLE
+- 无 vacuous proof
+- Formal 相对 simulation baseline 关闭了额外 coverage
 
 ## Output Required
 - SVA property file
-- Formal run report (proven/failed/vacuous)
-- Any counterexamples with waveform description
+- Formal report
+- CEX waveform description
 ```
 
 ---
@@ -318,25 +313,25 @@ cannot efficiently reach and to prove absence of bugs.
 # Skill: Verification — Regression Sign-off
 
 ## Purpose
-Define and manage the regression suite to confirm DUT correctness
-before RTL sign-off.
+定义并管理 RTL sign-off 前的 regression suite。
 
 ## Regression Tiers
-| Tier   | Trigger          | Duration | Contents                        |
-|--------|------------------|----------|---------------------------------|
-| Smoke  | Every RTL commit | < 30min  | P0 directed tests only          |
-| Nightly| Every night      | < 8hr    | All directed + 100 random seeds |
-| Weekly | Weekly gate      | < 48hr   | Full suite, 1000 random seeds   |
-| Signoff| Tape-out gate    | Unlimited| Full suite, 10,000 seeds        |
+| Tier | Trigger | Duration | 内容 |
+|---|---|---:|---|
+| Smoke | 每次 RTL commit | <30min | P0 directed test |
+| Nightly | 每晚 | <8h | 全 directed + 100 random seeds |
+| Weekly | 每周 | <48h | Full suite + 1000 random seeds |
+| Signoff | Tape-out gate | Unlimited | Full suite + 10000 seeds |
 
-## Pass Criteria (Sign-off)
-- 0 simulation failures (not counting known waived bugs)
-- 0 UVM FATAL or UVM ERROR messages
-- All coverage targets met
-- Formal: all properties proven
-- All open bugs: P0/P1 closed; P2/P3 documented
+## Pass Criteria
+- Simulation failure = 0
+- UVM FATAL / ERROR = 0
+- Coverage target 全满足
+- Formal property 全 proven
+- P0/P1 bug 全关闭；P2/P3 有 disposition
 
 ## Bug Tracking Template
+```json
 {
   "bug_id": "BUG_001",
   "description": "...",
@@ -345,10 +340,11 @@ before RTL sign-off.
   "rtl_fix_commit": "abc123",
   "test_that_found": "test_burst_overflow"
 }
+```
 
 ## Output Required
 - Regression pass/fail report
-- Coverage merged report (final)
+- Final merged coverage
 - Open bug list
 - Sign-off checklist
 ```
@@ -380,3 +376,5 @@ Do not proceed to regression_signoff until all P0/P1 bugs are closed.
 
 Output: Verification sign-off report with coverage and bug summary.
 ```
+
+> 固定 stage 名、枚举和机器接口保留英文，正文已中文化。
