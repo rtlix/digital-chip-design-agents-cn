@@ -546,7 +546,7 @@ async function main() {
 
   for (const id of selected) runInstall(id, { global, claudeRequired: false });
   seedMemory();
-  console.log("\n完成。`);
+  console.log("\n完成。");
 }
 
 main();
