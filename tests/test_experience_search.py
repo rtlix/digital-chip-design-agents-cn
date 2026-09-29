@@ -1,4 +1,4 @@
-"""Unit + CLI tests for tools/experience_search.py."""
+"""tools/experience_search.py 的单元测试与 CLI 测试。"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ SEARCH = Path(__file__).resolve().parents[1] / "tools/experience_search.py"
 
 
 # ---------------------------------------------------------------------------
-# Text processing
+# 文本处理
 # ---------------------------------------------------------------------------
 
 def test_tokenize_keeps_eda_tokens_and_strips_stopwords(experience_search):
@@ -22,7 +22,7 @@ def test_tokenize_keeps_eda_tokens_and_strips_stopwords(experience_search):
     assert "sky130" in toks
     assert "-flatten" in toks
     assert "fixed" in toks
-    # stopwords gone
+    # stopword 已移除
     for sw in ("what", "the", "on", "with", "before"):
         assert sw not in toks
 
@@ -38,7 +38,7 @@ def test_searchable_text_joins_freetext_fields(experience_search):
 
 
 # ---------------------------------------------------------------------------
-# Keyword ranking
+# Keyword 排序
 # ---------------------------------------------------------------------------
 
 def _records():
@@ -97,22 +97,22 @@ def test_no_matching_records_returns_empty(experience_search, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Backend selection / threshold fallback
+# Backend 选择 / threshold fallback
 # ---------------------------------------------------------------------------
 
 def test_select_backend_truth_table(experience_search):
     sb = experience_search._select_backend
-    # explicit keyword: never falls back, no reason
+    # 显式 keyword：不发生 fallback，也没有 fallback reason
     assert sb("keyword", 100, 50, True) == ("keyword", None)
-    # auto, available + above threshold -> embedding
+    # auto：backend 可用且超过 threshold → embedding
     assert sb("auto", 50, 50, True) == ("embedding", None)
-    # auto, available but below threshold -> keyword + reason
+    # auto：backend 可用但低于 threshold → keyword + reason
     resolved, reason = sb("auto", 10, 50, True)
     assert resolved == "keyword" and "threshold" in reason
-    # auto, unavailable -> keyword + reason
+    # auto：backend 不可用 → keyword + reason
     resolved, reason = sb("auto", 100, 50, False)
     assert resolved == "keyword" and "unavailable" in reason
-    # embedding requested, unavailable -> keyword + reason
+    # 请求 embedding 但 backend 不可用 → keyword + reason
     resolved, reason = sb("embedding", 100, 50, False)
     assert resolved == "keyword" and "unavailable" in reason
 
@@ -134,14 +134,14 @@ def test_embedding_request_without_lib_falls_back(experience_search, tmp_path):
     out = experience_search.query_experiences(
         "synthesis", "wns sky130", memory_root=mem,
         backend="embedding", min_records_threshold=1)
-    # No embedding backend wired in by default -> keyword fallback.
+    # 默认没有接入 embedding backend → 回退 keyword。
     assert out["backend"] == "keyword"
     assert out["fell_back"] is True
     assert "unavailable" in out["fallback_reason"]
 
 
 # ---------------------------------------------------------------------------
-# Embedding cache (with an injected stub backend)
+# Embedding cache（注入 stub backend）
 # ---------------------------------------------------------------------------
 
 def _make_stub(experience_search):
@@ -155,7 +155,7 @@ def _make_stub(experience_search):
 
         def embed(self, texts):
             self.calls += len(texts)
-            # Deterministic toy embedding from token hashes.
+            # 基于 token hash 的确定性 toy embedding。
             vecs = []
             for t in texts:
                 toks = experience_search.tokenize(t)
@@ -178,12 +178,12 @@ def test_embedding_cache_is_incremental(experience_search, tmp_path, monkeypatch
     assert first["embedded"] == 2
     calls_after_first = stub.calls
 
-    # Second reindex with unchanged records embeds nothing new.
+    # 第二次 reindex 时 record 未变化，不应产生新的 embedding。
     second = experience_search.reindex("synthesis", memory_root=mem)
     assert second["embedded"] == 0
     assert stub.calls == calls_after_first
 
-    # The sqlite index file was created beside the JSONL.
+    # sqlite index 文件应创建在 JSONL 旁边。
     assert (mem / "synthesis" / experience_search.INDEX_FILENAME).exists()
 
 
@@ -194,7 +194,7 @@ def test_reindex_drops_stale_hashes(experience_search, tmp_path, monkeypatch):
     monkeypatch.setattr(experience_search, "get_embedding_backend", lambda: stub)
 
     experience_search.reindex("synthesis", memory_root=mem)
-    # Rewrite with only one record -> the other becomes stale.
+    # 重写为只保留一条 record → 另一条应变为 stale。
     write_experiences(mem, "synthesis", _records()[:1])
     out = experience_search.reindex("synthesis", memory_root=mem)
     assert out["removed"] == 1
@@ -261,5 +261,5 @@ def test_cli_reindex_runs(tmp_path):
     res = _run("--domain", "synthesis", "--reindex", "--memory-root", str(mem))
     assert res.returncode == 0, res.stderr
     data = json.loads(res.stdout)
-    # No embedding backend by default -> reindex is a documented no-op.
+    # 默认无 embedding backend → reindex 按文档约定为 no-op。
     assert data["reindexed"] is False
