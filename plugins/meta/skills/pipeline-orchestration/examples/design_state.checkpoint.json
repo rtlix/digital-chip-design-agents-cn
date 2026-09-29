@@ -7,18 +7,26 @@
   "pipeline_session_id": null,
   "pipeline_config": {
     "max_cross_domain_iterations": 3,
-    "checkpoints": ["arch_signoff", "rtl_signoff", "signoff"]
+    "checkpoints": [
+      "arch_signoff",
+      "rtl_signoff",
+      "signoff"
+    ]
   },
   "approved_checkpoints": [
-    { "stage": "arch_signoff", "approved_at": "2026-05-01T10:30:00Z", "approved_by": "user" }
+    {
+      "stage": "arch_signoff",
+      "approved_at": "2026-05-01T10:30:00Z",
+      "approved_by": "user"
+    }
   ],
   "pending_approval": {
     "type": "checkpoint",
     "stage": "rtl_signoff",
     "agent": "rtl-design-orchestrator",
-    "reason": "checkpoint rtl_signoff requires human approval before proceeding",
+    "reason": "checkpoint rtl_signoff 需要人工批准后才能继续",
     "fix_request_id": null,
-    "last_summary": "lint_errors: 0, cdc_violations: 0, 4 modules implemented",
+    "last_summary": "lint_errors: 0，cdc_violations: 0，已实现 4 个模块",
     "requires_user": true
   },
   "constraints": {
@@ -27,8 +35,24 @@
       "clk_uncertainty_ps": null
     },
     "pvt_corners": [
-      { "name": "ss_setup", "process": "SS", "voltage_v": 0.81, "temp_c": 125, "checks": ["setup"] },
-      { "name": "ff_hold",  "process": "FF", "voltage_v": 0.99, "temp_c": -40, "checks": ["hold"] }
+      {
+        "name": "ss_setup",
+        "process": "SS",
+        "voltage_v": 0.81,
+        "temp_c": 125,
+        "checks": [
+          "setup"
+        ]
+      },
+      {
+        "name": "ff_hold",
+        "process": "FF",
+        "voltage_v": 0.99,
+        "temp_c": -40,
+        "checks": [
+          "hold"
+        ]
+      }
     ],
     "timing": {
       "wns_ns_target": 0,
@@ -48,7 +72,10 @@
       "leakage_pct_max": 15,
       "ir_drop_pct_max": 5,
       "gating_coverage_pct_min": 60,
-      "activity_factors": { "default": 0.15, "high": 0.40 }
+      "activity_factors": {
+        "default": 0.15,
+        "high": 0.4
+      }
     },
     "coverage": {
       "functional_pct": 100,
@@ -89,7 +116,12 @@
   },
   "rtl": {
     "top_module": "dsp_core",
-    "files": ["rtl/dsp_core.sv", "rtl/mac_unit.sv", "rtl/acc_bank.sv", "rtl/ctrl_fsm.sv"],
+    "files": [
+      "rtl/dsp_core.sv",
+      "rtl/mac_unit.sv",
+      "rtl/acc_bank.sv",
+      "rtl/ctrl_fsm.sv"
+    ],
     "lint_clean": true,
     "cdc_clean": true,
     "signoff": false
@@ -104,7 +136,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "Product spec parsed — 256-tap FIR, 500 MHz target, 28nm PDK; constraints.clock.clk_mhz set to 500",
+      "reason": "已解析产品规格——256-tap FIR、500 MHz 目标、28nm PDK；constraints.clock.clk_mhz 已设为 500",
       "constraint_ref": null
     },
     {
@@ -116,7 +148,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "3 candidates evaluated; pipelined_mac_array selected for best PPA balance",
+      "reason": "已评估 3 个候选方案；综合 PPA 权衡后选择 pipelined_mac_array",
       "constraint_ref": null
     },
     {
@@ -128,7 +160,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "gem5 model shows 520 MHz achievable with 4-stage pipeline — exceeds constraints.clock.clk_mhz (500 MHz) by 4%",
+      "reason": "gem5 模型显示 4 级流水可达到 520 MHz——比 constraints.clock.clk_mhz（500 MHz）高 4%",
       "constraint_ref": "clock.clk_mhz"
     },
     {
@@ -140,7 +172,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "McPAT estimate: 1.8 mm², 85 mW — area at 90% of constraints.area.area_um2 budget; power at 85% of constraints.power.power_mw budget",
+      "reason": "McPAT 估算：1.8 mm²、85 mW——面积达到 constraints.area.area_um2 预算的 90%，功耗达到 constraints.power.power_mw 预算的 85%",
       "constraint_ref": "power.power_mw"
     },
     {
@@ -152,7 +184,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "No HIGH risks; clock domain crossing mitigated by sync cells",
+      "reason": "没有 HIGH 风险；clock domain crossing 已通过 synchronizer cell 缓解",
       "constraint_ref": null
     },
     {
@@ -164,7 +196,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "escalate",
-      "reason": "checkpoint arch_signoff requires human approval before proceeding",
+      "reason": "checkpoint arch_signoff 需要人工批准后才能继续",
       "constraint_ref": null
     },
     {
@@ -176,7 +208,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "arch_signoff approved by user — architecture.signoff set to true",
+      "reason": "用户已批准 arch_signoff——architecture.signoff 已设为 true",
       "constraint_ref": null
     },
     {
@@ -188,7 +220,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "Module hierarchy defined: dsp_core, mac_unit, acc_bank, ctrl_fsm; validated against constraints.clock.clk_mhz (500 MHz)",
+      "reason": "模块层次已定义：dsp_core、mac_unit、acc_bank、ctrl_fsm；并按 constraints.clock.clk_mhz（500 MHz）完成校验",
       "constraint_ref": "clock.clk_mhz"
     },
     {
@@ -200,7 +232,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "All 4 modules implemented in SystemVerilog",
+      "reason": "4 个模块均已使用 SystemVerilog 实现",
       "constraint_ref": null
     },
     {
@@ -212,7 +244,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "Verilator lint: 0 errors, 2 warnings (waived)",
+      "reason": "Verilator lint：0 个 error，2 个 warning（已批准 waiver）",
       "constraint_ref": null
     },
     {
@@ -224,7 +256,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "0 unwaived CDC violations — sync cells in place",
+      "reason": "0 个未豁免 CDC violation——所需 synchronizer cell 已就位",
       "constraint_ref": null
     },
     {
@@ -236,7 +268,7 @@
       "failure_class": "timing",
       "retry_strategy": "refine",
       "suggested_next_step": "loop_back_to:rtl_coding",
-      "reason": "Yosys synth_check: WNS -0.4 ns on dp_path — refine RTL targeting the failing path before re-check",
+      "reason": "Yosys synth_check：dp_path 上 WNS 为 -0.4 ns——重新检查前需针对失败路径优化 RTL",
       "constraint_ref": "timing.wns_ns_target"
     },
     {
@@ -248,7 +280,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "Yosys synth_check: WNS +0.3 ns — meets constraints.timing.wns_ns_target (0); area within estimate",
+      "reason": "Yosys synth_check：WNS +0.3 ns——满足 constraints.timing.wns_ns_target（0）；面积也在估算范围内",
       "constraint_ref": "timing.wns_ns_target"
     },
     {
@@ -260,7 +292,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "escalate",
-      "reason": "checkpoint rtl_signoff requires human approval before proceeding",
+      "reason": "checkpoint rtl_signoff 需要人工批准后才能继续",
       "constraint_ref": null
     }
   ]
