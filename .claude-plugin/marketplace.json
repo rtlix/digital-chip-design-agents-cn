@@ -5,137 +5,202 @@
     "github": "chuanseng-ng"
   },
   "metadata": {
-    "description": "Full digital chip design pipeline — 16 plugins across 15 domains, from infrastructure setup through tape-out and firmware, with closed-loop verification↔RTL feedback.",
+    "description": "完整数字芯片设计流水线——16 个插件覆盖 15 个领域，从基础设施配置、设计实现到流片与固件，并支持 Verification↔RTL 闭环反馈。",
     "version": "1.8.0"
   },
   "plugins": [
     {
       "name": "chip-design-architecture",
-      "description": "Microarchitecture exploration, PPA estimation, risk assessment, and sign-off",
+      "description": "微架构探索、PPA 估算、风险评估与 sign-off",
       "source": "./plugins/architecture",
       "strict": true,
-      "skills": ["./skills/architecture"],
-      "agents": ["./agents/architecture-orchestrator.md"]
+      "skills": [
+        "./skills/architecture"
+      ],
+      "agents": [
+        "./agents/architecture-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-rtl",
-      "description": "SystemVerilog RTL design — module planning, coding standards, lint, CDC, synthesis check",
+      "description": "SystemVerilog RTL 设计——模块规划、编码规范、lint、CDC 与综合检查",
       "source": "./plugins/rtl-design",
       "strict": true,
-      "skills": ["./skills/rtl-design"],
-      "agents": ["./agents/rtl-design-orchestrator.md"]
+      "skills": [
+        "./skills/rtl-design"
+      ],
+      "agents": [
+        "./agents/rtl-design-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-verification",
-      "description": "UVM testbench, test planning, constrained random, coverage closure, regression",
+      "description": "UVM testbench、测试规划、约束随机、覆盖率收敛与 regression",
       "source": "./plugins/verification",
       "strict": true,
-      "skills": ["./skills/functional-verification"],
-      "agents": ["./agents/verification-orchestrator.md"]
+      "skills": [
+        "./skills/functional-verification"
+      ],
+      "agents": [
+        "./agents/verification-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-formal",
-      "description": "Formal property verification (FPV) and logical equivalence checking (LEC)",
+      "description": "形式属性验证（FPV）与逻辑等价性检查（LEC）",
       "source": "./plugins/formal",
       "strict": true,
-      "skills": ["./skills/formal-verification"],
-      "agents": ["./agents/formal-orchestrator.md"]
+      "skills": [
+        "./skills/formal-verification"
+      ],
+      "agents": [
+        "./agents/formal-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-synthesis",
-      "description": "Logic synthesis — SDC constraints, compile optimization, netlist QC and LEC",
+      "description": "逻辑综合——SDC 约束、compile 优化、netlist QC 与 LEC",
       "source": "./plugins/synthesis",
       "strict": true,
-      "skills": ["./skills/logic-synthesis"],
-      "agents": ["./agents/synthesis-orchestrator.md"]
+      "skills": [
+        "./skills/logic-synthesis"
+      ],
+      "agents": [
+        "./agents/synthesis-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-dft",
-      "description": "Design for Test — scan insertion, ATPG, MBIST, JTAG boundary scan",
+      "description": "可测性设计——scan insertion、ATPG、MBIST 与 JTAG boundary scan",
       "source": "./plugins/dft",
       "strict": true,
-      "skills": ["./skills/dft"],
-      "agents": ["./agents/dft-orchestrator.md"]
+      "skills": [
+        "./skills/dft"
+      ],
+      "agents": [
+        "./agents/dft-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-sta",
-      "description": "Static timing analysis — multi-corner analysis, exception review, ECO guidance",
+      "description": "静态时序分析——multi-corner 分析、exception review 与 ECO guidance",
       "source": "./plugins/sta",
       "strict": true,
-      "skills": ["./skills/sta"],
-      "agents": ["./agents/sta-orchestrator.md"]
+      "skills": [
+        "./skills/sta"
+      ],
+      "agents": [
+        "./agents/sta-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-hls",
-      "description": "High-level synthesis — C/C++ to RTL, directive optimization, co-simulation",
+      "description": "高层综合——C/C++ 到 RTL、directive 优化与 co-simulation",
       "source": "./plugins/hls",
       "strict": true,
-      "skills": ["./skills/hls"],
-      "agents": ["./agents/hls-orchestrator.md"]
+      "skills": [
+        "./skills/hls"
+      ],
+      "agents": [
+        "./agents/hls-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-pd",
-      "description": "Physical design — floorplan, placement, CTS, routing, timing/power/area opt, sign-off",
+      "description": "物理设计——floorplan、placement、CTS、routing、timing/power/area 优化与 sign-off",
       "source": "./plugins/pd",
       "strict": true,
-      "skills": ["./skills/physical-design"],
-      "agents": ["./agents/physical-design-orchestrator.md"]
+      "skills": [
+        "./skills/physical-design"
+      ],
+      "agents": [
+        "./agents/physical-design-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-soc",
-      "description": "SoC IP integration — procurement, bus fabric, chip-level simulation",
+      "description": "SoC IP 集成——IP 获取、bus fabric 与 chip-level simulation",
       "source": "./plugins/soc",
       "strict": true,
-      "skills": ["./skills/soc-integration"],
-      "agents": ["./agents/soc-integration-orchestrator.md"]
+      "skills": [
+        "./skills/soc-integration"
+      ],
+      "agents": [
+        "./agents/soc-integration-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-memory-ip",
-      "description": "Memory IP design — SRAM/register-file/ROM macro selection, array architecture, redundancy and repair, view generation and QA",
+      "description": "Memory IP 设计——SRAM/Register File/ROM macro 选择、array architecture、冗余修复、view 生成与 QA",
       "source": "./plugins/memory-ip",
       "strict": true,
-      "skills": ["./skills/memory-ip-design"],
-      "agents": ["./agents/memory-ip-orchestrator.md"]
+      "skills": [
+        "./skills/memory-ip-design"
+      ],
+      "agents": [
+        "./agents/memory-ip-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-compiler",
-      "description": "Compiler toolchain — LLVM/GCC backend, assembler, linker, runtime libs for custom ISA",
+      "description": "编译器工具链——自定义 ISA 的 LLVM/GCC backend、assembler、linker 与 runtime library",
       "source": "./plugins/compiler",
       "strict": true,
-      "skills": ["./skills/compiler-toolchain"],
-      "agents": ["./agents/compiler-orchestrator.md"]
+      "skills": [
+        "./skills/compiler-toolchain"
+      ],
+      "agents": [
+        "./agents/compiler-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-firmware",
-      "description": "Embedded firmware — BSP, peripheral drivers, RTOS integration, validation",
+      "description": "嵌入式固件——BSP、外设驱动、RTOS 集成与验证",
       "source": "./plugins/firmware",
       "strict": true,
-      "skills": ["./skills/embedded-firmware"],
-      "agents": ["./agents/firmware-orchestrator.md"]
+      "skills": [
+        "./skills/embedded-firmware"
+      ],
+      "agents": [
+        "./agents/firmware-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-fpga",
-      "description": "FPGA emulation — ASIC-to-FPGA adaptation, partitioning, bring-up, SW validation",
+      "description": "FPGA 原型验证——ASIC→FPGA 适配、partition、bring-up 与软件验证",
       "source": "./plugins/fpga",
       "strict": true,
-      "skills": ["./skills/fpga-emulation"],
-      "agents": ["./agents/fpga-orchestrator.md"]
+      "skills": [
+        "./skills/fpga-emulation"
+      ],
+      "agents": [
+        "./agents/fpga-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-infrastructure",
-      "description": "EDA tool detection, output-filtering shell wrappers, MCP server config templates, and memory distillation for all chip-design domain agents",
+      "description": "EDA 工具检测、日志过滤 wrapper、MCP Server 配置模板，以及所有芯片设计领域 Agent 的 Memory 蒸馏",
       "source": "./plugins/infrastructure",
       "strict": true,
-      "skills": ["./skills/infrastructure", "./skills/memory-keeper"],
-      "agents": ["./agents/infrastructure-orchestrator.md"]
+      "skills": [
+        "./skills/infrastructure",
+        "./skills/memory-keeper"
+      ],
+      "agents": [
+        "./agents/infrastructure-orchestrator.md"
+      ]
     },
     {
       "name": "chip-design-meta",
-      "description": "Cross-domain pipeline orchestrator — drives closed-loop verification↔RTL feedback via design_state.json fix_requests, enforcing a 3-iteration cap with user escalation",
+      "description": "跨领域 Pipeline Orchestrator——通过 design_state.json fix_requests 驱动 Verification↔RTL 闭环，并在达到迭代上限时升级给用户",
       "source": "./plugins/meta",
       "strict": true,
-      "skills": ["./skills/pipeline-orchestration"],
-      "agents": ["./agents/pipeline-orchestrator.md"]
+      "skills": [
+        "./skills/pipeline-orchestration"
+      ],
+      "agents": [
+        "./agents/pipeline-orchestrator.md"
+      ]
     }
   ]
 }
