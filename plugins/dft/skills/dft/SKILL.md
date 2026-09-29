@@ -33,7 +33,7 @@ allowed-tools: Read, Write, Bash
 
 无论本 Skill 是由用户直接加载，还是由 Orchestrator 中途读取，都必须执行上述预读，以确保任何诊断前都已经查询历史修复经验。
 
-## 目的
+## Purpose（目的）
 
 指导完整 DFT 流程，从架构规划、ATPG pattern 生成、BIST 插入、JTAG 配置一直到 sign-off。
 目标是保证制造后的芯片满足故障覆盖率和 DPPM 等质量指标。
@@ -55,7 +55,7 @@ allowed-tools: Read, Write, Bash
 
 ## Stage: dft_architecture
 
-### 领域规则
+## Domain Rules（领域规则）
 1. Scan 架构：ASIC 优先 full-scan，尽可能覆盖全部 sequential element
 2. Scan chain 数量：经验值可取总 flip-flop 数的平方根，在 ATE 测试时间与布线之间权衡
 3. Chain length 平衡：所有 chain 相对目标长度偏差控制在 ±5%
@@ -72,12 +72,12 @@ allowed-tools: Read, Write, Bash
 - `scan_out[]`（SDO）：每条 chain 一个
 - `test_clk`：独立于 functional clock，或使用其 gated 版本
 
-### QoR 指标
+## QoR Metrics（QoR 指标）
 - DFT spec 完整：insertion 前已定义全部元素
 - 预计 fault coverage：解析估算 ≥ 目标
 - 预计 test time：不超过 ATE budget
 
-### 必须输出
+## Output Required（必须输出）
 - DFT architecture 文档
 - Scan chain 规划（数量、预计长度、IO）
 - Test mode 定义
