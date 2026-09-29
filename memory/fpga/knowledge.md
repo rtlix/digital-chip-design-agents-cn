@@ -1,40 +1,22 @@
-# FPGA Domain Knowledge
+# FPGA Domain Knowledge（FPGA 领域知识）
 
 ## Known Failure Patterns
 
-- **BRAM inference coding style**: Xilinx BRAM inference requires a specific coding style — the
-  read data output must be registered (synchronous read), and the reset must not be applied to
-  the output register. Designs with asynchronous BRAM reads infer LUT RAM instead, consuming
-  significantly more LUTs.
-- **DSP48 inference blocked by carry-chains**: Arithmetic trees that mix additions and subtractions
-  with intermediate carry-chains prevent DSP48 inference. Restructure to keep the full
-  multiply-accumulate within a single DSP48 primitive; use `(* use_dsp = "yes" *)` attribute
-  to force inference.
-- **Prototype frequency target**: Set the FPGA prototype frequency target to 1/3 of the ASIC
-  target to account for FPGA fabric overhead. For example, a 1 GHz ASIC target maps to ~333 MHz
-  FPGA prototype target. Document the scale factor explicitly in the sign-off report.
+- **BRAM inference coding style**：Xilinx BRAM inference 要求 synchronous read，read-data output 注册；reset 不应直接施加在输出寄存器上。Asynchronous BRAM read 往往推成 LUT RAM，显著增加 LUT。
+- **Carry-chain 阻止 DSP48 inference**：乘加树中混合 add/sub 与中间 carry-chain 会阻止 DSP48 inference。重构为完整 multiply-accumulate 落在一个 DSP48 内，可用 `(* use_dsp = "yes" *)` 强制推断。
+- **Prototype frequency target**：通常把 FPGA prototype target 设为 ASIC target 的约 1/3，以补偿 fabric overhead。例如 1 GHz ASIC 可先按约 333 MHz FPGA target 规划，并在 sign-off report 显式写 scale factor。
 
 ## Successful Tool Flags
 
-- `vivado -mode batch -source <script.tcl>` — batch mode for reproducible synthesis/P&R; use
-  `set_property STEPS.SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY none [get_runs synth_1]` to preserve
-  hierarchy for debug.
-- `nextpnr-xilinx --freq <MHz>` — always set target frequency explicitly; unconstrained nextpnr
-  runs do not optimize for timing.
-- `openFPGALoader --cable <cable> --verify` — `--verify` reads back bitstream after programming
-  to catch flash write failures.
+- `vivado -mode batch -source <script.tcl>`：用于可复现 batch synthesis/P&R；用 `set_property STEPS.SYNTH_DESIGN.ARGS.FLATTEN_HIERARCHY none [get_runs synth_1]` 保留 debug hierarchy。
+- `nextpnr-xilinx --freq <MHz>`：始终显式设置 target frequency，否则 unconstrained run 不会针对 timing 优化。
+- `openFPGALoader --cable <cable> --verify`：program 后读回 bitstream，捕获 flash write failure。
 
 ## PDK / Tool Quirks
 
-- **Vivado IP core out-of-context synthesis**: OOC synthesis must complete before top-level
-  synthesis or Vivado silently uses stale netlists. Run `synth_ip [get_ips *]` before top-level
-  `launch_runs synth_1`.
-- **nextpnr-xilinx chip database**: Requires a device-specific chip database built from
-  Project X-Ray. Ensure the database matches the exact device part number — mismatches cause
-  routing failures that appear as DRC errors.
+- **Vivado IP OOC synthesis**：top-level synthesis 前必须完成 IP out-of-context synthesis，否则可能静默使用 stale netlist。先 `synth_ip [get_ips *]`，再 `launch_runs synth_1`。
+- **nextpnr-xilinx chip database**：必须与精确 device part number 匹配；数据库不匹配会表现为类似 DRC 的 routing failure。
 
 ## Notes
 
-- All performance measurements on the FPGA prototype must be recorded at prototype frequency
-  with the ASIC scale factor noted. Reporting FPGA MHz directly as a performance number
-  without the scale factor is misleading.
+- FPGA prototype 上所有 performance 数值都必须记录 prototype frequency，并注明 ASIC scale factor；只报告 FPGA MHz 而不写 scale factor 会误导。
