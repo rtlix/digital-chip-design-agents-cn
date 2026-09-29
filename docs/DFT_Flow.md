@@ -1,11 +1,11 @@
-# Design for Test (DFT) Flow — Full Architecture Design
-## Orchestrator + Stage Agents + Skills
+# 可测性设计（DFT）流程——完整架构设计
+## Orchestrator + Stage Agent + Skill
 
-> **Purpose**: AI-driven DFT flow covering scan insertion, ATPG, BIST, JTAG/boundary scan, and DFT sign-off. Ensures the manufactured chip is fully testable and meets quality targets (DPPM, fault coverage).
+> **目的**：由 AI 驱动完整 DFT 流程，包括 scan insertion、ATPG、BIST、JTAG/boundary scan 以及 DFT sign-off。确保制造出来的芯片具备完整可测试性，并满足 DPPM、fault coverage 等质量目标。
 
 ---
 
-## 1. Shared State Object
+## 1. 共享状态对象
 
 ```json
 {
@@ -38,65 +38,77 @@
 ## 2. Stage Sequence
 
 ```
-[DFT Architecture] ──► [Scan Insertion] ──► [ATPG]
-                              ▲                 │ coverage < target
-                              └─────────────────┘
-                                                │ coverage met
-                         [BIST Insertion] ──► [JTAG Setup]
-                                                │
-                                         [DFT Sign-off]
-                                                │ fail → Scan Insertion
-                                                ▼ pass → Tape-out Ready
+[DFT Architecture]
+        │
+        ▼
+[Scan Insertion] ───────┐
+        │                │
+        ▼                │
+      [ATPG]             │
+        │ coverage < target
+        └────────────────┘
+        │ coverage met
+        ▼
+[BIST Insertion]
+        │
+        ▼
+[JTAG Setup]
+        │
+        ▼
+[DFT Sign-off]
+        │
+        ├─ fail → Scan Insertion / 对应失败 stage
+        └─ pass → Tape-out Ready
 ```
 
 ### Loop-Back Rules
 
-| Failure                                   | Loop Back To    | Max |
-|-------------------------------------------|-----------------|-----|
-| Fault coverage < target after ATPG        | Scan Insertion  | 2   |
-| Scan chain length imbalance > 20%         | Scan Insertion  | 2   |
-| DFT sign-off: missing JTAG connectivity   | JTAG Setup      | 2   |
-| DFT sign-off: BIST failure               | BIST Insertion  | 2   |
+| Failure | Loop Back To | Max |
+|---|---|---:|
+| ATPG 后 fault coverage < target | Scan Insertion | 2 |
+| Scan chain length imbalance > 20% | Scan Insertion | 2 |
+| DFT sign-off 缺失 JTAG connectivity | JTAG Setup | 2 |
+| DFT sign-off BIST failure | BIST Insertion | 2 |
 
 ---
 
-## 3. Skill File Specifications
+## 3. Skill 文件规格
 
 ### 3.1 `sv-dft-architecture/SKILL.md`
 
 ```markdown
-# Skill: DFT — Architecture Planning
+# Skill: DFT — Architecture Planning（架构规划）
 
 ## Purpose
-Define the complete DFT strategy before any DFT insertion begins.
+在进行任何 DFT insertion 之前定义完整 DFT 策略。
 
 ## DFT Strategy Elements
-1. Scan architecture: full-scan vs partial-scan decision
-2. Scan chain count: balance test time vs routing overhead
-   - Rule of thumb: sqrt(total flip-flops) chains
-3. Scan chain length: equal length balancing (± 5%)
-4. Compression: EDT/OPMISR for large designs (> 1M FFs)
-5. BIST: MBIST for all embedded SRAMs; LBIST for logic (optional)
-6. JTAG: IEEE 1149.1 TAP controller; boundary scan for IO test
-7. At-speed test: launch-on-capture (LOC) or launch-on-shift (LOS)
-8. Test modes: scan_mode, mbist_mode, jtag_mode (exclusive)
-9. Power domain consideration: scan must respect UPF power domains
+1. Scan 架构：full-scan 与 partial-scan 决策
+2. Scan chain 数：在 test time 与 routing overhead 之间权衡
+   - 经验值：chain 数约为总 flip-flop 数的平方根
+3. Scan chain length：等长平衡，目标 ±5%
+4. Compression：大设计（>1M FF）使用 EDT/OPMISR
+5. BIST：所有 embedded SRAM 使用 MBIST；logic 可选 LBIST
+6. JTAG：IEEE 1149.1 TAP controller；IO test 使用 boundary scan
+7. At-speed test：LOC（launch-on-capture）或 LOS（launch-on-shift）
+8. Test mode：scan_mode、mbist_mode、jtag_mode，必须互斥
+9. Power domain：scan 架构必须遵守 UPF power-domain 边界
 
 ## DFT Constraints
-- Scan enable (SE): primary input, must be controllable
-- Scan data in (SDI): one per chain
-- Scan data out (SDO): one per chain
-- Test clock: separate from functional clock (or gated)
+- Scan enable (SE)：primary input，ATE 必须可控
+- Scan data in (SDI)：每条 chain 一个
+- Scan data out (SDO)：每条 chain 一个
+- Test clock：独立于 functional clock，或使用其 gated 版本
 
 ## QoR Metrics
-- DFT spec completeness: all elements defined
-- Estimated fault coverage: analytical pre-insertion estimate
-- Estimated test time: within ATE budget
+- DFT spec completeness：全部元素都已定义
+- Estimated fault coverage：insertion 前 analytical estimate
+- Estimated test time：满足 ATE budget
 
 ## Output Required
-- DFT architecture document
-- Scan chain plan (count, estimated length, IOs)
-- Test mode definitions
+- DFT architecture 文档
+- Scan chain plan（数量、预计长度、IO）
+- Test mode 定义
 ```
 
 ---
@@ -107,29 +119,29 @@ Define the complete DFT strategy before any DFT insertion begins.
 # Skill: DFT — Scan Insertion
 
 ## Purpose
-Insert scan flip-flops and connect scan chains into the gate-level netlist.
+将普通 flip-flop 替换为 scan flip-flop，并在 gate-level netlist 中连接 scan chain。
 
 ## Domain Rules
-1. Replace all standard FFs with scan-equivalent cells (SDFF, SDFFRQ, etc.)
-2. Avoid scan in: clock gating enables, async set/reset paths (without care)
-3. Exclude from scan: memory-mapped registers, MBIST controllers, JTAG cells
-4. Balance chain lengths: longest chain = test time bottleneck
-5. EDT compression: insert compressor/decompressor if > 100K FFs
-6. Lockup latches: insert between chains crossing clock domains
-7. Scan re-order: minimize routing wirelength (place-aware reordering)
-8. Test point insertion: controllability/observability points for low-coverage nets
+1. 所有普通 FF 替换为对应 scan cell（SDFF、SDFFRQ 等）
+2. Clock-gating enable、async set/reset path（无专用 care cell 时）避免直接插 scan
+3. 从 scan 中排除 memory-mapped register、MBIST controller、JTAG cell
+4. 平衡 chain length；最长 chain 决定 test time bottleneck
+5. FF >100K 时考虑 EDT compressor/decompressor
+6. 跨 clock-domain chain 插入 lockup latch
+7. Scan reorder 以最小 routing wirelength 为目标，优先 placement-aware reorder
+8. 低覆盖率 net 可插入 controllability/observability test point
 
-## Scan DRC Rules (must pass)
-- No clock feeds into scan data path
-- No combinational feedback loops through scan
-- Scan enable is glitch-free during functional mode
-- All scan FFs have proper SI/SE connections
+## Scan DRC Rules
+- Clock 不得进入 scan data path
+- Scan path 中不得出现 combinational feedback loop
+- Functional mode 下 scan enable 必须 glitch-free
+- 所有 scan FF 的 SI/SE 连接正确
 
 ## QoR Metrics
-- Scan FF count: N (target: 100% of sequential elements, minus exclusions)
-- Chain count: per architecture spec
-- Chain length balance: ± 5% of target
-- Scan DRC: 0 errors
+- Scan FF count：除明确排除项外覆盖全部 sequential element
+- Chain count：符合架构规格
+- Chain length balance：目标 ±5%
+- Scan DRC：0 error
 
 ## Output Required
 - Scan-inserted netlist
@@ -142,40 +154,39 @@ Insert scan flip-flops and connect scan chains into the gate-level netlist.
 ### 3.3 `sv-dft-atpg/SKILL.md`
 
 ```markdown
-# Skill: DFT — ATPG (Automatic Test Pattern Generation)
+# Skill: DFT — ATPG（Automatic Test Pattern Generation）
 
 ## Purpose
-Generate test patterns that achieve target fault coverage and
-produce a test program for ATE.
+生成达到目标 fault coverage 的 test pattern，并形成可交付 ATE 的测试程序。
 
 ## Fault Models
-| Fault Model      | Description                          | Target Coverage |
-|------------------|--------------------------------------|-----------------|
-| Stuck-at (SAF)   | Net stuck at 0 or 1                  | ≥ 99%           |
-| Transition Delay | Slow-to-rise / slow-to-fall          | ≥ 95%           |
-| Path Delay       | Timing faults on critical paths      | Critical paths  |
-| Bridging         | Two nets shorted together            | ≥ 90%           |
-| Cell-Aware       | Intra-cell defects (PDK-based)       | ≥ 95%           |
+| Fault Model | 说明 | Target Coverage |
+|---|---|---:|
+| Stuck-at (SAF) | Net stuck at 0/1 | ≥99% |
+| Transition Delay | Slow-to-rise / slow-to-fall | ≥95% |
+| Path Delay | Critical path timing fault | Critical paths |
+| Bridging | 两条 net 短路 | ≥90% |
+| Cell-Aware | Cell 内部 defect（PDK-based） | ≥95% |
 
 ## ATPG Domain Rules
-1. Run ATPG at multiple capture clocks (slow/fast)
-2. X-bounding: improve pattern quality with X-pessimism reduction
-3. Abort limit: set per tool (patterns per fault target)
-4. Untestable faults: classify as Redundant or ATPG-Untestable; document
-5. Pattern compression: use compressed patterns for EDT designs
-6. At-speed patterns: verify with STA that launch/capture timing is met
-7. Simulate patterns: verify 0 good-machine simulation failures
+1. 使用多个 capture clock 运行 ATPG
+2. 使用 X-bounding 改善 pattern quality
+3. 配置合理 abort limit
+4. Untestable fault 分类为 Redundant 或 ATPG-Untestable，并记录
+5. EDT design 使用 compressed pattern
+6. At-speed pattern 由 STA 确认 launch/capture timing
+7. Good-machine simulation failure 必须为 0
 
 ## QoR Metrics
-- SAF coverage: ≥ 99%
-- Transition coverage: ≥ 95%
-- Pattern count: minimized (ATE time = cost)
-- Good-machine simulation: 0 failures
+- SAF coverage ≥99%
+- Transition coverage ≥95%
+- Pattern count 尽可能少，降低 ATE cost
+- Good-machine simulation：0 failure
 
 ## Output Required
-- Test pattern file (STIL or WGL format)
-- Fault report (coverage per model)
-- Untestable fault list with classification
+- STIL/WGL test pattern
+- 各 fault model coverage report
+- Untestable fault list + classification
 ```
 
 ---
@@ -183,31 +194,30 @@ produce a test program for ATE.
 ### 3.4 `sv-dft-bist/SKILL.md`
 
 ```markdown
-# Skill: DFT — BIST (Built-In Self Test)
+# Skill: DFT — BIST（Built-In Self Test）
 
 ## Purpose
-Insert and verify MBIST controllers for embedded memories
-and optionally LBIST for logic self-test.
+为 embedded memory 插入并验证 MBIST controller，并按需对 logic 实施 LBIST。
 
 ## MBIST Rules
-1. One MBIST controller per memory group (same width/depth class)
-2. March algorithms: MATS+, March-C, or algorithm per quality target
-3. MBIST must cover: stuck-at, transition, coupling faults in SRAM
-4. MBIST isolation: memories disconnected from logic during BIST
-5. MBIST power: verify IR drop during simultaneous BIST (all memories)
-6. MBIST access: via JTAG TAP or dedicated BIST port
+1. 相同 width/depth class 的 memory group 共用一个 MBIST controller
+2. 使用 MATS+、March-C 或质量规范指定的 March algorithm
+3. 覆盖 SRAM stuck-at、transition、coupling fault
+4. BIST 期间 memory 与 functional logic 隔离
+5. 所有 memory 同时 BIST 时验证 IR drop
+6. 通过 JTAG TAP 或 dedicated BIST port 访问
 
-## LBIST Rules (if applicable)
-1. STUMPS architecture: PRPG + MISR + scan chains
-2. Alias probability: target < 1e-10
-3. LBIST clock: separate from functional (usually divided)
-4. Exclude: analog, IO, and hard-macro internals
+## LBIST Rules
+1. STUMPS：PRPG + MISR + scan chain
+2. Alias probability <1e-10
+3. LBIST clock 与 functional clock 分离
+4. 排除 analog、IO 与 hard-macro internals
 
 ## QoR Metrics
-- MBIST: all memory instances covered
-- MBIST fault coverage: ≥ 99% for target fault models
-- BIST power: within IR drop budget during test
-- LBIST (if used): alias probability within target
+- 所有 memory instance 均被 MBIST 覆盖
+- MBIST fault coverage ≥99%
+- Test power 满足 IR-drop budget
+- LBIST alias probability 满足目标
 
 ## Output Required
 - BIST-inserted netlist
@@ -224,28 +234,27 @@ and optionally LBIST for logic self-test.
 # Skill: DFT — JTAG and Boundary Scan
 
 ## Purpose
-Implement IEEE 1149.1 TAP controller and boundary scan for
-chip-level interconnect test and debug access.
+实现 IEEE 1149.1 TAP controller 与 boundary scan，用于 chip-level interconnect test 和 debug access。
 
 ## Domain Rules
-1. TAP signals: TCK, TMS, TDI, TDO, TRST_N — dedicated pins required
-2. Boundary scan cells: all digital IO pins must have BSR cells
-3. Instructions: BYPASS, IDCODE, SAMPLE/PRELOAD, EXTEST at minimum
-4. IDCODE register: 32-bit, unique per device per IEEE 1149.1
-5. DR chain: boundary scan register → BYPASS → user registers
-6. Isolation: TAP must be accessible when core is in reset
-7. IEEE 1149.7: optional Compact JTAG (2-pin) for pin-limited designs
-8. Security: JTAG lockout mechanism for production (OTP/fuse based)
+1. TAP：TCK、TMS、TDI、TDO、TRST_N，需要 dedicated pin
+2. 所有 digital IO pin 必须有 boundary-scan cell
+3. 最少实现 BYPASS、IDCODE、SAMPLE/PRELOAD、EXTEST
+4. IDCODE：32 bit，每个 device 唯一，符合 IEEE 1149.1
+5. DR chain：boundary-scan register → BYPASS → user register
+6. Core reset 时 TAP 仍应可访问
+7. Pin 受限设计可选 IEEE 1149.7 Compact JTAG
+8. Production 提供 OTP/fuse-based JTAG lockout
 
 ## QoR Metrics
-- TAP DRC: all required instructions implemented
-- Boundary scan chain: all IOs included
-- JTAG connectivity test: passes in simulation
-- IDCODE: unique and correctly programmed
+- TAP DRC：全部必需 instruction 已实现
+- Boundary scan chain：覆盖所有 IO
+- JTAG connectivity simulation：PASS
+- IDCODE：唯一且编程正确
 
 ## Output Required
 - JTAG-inserted netlist
-- BSDL file (Boundary Scan Description Language)
+- BSDL file
 - TAP connectivity report
 ```
 
@@ -253,22 +262,22 @@ chip-level interconnect test and debug access.
 
 ## 4. Orchestrator System Prompt
 
-```
-You are the DFT Orchestrator.
+```text
+你是 DFT Orchestrator。
 
-You manage the complete DFT insertion flow from architecture
-through ATPG pattern generation and DFT sign-off.
+你负责从 DFT architecture、scan insertion 到 ATPG pattern generation 和 DFT sign-off
+的完整流程。
 
 STAGE SEQUENCE:
   dft_architecture → scan_insertion → atpg →
   bist_insertion → jtag_setup → dft_signoff
 
 LOOP-BACK RULES:
-  - atpg: SAF coverage < 99%          → scan_insertion (add test points) (max 2x)
-  - scan_insertion: DRC fail           → scan_insertion (max 3x)
-  - dft_signoff: BIST fail             → bist_insertion (max 2x)
-  - dft_signoff: JTAG connectivity     → jtag_setup (max 2x)
+  - atpg: SAF coverage < 99%      → scan_insertion（增加 test point，最多 2×）
+  - scan_insertion: DRC fail      → scan_insertion（最多 3×）
+  - dft_signoff: BIST fail        → bist_insertion（最多 2×）
+  - dft_signoff: JTAG connectivity→ jtag_setup（最多 2×）
 
-Track fault_coverage in state_object.fault_coverage.
-Do not proceed to dft_signoff until SAF coverage ≥ target.
+在 state_object.fault_coverage 中持续跟踪 fault coverage。
+SAF coverage 未达到 target 前，不得进入 dft_signoff。
 ```
