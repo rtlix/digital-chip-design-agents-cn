@@ -1,47 +1,47 @@
-## 📌 Description
-Brief summary of the changes.
+## 📌 说明
+请简要概述本次修改。
 
-## 🔗 Related Issue
-Closes # (if applicable)
+## 🔗 相关 Issue
+Closes #（如适用）
 
-## 🧪 Type of Change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Improvement / refactor
-- [ ] Documentation update
+## 🧪 变更类型
+- [ ] Bug 修复
+- [ ] 新功能
+- [ ] 改进 / 重构
+- [ ] 文档更新
 
-## 🧠 What Changed?
+## 🧠 修改内容
 - 
 - 
 - 
 
-## 🔄 Affected Areas
-- [ ] Agent logic
-- [ ] Workflow orchestration
-- [ ] Scripts / tooling
-- [ ] Documentation
-- [ ] Other:
+## 🔄 影响范围
+- [ ] Agent 逻辑
+- [ ] Workflow 编排
+- [ ] 脚本 / 工具
+- [ ] 文档
+- [ ] 其他：
 
-## ⚙️ How to Test
-Provide a clear way to validate this PR:
+## ⚙️ 如何测试
+请提供清晰的 PR 验证方法：
 
 1. 
 2. 
 3. 
 
-## 📦 Outputs / Results
-Describe any generated outputs or observable changes:
+## 📦 输出 / 结果
+请描述生成的输出或可观察到的变化：
 - 
 - 
 
-## ⚠️ Risks / Notes
-Any known limitations, edge cases, or concerns
+## ⚠️ 风险 / 备注
+已知限制、边界情况或其他注意事项
 
-## ✅ Checklist
-- [ ] Changes are scoped and minimal
-- [ ] Verified functionality manually or via tests
-- [ ] Documentation updated (if needed)
-- [ ] No breaking changes (or clearly documented)
+## ✅ 检查清单
+- [ ] 修改范围清晰且尽量最小
+- [ ] 已手工或通过自动测试验证功能
+- [ ] 已更新相关文档（如需要）
+- [ ] 没有破坏性变更（或已明确记录）
 
-## 📎 Additional Context
-Anything reviewers should know
+## 📎 其他上下文
+评审人员需要了解的其他信息
