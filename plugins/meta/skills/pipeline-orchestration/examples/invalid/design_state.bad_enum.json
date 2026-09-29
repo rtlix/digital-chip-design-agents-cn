@@ -1,8 +1,10 @@
 {
-  "_comment": "NEGATIVE fixture — intentionally invalid. The schema MUST reject it. Two seeded faults: (1) history[0].retry_strategy 'regenerate' violates the timing->refine map; (2) fix_requests[0].status 'in_progress' is not an allowed status enum.",
+  "_comment": "负向 fixture——故意保持无效，schema 必须拒绝。预置两个错误：(1) history[0].retry_strategy='regenerate' 违反 timing→refine 映射；(2) fix_requests[0].status='in_progress' 不属于允许的 status enum。",
   "format_version": "1.5",
   "design_name": "invalid_example",
-  "pipeline_config": { "max_cross_domain_iterations": 3 },
+  "pipeline_config": {
+    "max_cross_domain_iterations": 3
+  },
   "fix_requests": [
     {
       "id": "fr_bad_001",
@@ -20,11 +22,14 @@
         "module": "mac_unit",
         "signal": "acc_reg",
         "file": "rtl/mac_unit.sv",
-        "line_range": [45, 52]
+        "line_range": [
+          45,
+          52
+        ]
       },
-      "summary": "Accumulator overflows silently",
-      "expected_behavior": "Saturate at MAX_VAL on overflow",
-      "observed_behavior": "acc_reg wraps to 0",
+      "summary": "Accumulator 静默溢出",
+      "expected_behavior": "溢出时应饱和到 MAX_VAL",
+      "observed_behavior": "acc_reg 回绕为 0",
       "session_id": "ps_bad",
       "status": "in_progress",
       "rtl_response": null,
@@ -41,7 +46,7 @@
       "failure_class": "timing",
       "retry_strategy": "regenerate",
       "suggested_next_step": "loop_back_to:rtl_coding",
-      "reason": "seeded fault: retry_strategy should be 'refine' for timing"
+      "reason": "预置错误：timing failure 的 retry_strategy 应为 'refine'"
     }
   ]
 }
