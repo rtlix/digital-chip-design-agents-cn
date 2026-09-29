@@ -1,11 +1,18 @@
 {
   "name": "chip-design-firmware",
   "version": "1.2.0",
-  "description": "Embedded firmware — BSP, peripheral drivers, RTOS integration, validation",
-  "author": { "name": "chuanseng-ng", "url": "https://github.com/chuanseng-ng" },
+  "description": "嵌入式固件——BSP、外设驱动、RTOS 集成与验证",
+  "author": {
+    "name": "chuanseng-ng",
+    "url": "https://github.com/chuanseng-ng"
+  },
   "homepage": "https://github.com/chuanseng-ng/digital-chip-design-agents",
   "repository": "https://github.com/chuanseng-ng/digital-chip-design-agents",
   "license": "MIT",
-  "skills": ["./skills/embedded-firmware"],
-  "agents": ["./agents/firmware-orchestrator.md"]
+  "skills": [
+    "./skills/embedded-firmware"
+  ],
+  "agents": [
+    "./agents/firmware-orchestrator.md"
+  ]
 }
