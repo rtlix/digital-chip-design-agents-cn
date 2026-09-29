@@ -1,186 +1,163 @@
 ---
 name: infrastructure
 description: >
-  EDA tool detection, wrapper deployment, and MCP configuration for digital chip
-  design environments. Use when setting up a new workstation, verifying tool
-  availability before a domain flow, or generating per-tool install scripts with
-  TCL modulefiles.
+  数字芯片设计环境的 EDA 工具检测、wrapper 部署和 MCP 配置。
+  适用于配置新工作站、在领域流程开始前验证工具可用性，
+  或为缺失工具生成带 TCL modulefile 的独立安装脚本。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: Infrastructure Setup
+# Skill: Infrastructure Setup（基础设施配置）
 
 ## Invocation
+- **用户直接提出环境配置任务**：立即启动
+  `digital-chip-design-agents:infrastructure-orchestrator`，传入完整请求与上下文，不直接执行 stage。
+- **由 infrastructure-orchestrator 中途调用**：不要再次启动 Agent；本文件作为只读规则库，
+  返回所需 stage rule、sign-off criteria 或 loop-back guidance。
 
-- **If invoked by a user** presenting a setup task: immediately spawn the
-  `digital-chip-design-agents:infrastructure-orchestrator` agent and pass the full
-  user request and any available context. Do not execute stages directly.
-- **If invoked by the `infrastructure-orchestrator` mid-flow**: do not spawn a new
-  agent. Treat this file as read-only — return the requested stage rules,
-  sign-off criteria, or loop-back guidance to the calling orchestrator.
-
-Spawning the orchestrator from within an active orchestrator run causes recursive
-delegation and must never happen.
+在活跃 Orchestrator 内再次启动自身会造成递归委派，必须禁止。
 
 ## Purpose
-Detect open-source and proprietary EDA tools, generate an installation script for
-missing tools, deploy output-filtering shell wrappers that emit compact JSON instead
-of raw 10,000–50,000-line logs, configure MCP server templates, and validate the
-complete environment before any domain orchestrator begins work.
+检测开源/商业 EDA 工具，为缺失工具生成安装脚本，部署输出过滤 wrapper，
+把原始 10,000–50,000 行日志压缩为结构化 JSON，配置 MCP server template，
+并在任何下游 domain Orchestrator 开始前验证完整环境。
 
 ---
 
 ## Supported EDA Tools
 
 ### Open-Source
-- **Verilator** (`verilator`) — fast RTL simulator and linter
-- **Slang** (`slang`) — SystemVerilog compiler and language server
-- **Surelog** (`surelog`) — SystemVerilog pre-processor and parser
-- **sv2v** (`sv2v`) — SystemVerilog to Verilog converter
+- **Verilator** (`verilator`) — RTL 仿真/lint
+- **Slang** (`slang`) — SystemVerilog compiler/language server
+- **Surelog** (`surelog`) — SystemVerilog preprocess/parser
+- **sv2v** (`sv2v`) — SystemVerilog→Verilog
 - **Icarus Verilog** (`iverilog`) — Verilog simulator
-- **Yosys** (`yosys`) — open synthesis framework
-- **ABC** (`abc`) — logic synthesis and verification tool
-- **OpenROAD** (`openroad`) — RTL-to-GDS flow
-- **LibreLane / OpenLane2** (`openlane`) — open-source ASIC flow
-- **KLayout** (`klayout`) — GDS/OASIS viewer and DRC engine
-- **OpenSTA** (`sta`) — gate-level static timing analysis
-- **SymbiYosys** (`sby`) — formal hardware verification
-- **gem5** (`gem5`) — full-system micro-architectural simulator
-- **Bambu HLS** (`bambu-hls`) — high-level synthesis from C/C++
-- **nextpnr** (`nextpnr`) — FPGA place-and-route
-- **openFPGALoader** (`openFPGALoader`) — FPGA programming tool
-- **cocotb** (Python package `cocotb`) — Python-based RTL co-simulation
-- **LLVM** (`llvm-config`) — compiler infrastructure
-- **GCC** (`gcc`) — GNU compiler collection
-- **OpenOCD** (`openocd`) — on-chip debugger
-- **xschem** (`xschem`) — schematic capture and simulation netlist tool
-- **GTKWave** (`gtkwave`) — waveform viewer for VCD/FST simulation output
-- **uv** (`uv`) — fast Python package and project manager (required for cocotb installs)
+- **Yosys** (`yosys`) — 开源综合
+- **ABC** (`abc`) — logic synthesis/verification
+- **OpenROAD** (`openroad`) — RTL-to-GDS
+- **LibreLane / OpenLane2** (`openlane`) — 开源 ASIC flow
+- **KLayout** (`klayout`) — GDS/OASIS viewer + DRC
+- **OpenSTA** (`sta`) — gate-level STA
+- **SymbiYosys** (`sby`) — formal verification
+- **gem5** (`gem5`) — full-system microarchitecture simulation
+- **Bambu HLS** (`bambu-hls`) — C/C++ HLS
+- **nextpnr** (`nextpnr`) — FPGA P&R
+- **openFPGALoader** (`openFPGALoader`) — FPGA programming
+- **cocotb** — Python RTL co-sim
+- **LLVM** (`llvm-config`)
+- **GCC** (`gcc`)
+- **OpenOCD** (`openocd`)
+- **xschem** (`xschem`)
+- **GTKWave** (`gtkwave`)
+- **uv** (`uv`) — Python package/project manager，cocotb 安装使用
 
-### Proprietary (detect only — never install)
-- **Synopsys VCS** (`vcs`) — industry-standard RTL simulator
-- **Cadence Xcelium** (`xrun`, alt: `xmsim`) — next-generation simulation platform
-- **Synopsys Design Compiler** (`dc_shell`, alt: `dc_shell-t`) — logic synthesis
-- **Cadence Innovus** (`innovus`) — physical implementation
-- **Mentor QuestaSim** (`vsim`, alt: `questa`, `questasim`) — advanced simulation and verification
-- **Synopsys PrimeTime** (`pt_shell`, alt: `pt_shell64`) — sign-off static timing analysis
-- **Synopsys Formality** (`formality`, alt: `fm_shell`) — formal equivalence checking
+### Proprietary（只检测，绝不自动安装）
+- Synopsys VCS (`vcs`)
+- Cadence Xcelium (`xrun`, alt: `xmsim`)
+- Synopsys Design Compiler (`dc_shell`, alt: `dc_shell-t`)
+- Cadence Innovus (`innovus`)
+- Mentor QuestaSim (`vsim`, alt: `questa`, `questasim`)
+- Synopsys PrimeTime (`pt_shell`, alt: `pt_shell64`)
+- Synopsys Formality (`formality`, alt: `fm_shell`)
 
 ---
 
 ## MCP Architecture — Two Tiers
 
-### Tier 1: Batch MCP servers (short, self-contained runs)
-Use these for tools whose output fits inside a single request/response cycle (seconds to
-a few minutes).  Each call spawns the wrapper script, captures its compact JSON output,
-and returns it.
+### Tier 1: Batch MCP servers（短、单次运行）
+适用于几秒到几分钟的工具。每次调用启动 wrapper、捕获 compact JSON 后返回。
 
-| MCP config | Tool | Typical duration |
-|------------|------|-----------------|
-| `mcp-yosys.json` | Yosys synthesis | seconds–minutes |
-| `mcp-openroad.json` | Single OpenROAD stage | minutes |
-| `mcp-opensta.json` | OpenSTA batch report | seconds–minutes |
-| `mcp-klayout.json` | KLayout DRC/LVS | minutes |
-| `mcp-verilator.json` | Verilator lint or sim | seconds–minutes |
-| `mcp-bambu.json` | Bambu HLS synthesis | minutes |
-| `mcp-gem5.json` | gem5 short benchmark run | minutes (set TOOL_TIMEOUT_S) |
-| `mcp-symbiflow.json` | SymbiYosys bounded proof | minutes–hours (set TOOL_TIMEOUT_S) |
+| MCP config | Tool | 典型时长 |
+|---|---|---|
+| `mcp-yosys.json` | Yosys synthesis | 秒–分钟 |
+| `mcp-openroad.json` | 单个 OpenROAD stage | 分钟 |
+| `mcp-opensta.json` | OpenSTA batch report | 秒–分钟 |
+| `mcp-klayout.json` | KLayout DRC/LVS | 分钟 |
+| `mcp-verilator.json` | Verilator lint/sim | 秒–分钟 |
+| `mcp-bambu.json` | Bambu HLS | 分钟 |
+| `mcp-gem5.json` | gem5 short benchmark | 分钟，设置 TOOL_TIMEOUT_S |
+| `mcp-symbiflow.json` | SymbiYosys bounded proof | 分钟–小时 |
 
-The adapter is `plugins/infrastructure/tools/mcp-adapter.py`.
+Adapter：`plugins/infrastructure/tools/mcp-adapter.py`。
 
-### Tier 2: Interactive session MCP servers (stateful, query-based)
-Use these when an agent iterates many times over an already-loaded design (e.g. ECO timing
-loops).  The process stays alive between calls — no re-loading per query.
+### Tier 2: Interactive session MCP servers（有状态）
+适用于 Agent 对已加载 design 反复查询，例如 ECO timing loop。进程跨调用保持，不重复 load design。
 
-| MCP config | Tool | Exposed tools |
-|------------|------|---------------|
+| MCP config | Tool | 暴露工具 |
+|---|---|---|
 | `mcp-openroad-session.json` | OpenROAD Tcl session | `load_design`, `query_timing`, `query_drc`, `get_design_area`, `get_power`, `run_tcl`, `close_design` |
 | `mcp-opensta-session.json` | OpenSTA Tcl session | `load_design`, `report_timing`, `report_slack_histogram`, `check_timing`, `run_tcl`, `close_design` |
 
-The adapter is `plugins/infrastructure/tools/mcp-session-adapter.py`.
+Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 
-### Full-flow tools — do NOT use MCP
-These tools run for 30 min–2+ hours and produce structured output files on disk.
-Agents must launch them via Bash and read the output files directly.
+### Full-flow tools — 不使用 MCP
+以下工具常运行 30 分钟到数小时，并在磁盘生成结构化文件。Agent 应通过 Bash 启动，再直接读取结果文件。
 
-| Tool | Launch command | Read these files |
-|------|---------------|-----------------|
+| Tool | Launch command | 读取文件 |
+|---|---|---|
 | LibreLane / OpenLane 2 | `openlane config.json` | `runs/<design>/<tag>/metrics.json` |
 | ORFS / OpenROAD Flow Scripts | `make DESIGN_CONFIG=... finish` | `reports/<platform>/<design>/metrics.json` |
-| gem5 full-system simulation | `gem5 config.py ...` | `m5out/stats.txt`, `m5out/simout` |
+| gem5 full-system | `gem5 config.py ...` | `m5out/stats.txt`, `m5out/simout` |
 
-### Execution Hierarchy (per domain agent)
-1. **Tier 2 session MCP** — if the tool supports a session and the design is already loaded
-2. **Tier 1 batch MCP** — if the tool has a batch MCP server configured
-3. **Wrapper script** — if MCP is not configured; wrapper emits compact JSON
-4. **Direct execution** — last resort; raw logs consume significant context
+### Execution Hierarchy
+1. Tier 2 session MCP：工具支持 session 且 design 已加载
+2. Tier 1 batch MCP：配置了 batch MCP
+3. Wrapper script：MCP 未配置时，返回 compact JSON
+4. Direct execution：最后手段，raw log 很耗 context
 
-Domain agents must check whether the relevant MCP server is active in `.claude/settings.json`
-before falling back to the wrapper or direct execution.
+下游 Agent 必须先检查 `.claude/settings.json` 是否启用相关 MCP，再 fallback。
 
 ---
 
 ## Stage: tool_discovery
 
 ### Domain Rules
-1. Run `which <command>` and `<command> --version` (or `-version`) for every open-source tool
-2. **Python interpreter detection** — run once at the start of tool_discovery, before checking any Python packages. Detection order (first match wins):
+1. 对每个开源工具执行 `which <command>` 和 `<command> --version`（或 `-version`）。
+2. **Python interpreter detection** 在任何 Python package 检查前只执行一次，first match wins。
 
-   **Step A — Module system probe (runs before PATH check)**:
-   a. Check if a module system is available: test `$MODULESHOME` is set OR `modulecmd` exists in PATH.
-   b. If a module system is available, run `module avail 2>&1` and search for entries matching `python` or `python3` (case-insensitive).
-   c. If one or more Python module entries are found: select the latest version (highest semver/lexicographic), load it via `module load <python-module>`, then run `which python3` to resolve `PYTHON_EXEC`. Set `python_env.type = "module"` and record `python_env.module_name` with the loaded module name. **Keep the module loaded for the entire orchestrator run** — do not unload it; subsequent stages (tool_installation, wrapper_deployment, environment_validation) all depend on `PYTHON_EXEC` being resolvable. The generated `load-modules.sh` handles persistent loading for future shell sessions.
-   d. If no module system is available, or no Python module entries are found: proceed to Step B.
+   **Step A — Module system probe（优先于 PATH）**
+   a. 检查 `$MODULESHOME` 或 PATH 中 `modulecmd`。
+   b. 若存在 module system，运行 `module avail 2>&1`，大小写不敏感搜索 `python/python3`。
+   c. 若有 Python module，选最新版本，`module load <python-module>` 后运行 `which python3` 得到 `PYTHON_EXEC`；
+      设置 `python_env.type="module"`，记录 `module_name`，并在整个 Orchestrator run 中保持 module 已加载。
+   d. 没有 module system/Python module 时进入 Step B。
 
-   **Step B — PATH-based fallback**:
-   e. Run `which python3` to get the interpreter path; store as `PYTHON_EXEC`.
-   f. If `which python3` fails or returns empty: record `python3` as `MISSING` in `tool-status.json` and FAIL immediately (required for all wrapper scripts and Python packages).
-   g. Classify the interpreter:
-      - `system` → `PYTHON_EXEC` == `/usr/bin/python3`
-      - `custom` → any other path (pyenv, conda, virtualenv, custom prefix, etc.)
+   **Step B — PATH fallback**
+   e. `which python3`，保存为 `PYTHON_EXEC`。
+   f. 找不到则在 `tool-status.json` 把 python3 记为 `MISSING` 并立即 FAIL；所有 wrapper/Python package 都依赖它。
+   g. 分类：
+      - `system`：`PYTHON_EXEC == /usr/bin/python3`
+      - `custom`：其他路径（pyenv/conda/venv/custom prefix）
 
-   **Step C — Finalize**:
-   h. Set `PYTHON_BIN_DIR = $(dirname "$PYTHON_EXEC")` regardless of how `PYTHON_EXEC` was resolved.
-   i. Record under a top-level key `python_env` in `tool-status.json`:
-      ```json
-      {
-        "python_env": {
-          "exec": "<absolute path>",
-          "type": "module | system | custom",
-          "bin_dir": "<absolute dir>",
-          "module_name": "<module name, or null if not module-based>"
-        }
-      }
-      ```
-   j. Capture `"$PYTHON_EXEC" --version` and store it as a regular entry in the `tools` array (with `"tool": "python3"`, `"command": "python3"`, `"status": "FOUND"`, `"version": "<output>"`, `"path": "<PYTHON_EXEC>"`). This makes `python3` visible to `module_discovery` for module-status upgrades (`FOUND_PREFER_MODULE`).
+   **Step C — Finalize**
+   h. `PYTHON_BIN_DIR=$(dirname "$PYTHON_EXEC")`。
+   i. `tool-status.json` 顶层保存：
+   ```json
+   {"python_env":{"exec":"<absolute path>","type":"module | system | custom","bin_dir":"<absolute dir>","module_name":"<module or null>"}}
+   ```
+   j. 保存 `"$PYTHON_EXEC" --version`，并在 `tools[]` 增加普通 python3 FOUND 条目，便于后续 module_discovery 升级状态。
 
-3. **Exception — Python packages**:
-   - **cocotb**: detection depends on the Python interpreter type determined in rule 2:
-     - If `python_env.type == "custom"` or `"module"`: check `"$PYTHON_BIN_DIR/cocotb-config" --version` first; if that exits zero, record FOUND with the returned version string. Only if absent or non-zero, fall back to `cocotb-config --version` (PATH-based).
-     - If `python_env.type == "system"`: use `cocotb-config --version` (PATH-based) only.
-     - Report MISSING if all attempted checks fail.
-   - **openlane**: run `"$PYTHON_EXEC" -m pip show openlane 2>/dev/null`; if exit code 0 and `Name: openlane` appears in output, record FOUND and extract the `Version:` field; otherwise MISSING.
-   - **uv**: if `python_env.type == "custom"` or `"module"`: check `"$PYTHON_BIN_DIR/uv" --version` first; fall back to `uv --version` (PATH). If `python_env.type == "system"`: use `uv --version` only.
-4. For proprietary tools: check PATH using `which <primary-executable>` only (see executable names in the Proprietary section above); never attempt install; record as `PROPRIETARY_ONLY` if found, `MISSING` otherwise
-5. Record each tool as one of: `FOUND`, `MISSING`, or `PROPRIETARY_ONLY`
-6. Capture exact version string for each `FOUND` tool
-7. Never attempt installation in this stage
-8. Write results to `tool-status.json` before advancing
+3. **Python package 特例**
+   - **cocotb**：custom/module Python 时先检查 `"$PYTHON_BIN_DIR/cocotb-config" --version`，失败再检查 PATH；system Python 只检查 PATH。
+   - **openlane**：`"$PYTHON_EXEC" -m pip show openlane`，成功且包含 `Name: openlane` 才记 FOUND。
+   - **uv**：custom/module 时优先 `"$PYTHON_BIN_DIR/uv" --version`，再 fallback PATH；system 只查 PATH。
+4. 商业工具仅 `which <primary-executable>`；找到记 `PROPRIETARY_ONLY`，否则 `MISSING`；绝不安装。
+5. 每个工具状态只能是 `FOUND/MISSING/PROPRIETARY_ONLY`。
+6. 对 FOUND 保存精确 version string。
+7. 本 stage 不执行安装。
+8. 进入下一 stage 前必须写 `tool-status.json`。
 
 ### QoR Metrics to Evaluate
-- `tools_detected`: count of FOUND tools (target ≥ 10 for a functional open-source flow)
-- `tools_missing`: count of MISSING open-source tools
-- `proprietary_found`: count of PROPRIETARY_ONLY tools detected in PATH
+- `tools_detected`：FOUND 数，功能性开源 flow 目标 ≥10
+- `tools_missing`：缺失开源工具数
+- `proprietary_found`：PATH 中检测到的商业工具数
 
 ### Output Required
-- `tool-status.json` — contains two top-level keys:
-  - `python_env`: `{ "exec": "", "type": "module|system|custom", "bin_dir": "", "module_name": "" }` — populated by rule 2
-  - `tools`: array of `{ "tool": "", "command": "", "status": "FOUND|MISSING|PROPRIETARY_ONLY", "version": "", "path": "" }`
-
-Note: module-based availability (`FOUND_PREFER_MODULE`, `MISSING_LOAD_MODULE`) and the `module_names`/`versions_available` fields are added in the next stage (`module_discovery`).
+- `tool-status.json`，顶层含 `python_env` 和 `tools[]`
+- Module availability 相关状态在下一 stage 增加
 
 ---
 
@@ -188,17 +165,18 @@ Note: module-based availability (`FOUND_PREFER_MODULE`, `MISSING_LOAD_MODULE`) a
 
 ### Domain Rules
 
-#### Module system detection (in order of preference)
-1. **Classic Environment Modules (TCL)** — check `$MODULESHOME` is set, or `modulecmd` binary exists in PATH
-2. **Neither** — set `module_system: "none"`, emit WARN, skip remaining rules, write empty `module-status.json`, advance to `tool_installation`
+#### Module system detection
+1. Classic Environment Modules（TCL）：`$MODULESHOME` 或 PATH 中 `modulecmd`
+2. 都没有：设置 `module_system:"none"`，输出 WARN，写空 `module-status.json`，继续 `tool_installation`
 
-#### Module listing commands
-- **Classic**: `module avail 2>&1` — parse text; entries appear as `<name>/<version>`
-- If the listing command exits non-zero: emit WARN, record the error, proceed
+#### Module listing
+- Classic：`module avail 2>&1`
+- listing command 非 0：WARN、记录错误，但继续
 
-#### Module-to-tool mapping table
+#### Module-to-tool mapping
+保持以下机器匹配模式不变：
 
-| Tool command | Module name patterns to match (case-insensitive substring) |
+| Tool command | Module name pattern |
 |---|---|
 | `vcs` | `vcs`, `synopsys-vcs`, `synopsys/vcs` |
 | `xrun` | `xcelium`, `cadence-xcelium`, `cadence/xcelium` |
@@ -229,78 +207,28 @@ Note: module-based availability (`FOUND_PREFER_MODULE`, `MISSING_LOAD_MODULE`) a
 | `openocd` | `openocd` |
 
 #### Rules
-1. Detect module system using the detection order above
-2. Run the appropriate listing command for the detected system
-3. For each entry in the listing, test against the mapping table (case-insensitive)
-4. For each matched tool, collect all available version strings
-5. Write `module-status.json` before advancing
-6. For each tool marked `FOUND` in `tool-status.json` that also has a module available: change status to `FOUND_PREFER_MODULE`, add `module_names` and `versions_available` fields, include in `load-modules.sh` — module takes precedence over PATH version
-7. For each tool marked `MISSING` in `tool-status.json` that has modules available: change status to `MISSING_LOAD_MODULE`, add `module_names` and `versions_available` fields
-8. Generate `load-modules.sh` for all `FOUND_PREFER_MODULE` and `MISSING_LOAD_MODULE` tools; default to the latest version (highest semver/lexicographic); comment out alternative versions inline
-9. Never auto-run `load-modules.sh` — print: "Review and source `load-modules.sh` to load EDA modules, then re-run the flow"
-
-#### Extended `tool-status.json` schema
-Fields added by this stage to each entry in the `tools` array (backward-compatible additions):
-```json
-{
-  "tool": "",
-  "command": "",
-  "status": "FOUND | FOUND_PREFER_MODULE | MISSING | MISSING_LOAD_MODULE | PROPRIETARY_ONLY",
-  "version": "",
-  "path": "",
-  "module_names": [],
-  "versions_available": []
-}
-```
-
-Note: The top-level `python_env` object is **preserved unchanged** during this stage — only entries in the `tools` array are modified. The `python3` tool entry is treated like any other: if `python_env.type == "module"`, its `tools` array status is upgraded from `FOUND` to `FOUND_PREFER_MODULE` and it is included in `load-modules.sh`.
+1. 检测 module system。
+2. 运行对应 listing command。
+3. 每条 module entry 按上表大小写不敏感匹配。
+4. 收集所有 available version。
+5. 进入下一 stage 前写 `module-status.json`。
+6. PATH 已 FOUND 且 module 也有：改为 `FOUND_PREFER_MODULE`，增加 `module_names/versions_available`，写入 `load-modules.sh`；module 优先于 PATH version。
+7. PATH MISSING 但 module 可用：改为 `MISSING_LOAD_MODULE`。
+8. 为所有 `FOUND_PREFER_MODULE/MISSING_LOAD_MODULE` 生成 `load-modules.sh`，默认最新版本并把备选版本写注释。
+9. 不自动 source 脚本；提示用户 review/source 后重新运行。
 
 ### QoR Metrics to Evaluate
-- `module_system_detected`: bool — true if classic Environment Modules (TCL) found
-- `tools_found_via_modules`: count of tools with status `MISSING_LOAD_MODULE` or `FOUND_PREFER_MODULE`
-
-### Stage Output Summary
-Print a human-readable table before advancing:
-```text
-Module system : Environment Modules 4.8.0 (TCL)
-Tools in PATH : 12
-Tools via modules : 5
-  vcs        — synopsys/vcs/2020.03, synopsys/vcs/2021.01
-  xrun       — cadence/xcelium/20.09
-  dc_shell   — synopsys/dc/2022.03
-  innovus    — cadence/innovus/21.1
-  pt_shell   — synopsys/primetime/2022.06
-```
+- `module_system_detected`
+- `tools_found_via_modules`
 
 ### Output Required
-- `module-status.json` — module system details and per-tool module listings
-- Updated `tool-status.json` — statuses and module fields added for matched tools
-- `load-modules.sh` — generated when any tool has status `FOUND_PREFER_MODULE` or `MISSING_LOAD_MODULE`; omitted when `module_system` is `"none"`
+- `module-status.json`
+- 更新后的 `tool-status.json`
+- 必要时的 `load-modules.sh`
 
-`module-status.json` schema:
+机器 schema 与原版保持：
 ```json
-{
-  "module_system": "tclmod | none",
-  "module_system_version": "",
-  "tools_via_modules": [
-    {
-      "tool": "<command>",
-      "module_names": ["synopsys/vcs/2020.03", "synopsys/vcs/2021.01"],
-      "versions_available": ["2020.03", "2021.01"]
-    }
-  ]
-}
-```
-
-`load-modules.sh` format:
-```bash
-#!/usr/bin/env bash
-# Generated by module_discovery — source this file to load EDA tool modules
-# Usage: source load-modules.sh
-
-module load synopsys/vcs/2021.01       # latest; alternatives: 2020.03
-module load cadence/xcelium/20.09
-# module load cadence/innovus/21.1     # uncomment if needed
+{"module_system":"tclmod | none","module_system_version":"","tools_via_modules":[{"tool":"<command>","module_names":[],"versions_available":[]}]}
 ```
 
 ---
@@ -308,272 +236,139 @@ module load cadence/xcelium/20.09
 ## Stage: tool_installation
 
 ### Domain Rules
-1. **Never auto-run installs** — only generate per-tool install scripts
-2. If `python3` is missing: FAIL immediately and escalate — required for all wrapper scripts
-3. Generate one `install-<toolname>.sh` for every tool with status `MISSING`; skip tools with status `FOUND`, `FOUND_PREFER_MODULE`, `MISSING_LOAD_MODULE`, or `PROPRIETARY_ONLY`
-4. Each script follows the Per-Tool Script Structure below
-5. Use the Package Name Mapping Table to emit correct install commands for the detected OS/PM
-6. **Python package install scripts** (`openlane`, `cocotb`, `uv`): read `python_env.exec` from `tool-status.json` and substitute it for `<PYTHON_EXEC>` (and `python_env.bin_dir` for `<PYTHON_BIN_DIR>`). At the top of each Python package install script, emit:
-    ```bash
-    PYTHON_EXEC="<value of python_env.exec>"
-    # Verify this is the intended interpreter before running
-    ```
-    Use `"$PYTHON_EXEC" -m pip install <package>` as the install command. Never use bare `pip install` when `python_env.type` is `"custom"` or `"module"`.
-7. Proprietary tools: no script generated — record a note in the sign-off summary only
-8. Modulefile format: always TCL classic (no file extension); always generate modulefiles unconditionally — if `module_system == "none"`, emit WARN that automatic module loading is unavailable but still output the modulefile
-9. Each script must end with guidance for registering `$EDA_MODULEFILES_ROOT` in `$MODULEPATH` if not already present
-10. Write all `install-<toolname>.sh` scripts to the `install-missing-tools/` directory; create the directory if it does not exist; do **not** create the directory or any scripts if no tools are `MISSING`
+1. **绝不自动执行安装**，只生成 per-tool install script。
+2. python3 缺失立即 FAIL/escalate。
+3. 只为 `MISSING` 工具生成 `install-<toolname>.sh`；FOUND、module-available、commercial 均跳过。
+4. 每个脚本按下述固定结构。
+5. 根据 OS/package manager 使用 Package Mapping Table。
+6. Python package（openlane/cocotb/uv）使用 `tool-status.json` 的 `python_env.exec/bin_dir`；禁止在 custom/module Python 情况使用裸 `pip install`。
+7. Commercial tool 不生成安装脚本，仅在 sign-off summary 备注。
+8. Modulefile 永远用 classic TCL、无扩展名；即使无 module system 也生成，并发 WARN。
+9. 每个脚本结尾说明如何把 `$EDA_MODULEFILES_ROOT` 注册进 `$MODULEPATH`。
+10. 所有脚本写入 `install-missing-tools/`；没有 MISSING 时不要创建目录。
 
 ### Common Issues & Fixes
-
 | Issue | Fix |
-|-------|-----|
-| `python3` not found | Escalate immediately — all wrapper scripts depend on it |
-| OpenROAD build required | Refer to https://github.com/The-OpenROAD-Project/OpenROAD |
-| Bambu HLS Linux only | Wrap with `status: WARN` on macOS/Windows |
+|---|---|
+| python3 不存在 | 立即 escalate，wrapper 全依赖 Python |
+| OpenROAD 需要源码编译 | 参考 OpenROAD upstream |
+| Bambu HLS 仅 Linux | macOS/Windows 报 WARN |
 
 ### Install Directory Layout
-
 ```text
-$EDA_TOOLS_ROOT/                         (default: /tools)
-  <toolname>/<version>/                  e.g. /tools/verilator/5.028/
-    bin/
-    lib/
-    share/
-
-$EDA_MODULEFILES_ROOT/                   (default: /tools/toolmgr/env/modulefiles)
-  <toolname>/<version>                   e.g. /tools/toolmgr/env/modulefiles/verilator/5.028
+$EDA_TOOLS_ROOT/                         # 默认 /tools
+  <toolname>/<version>/
+$EDA_MODULEFILES_ROOT/                   # 默认 /tools/toolmgr/env/modulefiles
+  <toolname>/<version>
 ```
-
-Both roots are read from env vars at script runtime with the defaults above.
 
 ### Per-Tool Script Structure
-
-Each `install-<toolname>.sh` — file: `$EDA_MODULEFILES_ROOT/<toolname>/<version>` (TCL, no extension):
-
-```bash
-#!/usr/bin/env bash
-# install-<toolname>.sh — generated by infrastructure-orchestrator
-# Installs <Tool Full Name> to $EDA_TOOLS_ROOT/<toolname>/<version>
-# and generates a TCL modulefile at $EDA_MODULEFILES_ROOT/<toolname>/<version>
-set -euo pipefail
-
-TOOL_NAME="<toolname>"
-TOOL_VERSION="<detected-or-latest>"
-EDA_TOOLS_ROOT="${EDA_TOOLS_ROOT:-/tools}"
-EDA_MODULEFILES_ROOT="${EDA_MODULEFILES_ROOT:-/tools/toolmgr/env/modulefiles}"
-INSTALL_DIR="${EDA_TOOLS_ROOT}/${TOOL_NAME}/${TOOL_VERSION}"
-
-# --- Install ---
-# Build-from-source: pass --prefix="${INSTALL_DIR}" to configure/cmake
-# Package manager: use apt-get/brew/pacman (see mapping table below)
-
-# --- Generate TCL modulefile ---
-MODFILE_DIR="${EDA_MODULEFILES_ROOT}/${TOOL_NAME}"
-mkdir -p "${MODFILE_DIR}"
-
-cat > "${MODFILE_DIR}/${TOOL_VERSION}" <<EOF
-#%Module1.0
-proc ModulesHelp { } {
-    puts stderr "<Tool Full Name> ${TOOL_VERSION}"
-}
-module-whatis "<Tool Full Name> ${TOOL_VERSION} — <one-line description>"
-
-set prefix ${INSTALL_DIR}
-prepend-path PATH            \$prefix/bin
-prepend-path LD_LIBRARY_PATH \$prefix/lib
-prepend-path MANPATH         \$prefix/share/man
-# add PYTHONPATH, PKG_CONFIG_PATH, or tool-specific setenv as needed
-EOF
-
-echo "Modulefile written: ${MODFILE_DIR}/${TOOL_VERSION}"
-
-# --- Register modulefiles root (if not already set) ---
-# export MODULEPATH=${EDA_MODULEFILES_ROOT}:${MODULEPATH}
-# Add the above line to ~/.bashrc or /etc/profile.d/eda-modules.sh
-```
-
-If `module_system == "none"`: emit WARN in stage output that automatic module loading is unavailable, but still generate the modulefile block in the install script.
-
-**Modulefile content rules:**
-- Minimum env vars in every modulefile: `PATH`, `LD_LIBRARY_PATH`
-- Add where applicable: `MANPATH`, `PKG_CONFIG_PATH`, `PYTHONPATH`
-- Tool-specific root vars (set these when present):
-  - Verilator → `VERILATOR_ROOT`
-  - Yosys → `YOSYS_DATDIR`
-  - LLVM → `LLVM_DIR`
-  - cocotb → `COCOTB_SHARE_DIR`
+保留原 shell 模板和变量名：
+`TOOL_NAME`、`TOOL_VERSION`、`EDA_TOOLS_ROOT`、`EDA_MODULEFILES_ROOT`、`INSTALL_DIR`。
+脚本安装后生成 TCL modulefile，至少设置 `PATH`、`LD_LIBRARY_PATH`，按需增加
+`MANPATH/PKG_CONFIG_PATH/PYTHONPATH`。工具特有变量：
+Verilator→`VERILATOR_ROOT`，Yosys→`YOSYS_DATDIR`，LLVM→`LLVM_DIR`，cocotb→`COCOTB_SHARE_DIR`。
 
 ### Package Name Mapping Table
-
-| Tool command | apt package(s) | brew formula | pacman pkg | fallback / notes |
-|---|---|---|---|---|
-| `verilator` | `verilator` | `verilator` | `verilator` | — |
-| `slang` | build-from-source | — | — | https://github.com/MikePopoloski/slang |
-| `surelog` | build-from-source | — | — | https://github.com/chipsalliance/Surelog |
-| `sv2v` | build-from-source | — | — | https://github.com/zachjs/sv2v |
-| `iverilog` | `iverilog` | `icarus-verilog` | `iverilog` | — |
-| `yosys` | `yosys` | `yosys` | `yosys` | — |
-| `abc` | build-from-source | `berkeley-abc` | — | https://github.com/berkeley-abc/abc |
-| `openroad` | build-from-source | — | — | https://github.com/The-OpenROAD-Project/OpenROAD |
-| `openlane` | `<PYTHON_EXEC> -m pip install openlane` | `<PYTHON_EXEC> -m pip install openlane` | `<PYTHON_EXEC> -m pip install openlane` | Python package; substitute `<PYTHON_EXEC>` with `python_env.exec` from `tool-status.json` |
-| `klayout` | `klayout` | `klayout` | `klayout` (AUR) | — |
-| `sta` | build-from-source | — | — | https://github.com/The-OpenROAD-Project/OpenSTA |
-| `sby` | `symbiyosys` | — | — | https://github.com/YosysHQ/sby |
-| `gem5` | build-from-source | — | — | https://github.com/gem5/gem5 |
-| `bambu-hls` | vendor download (Linux only) | — | — | https://github.com/ferrandi/PandA-bambu; WARN on macOS/Windows |
-| `nextpnr` | `nextpnr-ice40 nextpnr-ecp5` | `nextpnr` | `nextpnr` | — |
-| `openFPGALoader` | `openfpgaloader` | — | — | https://github.com/trabucayre/openFPGALoader |
-| `cocotb` | `<PYTHON_EXEC> -m pip install cocotb` | `<PYTHON_EXEC> -m pip install cocotb` | `<PYTHON_EXEC> -m pip install cocotb` | Python package; use `<PYTHON_BIN_DIR>/cocotb-config` or `cocotb-config` to detect |
-| `llvm-config` | `llvm-dev` | `llvm` | `llvm` | — |
-| `gcc` | `build-essential` | `gcc` | `gcc` | — |
-| `openocd` | `openocd` | `open-ocd` | `openocd` | — |
-| `xschem` | `xschem` | build-from-source | — | https://github.com/StefanSchippers/xschem |
-| `gtkwave` | `gtkwave` | `gtkwave` | `gtkwave` | — |
-| `uv` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (standalone) or `<PYTHON_EXEC> -m pip install uv` | `uv` (brew) or `<PYTHON_EXEC> -m pip install uv` | `<PYTHON_EXEC> -m pip install uv` | Prefer standalone astral.sh installer; pip fallback when custom/module Python is active |
+安装命令/包名属于机器内容，保持原命令：
+- verilator/slang/surelog/sv2v/iverilog/yosys/abc/openroad/openlane/klayout/OpenSTA/SymbiYosys/gem5/Bambu/nextpnr/openFPGALoader/cocotb/LLVM/GCC/OpenOCD/xschem/GTKWave/uv
+- build-from-source 项继续指向原 upstream
+- Python package 使用 `<PYTHON_EXEC> -m pip install ...`
+- uv 优先 standalone installer，custom/module Python 可 pip fallback
 
 ### Output Required
-- One `install-<toolname>.sh` per MISSING tool written to `install-missing-tools/` (no single combined script)
+- 每个 MISSING 工具一个 `install-<toolname>.sh`，写入 `install-missing-tools/`
 
 ---
 
 ## Stage: wrapper_deployment
 
 ### Domain Rules
-1. Deploy all 8 wrapper scripts to `plugins/infrastructure/tools/`
-2. Run `chmod +x` on every wrapper; if permission denied: FAIL and escalate with
-   `sudo chmod +x` instructions
-3. Every wrapper must emit JSON conforming to the schema below regardless of exit code
-4. Test each wrapper with `--version` or `--help` after deploy; tolerate MISSING tools
-   (wrappers must handle tool-not-found gracefully with `status: "FAIL"`). A `--version`
-   run prints no design result, so it returns `status: "WARN"` with `verified: false` —
-   that is the expected outcome and confirms the wrapper runs and emits valid JSON
-5. Never suppress the tool's original exit code
-6. Never report `PASS` without a result: a wrapper that finds nothing it recognises in the
-   tool's output reports `WARN` with `verified: false`, even when the tool exited 0
+1. 部署全部 8 个 wrapper 到 `plugins/infrastructure/tools/`。
+2. 全部 `chmod +x`；权限失败则 FAIL，并给出 `sudo chmod +x ...` 指引。
+3. 无论 tool exit code 如何，wrapper 都必须输出 schema 合法 JSON。
+4. 部署后用 `--version/--help` smoke test；工具缺失可以容忍。版本命令本身没有设计结果，因此正确结果是 `WARN + verified:false`。
+5. 不得吞掉原始 exit code。
+6. 没有可识别结果时绝不能报 PASS；即使 exit 0 也应 WARN + verified:false。
 
 ### Wrapper JSON Output Schema
-Every wrapper script must print exactly this JSON structure to stdout:
 ```json
 {
-  "tool": "<tool-name>",
-  "exit_code": 0,
-  "status": "PASS|FAIL|WARN",
-  "verified": true,
-  "summary": {},
-  "errors": [],
-  "warnings": [],
-  "raw_log": "/tmp/<tool>-XXXXXX.log"
+  "tool":"<tool-name>",
+  "exit_code":0,
+  "status":"PASS|FAIL|WARN",
+  "verified":true,
+  "summary":{},
+  "errors":[],
+  "warnings":[],
+  "raw_log":"/tmp/<tool>-XXXXXX.log"
 }
 ```
 
-Fields:
-- `status`, evaluated in this order:
-  1. `FAIL` if exit_code != 0, the output contains an error, a tool-specific fail marker is
-     present, or the tool was not found
-  2. `WARN` if exit_code == 0 but the wrapper found no result it recognises in the output
-     (`verified: false`); the first entry in `warnings` says so
-  3. `WARN` if a result was found and the output contains warnings
-  4. `PASS` if a result was found and there are no warnings
-- `verified`: `true` when `status` rests on something the wrapper observed — a result parsed
-  from the output, or a failure. `false` when the tool exited 0 without a recognisable result,
-  or did not run. **A result with `verified: false` is not a pass**: read `raw_log`, or the
-  tool's own report file, before assigning a stage status
-- `summary`: tool-specific metrics (cells, timing, coverage, etc.). A metric the wrapper could
-  not find is omitted or `null`, never `0`
-- `raw_log`: absolute path to temp file containing full unfiltered output
+判定优先级：
+1. 非零 exit、error/fail marker、tool not found → FAIL
+2. exit 0 但没有可识别 result → WARN + `verified:false`
+3. 有 result 且有 warning → WARN
+4. 有 result 且无 warning → PASS
 
-The MCP adapter (`mcp-adapter.py`) returns `status: "FAIL"` with `verified: false` when a
-wrapper prints nothing, prints something that is not JSON, or prints JSON without a valid
-`status`: the wrapper contract is to emit this JSON on every run, so anything else means the
-wrapper itself produced no result.
+`verified:true` 只代表状态建立在实际解析结果或明确失败上；
+`verified:false` 的结果**绝不是 PASS**，必须读 raw_log/tool report 后才能决定 stage。
+找不到的 metric 用 null/省略，绝不能伪造 0。
 
 ### QoR Metrics to Evaluate
-- `wrappers_deployed`: count of wrapper scripts with executable bit set (target: 8)
+- `wrappers_deployed`：可执行 wrapper 数，目标 8
 
 ### Output Required
-- 8 executable wrapper scripts in `plugins/infrastructure/tools/`
+- 8 个 executable wrapper
 
 ---
 
 ## Stage: mcp_configuration
 
 ### Domain Rules
-1. Emit MCP config snippets for all 10 MCP configs (8 batch + 2 session)
-2. All batch configs use `"command": "python3"` with `mcp-adapter.py` — never point
-   directly to the wrapper script as the command; wrapper scripts are not MCP servers
-3. Session configs use `mcp-session-adapter.py` with `--tool openroad` or `--tool opensta`
-4. Resolve the absolute adapter and wrapper paths at runtime using `realpath` or `pwd` —
-   never leave the placeholder `/absolute/path/to/` in the emitted snippets
-5. Print each snippet with explicit instruction:
-   "Paste the `mcpServers` block into your `.claude/settings.json`"
-6. Write the snippet files to `plugins/infrastructure/mcp/`
-7. Do not modify `.claude/settings.json` automatically — user must do this manually
-
-### MCP Config Template
-```json
-{
-  "mcpServers": {
-    "<tool>": {
-      "type": "stdio",
-      "command": "/absolute/path/to/plugins/infrastructure/tools/wrap-<tool>.sh",
-      "args": []
-    }
-  }
-}
-```
+1. 生成全部 10 个 MCP config（8 batch + 2 session）。
+2. Batch config 使用 `python3 + mcp-adapter.py`，不要直接把 wrapper 当 MCP server。
+3. Session config 使用 `mcp-session-adapter.py --tool openroad/opensta`。
+4. 运行时通过 realpath/pwd 解析绝对路径，不得保留 `/absolute/path/to/` placeholder。
+5. 打印每个 snippet，并明确提示粘贴到 `.claude/settings.json`。
+6. snippet 文件写到 `plugins/infrastructure/mcp/`。
+7. 不自动修改用户的 `.claude/settings.json`。
 
 ### QoR Metrics to Evaluate
-- `mcp_servers_configured`: count of MCP snippet files written (target: 10)
+- `mcp_servers_configured`：目标 10
 
 ### Output Required
-Batch MCP configs (Tier 1):
-- `plugins/infrastructure/mcp/mcp-yosys.json`
-- `plugins/infrastructure/mcp/mcp-openroad.json`
-- `plugins/infrastructure/mcp/mcp-opensta.json`
-- `plugins/infrastructure/mcp/mcp-klayout.json`
-- `plugins/infrastructure/mcp/mcp-verilator.json`
-- `plugins/infrastructure/mcp/mcp-bambu.json`
-- `plugins/infrastructure/mcp/mcp-gem5.json`
-- `plugins/infrastructure/mcp/mcp-symbiflow.json`
-
-Session MCP configs (Tier 2):
-- `plugins/infrastructure/mcp/mcp-openroad-session.json`
-- `plugins/infrastructure/mcp/mcp-opensta-session.json`
-
-Adapter scripts (required — MCP servers will not start without these):
-- `plugins/infrastructure/tools/mcp-adapter.py`
-- `plugins/infrastructure/tools/mcp-session-adapter.py`
-
-Printed MCP config snippets for each tool with resolved absolute paths
+Batch：`mcp-yosys/openroad/opensta/klayout/verilator/bambu/gem5/symbiflow.json`
+Session：`mcp-openroad-session.json`、`mcp-opensta-session.json`
+以及 `mcp-adapter.py`、`mcp-session-adapter.py`。
 
 ---
 
 ## Stage: environment_validation
 
 ### Domain Rules
-1. **Python environment check** — before any other check: read `python_env` from `tool-status.json`:
-   - If `python_env.type == "module"`: run `which python3` to verify the module is still loaded. If it fails, FAIL immediately with: `"Python environment not active — source load-modules.sh (module: <python_env.module_name>) and re-run environment_validation."`
-   - If `python_env.type == "custom"` or `"system"`: run `which python3` and verify the path matches `python_env.exec`; emit WARN if it differs.
-2. Re-run tool presence checks using the same Python-aware detection as `tool_discovery` rules 2–3: use `"$PYTHON_EXEC" -m pip show` for `openlane`, `"$PYTHON_BIN_DIR/cocotb-config"` for `cocotb`, `"$PYTHON_BIN_DIR/uv"` for `uv` — do not fall back to bare `which` for Python packages. Compare results against `tool-manifest.json`.
-3. Verify all 8 wrapper scripts exist and have executable bit set
-4. Verify MCP snippet files are present in `plugins/infrastructure/mcp/` (all 10 snippets) and that `mcp-adapter.py` + `mcp-session-adapter.py` are present in `plugins/infrastructure/tools/`
-5. FAIL if any critical-path tool (Yosys, Verilator, OpenROAD, OpenSTA) is still `MISSING`
-6. For each tool with status `MISSING_LOAD_MODULE` in `tool-status.json`: emit a WARN issue with description `"<tool> not in PATH — available via module"` and fix `"source load-modules.sh, then re-run environment_validation"`
-7. If any critical-path tool (Yosys, Verilator, OpenROAD, OpenSTA) has status `MISSING_LOAD_MODULE`: emit WARN and set `suggested_next_step: "escalate"` with message `"Critical tool <tool> requires module load before downstream flows can run. Source load-modules.sh and re-run environment_validation."`
-8. Print final sign-off summary: tools detected, tools via modules, wrappers deployed, MCP servers configured
+1. 首先验证 `python_env`：
+   - type=module：`which python3` 确认 module 仍 active，否则立即 FAIL 并提示 source `load-modules.sh`
+   - type=custom/system：确认当前 python3 path 与 `python_env.exec` 一致，不一致 WARN
+2. 按 tool_discovery 相同的 Python-aware 方法重新检测 openlane/cocotb/uv，并对照 `tool-manifest.json`。
+3. 确认 8 个 wrapper 存在且 executable。
+4. 确认 10 个 MCP snippet 以及两个 adapter 存在。
+5. Yosys、Verilator、OpenROAD、OpenSTA 任一仍为 `MISSING` 时 FAIL。
+6. `MISSING_LOAD_MODULE` 的工具发 WARN，并提示 source `load-modules.sh` 后重跑。
+7. Critical tool 为 `MISSING_LOAD_MODULE` 时 `suggested_next_step:"escalate"`。
+8. 打印 tools detected / tools via modules / wrappers / MCP summary。
 
 ### Sign-off Checklist
-- [ ] `tool-status.json` written with all tools surveyed (includes `python_env` object)
-- [ ] `module-status.json` written (even if `module_system` is `"none"`)
-- [ ] `install-<toolname>.sh` scripts generated for all MISSING tools in `install-missing-tools/` (auto-run is user's choice)
-- [ ] `load-modules.sh` generated if any module-available tools found (auto-run is user's choice)
-- [ ] `tool-manifest.json` written
-- [ ] All 8 wrappers deployed and executable
-- [ ] `mcp-adapter.py` and `mcp-session-adapter.py` present in `plugins/infrastructure/tools/`
-- [ ] All 10 MCP config snippets written with resolved absolute paths and printed
-- [ ] No critical-path tools with status `MISSING` or `MISSING_LOAD_MODULE`
+- [ ] `tool-status.json` 已写，包含 `python_env`
+- [ ] `module-status.json` 已写
+- [ ] 所有 MISSING tool 都有 install script
+- [ ] 有 module 工具时生成 `load-modules.sh`
+- [ ] `tool-manifest.json` 已写
+- [ ] 8 wrapper 可执行
+- [ ] 两个 MCP adapter 存在
+- [ ] 10 MCP config 均使用解析后的绝对路径
+- [ ] Critical-path tool 不得是 MISSING/MISSING_LOAD_MODULE
 
 ### Output Required
-- Printed environment validation report
-- Updated `tool-manifest.json` with final confirmed state
+- Environment validation report
+- 最终 `tool-manifest.json`
