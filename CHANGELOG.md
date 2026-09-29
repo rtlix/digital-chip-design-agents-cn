@@ -1,318 +1,311 @@
-# Changelog
+# 变更记录
 
-## [Unreleased] — feat/reporting-contract branch
+## [Unreleased] — feat/reporting-contract 分支
 
-### Added
+### 新增
 
-- **All 16 orchestrators**: new `## Reporting Contract` section (issues #75, #78), synced from `tools/agent_shared_sections.md`. Sign-off criteria were declarative properties with no rule that they be observed rather than asserted. The contract requires: run every named gate and quote its exact output; never report a gate as passing that was not run this session (report it NOT RUN, and why); exit 0 with empty or unparsable output is not a pass; re-read the deliverable list before finishing; separate measured values from inference; verify the provenance of any generated artifact a test consumes, in every environment that will run the test; and set `signoff` / `signoff_achieved` true only when every criterion is measured-PASS.
-- **Codex, Gemini and Copilot headers**: five condensed lines of the contract added to `## Verification and Reporting`.
-- **Wrapper JSON `verified` field**: `true` when `status` rests on a result parsed from the output or on a failure; `false` when the tool exited 0 without a recognisable result, or did not run. Documented in the infrastructure skill's wrapper schema.
-- **Tests**: `tests/test_wrappers.py` runs each real wrapper through bash against a fake tool (skipped on Windows unless `RUN_WRAPPER_TESTS=1`); `tests/test_mcp_adapter.py` covers how the adapter interprets wrapper output.
+- **全部 16 个 Orchestrator**：新增 `## Reporting Contract` 章节（issues #75、#78），内容统一从 `tools/agent_shared_sections.md` 同步。过去 sign-off 判据只是声明式属性，没有规则要求这些判据必须经过实际观测，而不是由 Agent 自行声称。新契约要求：运行任务中点名的每个 gate 并引用其准确输出；本次会话没有实际运行的 gate 绝不能报告为通过（应报告 NOT RUN 并说明原因）；exit code 为 0 但输出为空或无法解析不能算 PASS；结束前重新核对交付物清单；明确区分 measured value 与 inference；对测试依赖的所有 generated artifact，在每个实际运行环境中验证其来源；只有全部判据都是 measured-PASS 时，才能把 `signoff` / `signoff_achieved` 设置为 true。
+- **Codex、Gemini、Copilot header**：在 `## Verification and Reporting` 中加入上述契约的 5 条精简规则。
+- **Wrapper JSON 的 `verified` 字段**：当 `status` 基于工具输出中成功解析出的结果，或明确失败证据时为 `true`；当工具 exit 0 但没有可识别结果，或工具根本没有运行时为 `false`。Infrastructure Skill 的 wrapper schema 已补充说明。
+- **测试**：`tests/test_wrappers.py` 通过 bash 使用 fake tool 运行每个真实 wrapper（Windows 默认跳过，除非 `RUN_WRAPPER_TESTS=1`）；`tests/test_mcp_adapter.py` 覆盖 adapter 对 wrapper 输出的解释逻辑。
 
-### Changed
+### 变更
 
-- **Behaviour change — all 8 EDA wrappers no longer report `PASS` without evidence.** Status was computed from the exit code and ERROR/WARNING lines alone, so a tool that exited 0 and printed nothing the wrapper recognised was a `PASS`. A wrapper now needs a result it parsed from the output; otherwise it reports `WARN` with `verified: false` and says so in the first warning. Evidence is the set of fields each wrapper already extracted — no new log markers. A quiet run (`yosys -q`, a `--version` smoke test) that returned `PASS` now returns `WARN`. The exit code is still propagated unchanged.
-  - `wrap-verilator-sim.sh`: `PASS` requires `TEST PASSED`. An ERROR line with exit 0 gives `WARN`, not `FAIL`, since simulation logs print lines such as "Error count: 0".
-  - `wrap-klayout.sh`: a report that parses with no categories is a clean run; with no report and no count in the log, `drc_total` is `null` rather than `0`.
-- **Behaviour change — `mcp-adapter.py`**: with exit 0, empty wrapper output was `PASS` and non-JSON output was `WARN`; JSON without a valid `status` was passed through. All three are now `FAIL` with `verified: false`, because the wrapper contract is to emit JSON on every run. Valid wrapper JSON is passed through unchanged. `isError` stays tied to `status == "FAIL"`.
-- **`mcp-session-adapter.py`**: `query_drc` returns `drc_total: null`, not `0`, when no count could be parsed.
+- **行为变化——8 个 EDA wrapper 不再在缺乏证据时报告 `PASS`。** 过去状态只根据 exit code 和 ERROR/WARNING 行计算，因此工具 exit 0 且输出中没有 wrapper 认识的内容时也会被判为 `PASS`。现在 wrapper 必须从输出中解析出有效结果，否则返回 `WARN`、`verified:false`，并在第一条 warning 中明确说明。证据仍使用 wrapper 已有的字段，不新增 log marker。安静运行，例如 `yosys -q` 或仅执行 `--version` 的 smoke test，过去返回 PASS，现在返回 WARN。exit code 本身仍原样透传。
+  - `wrap-verilator-sim.sh`：只有出现 `TEST PASSED` 才能判定 `PASS`。exit 0 时即使出现 ERROR 行也只给 `WARN` 而不是 `FAIL`，因为仿真日志中可能出现诸如 “Error count: 0”。
+  - `wrap-klayout.sh`：若 report 可解析且没有 category，视为 clean run；如果既没有 report，也无法从 log 中解析 count，则 `drc_total` 为 `null`，不再伪装成 `0`。
+- **行为变化——`mcp-adapter.py`**：过去 exit 0 时，空 wrapper 输出会被判 PASS，非 JSON 输出判 WARN，无合法 `status` 的 JSON 也会继续透传。现在这三类情况全部返回 `FAIL` 且 `verified:false`，因为 wrapper contract 要求每次运行都必须输出 JSON。合法 wrapper JSON 仍保持原样透传。只有 `status == "FAIL"` 时 `isError` 才为 true。
+- **`mcp-session-adapter.py`**：`query_drc` 在无法解析 count 时返回 `drc_total:null`，不再返回 0。
 
-## [Unreleased] — feat/shared-orchestrator-guards branch
+## [Unreleased] — feat/shared-orchestrator-guards 分支
 
-### Added
+### 新增
 
-- **Shared orchestrator sections, synced from one source** (issue #77). `tools/agent_shared_sections.md` holds the text every orchestrator carries word for word; `tools/sync_agent_sections.py` writes it into each target between `BEGIN SHARED` / `END SHARED` marker comments. `--check` reports drift and runs in CI, `--list` prints which block goes where. The script preserves each file's line endings, so a CRLF working tree and LF CI agree. Tests in `tests/test_sync_agent_sections.py`.
-- **15 orchestrators**: new `## Stage Gating and Escalation` section — read the tool's result before assigning a stage status; never proceed past a FAIL without applying the loop-back rule; on an exhausted loop cap, stop and escalate with state and root cause; when the fault is in an upstream artifact, stop looping and hand back. These guards previously existed in one or two orchestrators each (`pd`, `rtl-design`, `memory-ip`, `architecture`, `infrastructure`); ten domain orchestrators had no rule at all for an exhausted loop cap. `pipeline-orchestrator` is excluded: it dispatches rather than runs stages and owns `pending_approval` type `escalation`.
-- **`compiler` and `firmware` orchestrators**: new `### MCP Preference` section. No MCP server or wrapper exists for their toolchains, so it prescribes direct execution with output captured to a log file rather than the MCP → wrapper → direct tier list the EDA domains carry.
-- **Codex, Gemini and Copilot headers**: new `## Verification and Reporting` section with the condensed guards. Copilot and Codex installs receive skills only, never agent files.
-- **`.gitattributes`**: `* text=auto`, and `*.sh text eol=lf` so shell scripts are runnable from a Windows checkout.
+- **共享 Orchestrator 章节，从单一源同步**（issue #77）。`tools/agent_shared_sections.md` 保存所有 Orchestrator 必须逐字一致的共享规则；`tools/sync_agent_sections.py` 将内容写入每个目标文件的 `BEGIN SHARED` / `END SHARED` 标记之间。`--check` 用于检测 drift 并在 CI 中运行；`--list` 显示每个共享 block 应写入哪些文件。脚本会保留原文件换行风格，因此 CRLF 工作区和 LF CI 环境可以得到一致结果。对应测试位于 `tests/test_sync_agent_sections.py`。
+- **15 个 Orchestrator**：新增 `## Stage Gating and Escalation`。规则包括：给 stage 设置状态前必须先读取工具真实结果；遇到 FAIL 必须应用 loop-back，不能直接越过；loop cap 用尽后必须停止并携带状态/根因升级；如果故障来自上游 artifact，则停止本域循环并交回。过去这些 guard 只零散存在于 `pd`、`rtl-design`、`memory-ip`、`architecture`、`infrastructure` 的一两个规则中，另外十个 domain Orchestrator 对达到最大迭代次数完全没有统一规则。由于 `pipeline-orchestrator` 本身负责 dispatch，并拥有 `pending_approval` 的 `escalation` 类型，因此不包含该共享段。
+- **`compiler` 和 `firmware` Orchestrator**：新增 `### MCP Preference`。这些 toolchain 没有 MCP Server 或 wrapper，因此规则要求使用直接执行并把输出保存到 log 文件，而不是 EDA domain 常用的 MCP → wrapper → direct 三级路径。
+- **Codex、Gemini、Copilot header**：增加精简版 `## Verification and Reporting`。Copilot/Codex 安装只接收 Skill，不会安装 Agent 文件。
+- **`.gitattributes`**：加入 `* text=auto` 和 `*.sh text eol=lf`，保证 Windows checkout 后 shell script 仍可正常运行。
 
-### Changed
+### 变更
 
-- **`pending_approval` ownership made consistent.** The pipeline skill allowed domain orchestrators only `type: "checkpoint"` while also requiring them to set `type: "constraint_gap"`, and a sentence in 15 orchestrators implied they set `pending_approval` on any escalation. Domain orchestrators now set it only at their two gates (checkpoint, constraint validation); an escalation for an exhausted loop cap or an upstream fault is recorded in the terminal `history[]` entry, whose `reason` carries the `failure_class` and what the user must supply. `type: "escalation"` stays reserved for `pipeline-orchestrator`. No schema change.
-- **Existing one-off guards** in `pd`, `architecture`, `infrastructure`, `rtl-design` and `memory-ip` keep their rule numbers and now point at the shared section.
-- **`validate.yml`**: agents must contain `## Behaviour Rules` (the anchor for the shared sections); new step runs `tools/sync_agent_sections.py --check`.
-- **`CONTRIBUTING.md`**: documents the sync step, corrects the file paths in the "Adding a New Skill" steps and the local validation snippet (both referred to a root `skills/` directory that does not exist), and corrects the count rule (skills may exceed agents).
-- Stale counts corrected in `CONTRIBUTING.md`, `docs/MASTER_INDEX.md`, `memory/README.md` and `FUTURE_WORK.md`.
+- **统一 `pending_approval` 所有权。** Pipeline Skill 一度规定 domain Orchestrator 只能设置 `type:"checkpoint"`，但又要求 constraint validation 使用 `type:"constraint_gap"`；同时 15 个 Orchestrator 里还有一句话暗示任何 escalation 都可设置 `pending_approval`。现在 domain Orchestrator 只在两个 gate 使用它：checkpoint 和 constraint validation。loop cap 耗尽或上游 fault 的 escalation 只写 terminal `history[]`，其 `reason` 必须包含 `failure_class` 和用户需要补充的内容。`type:"escalation"` 仍由 `pipeline-orchestrator` 独占。Schema 不变。
+- `pd`、`architecture`、`infrastructure`、`rtl-design`、`memory-ip` 中已有的一次性 guard 保留原 rule number，现在改为引用共享章节。
+- **`validate.yml`**：Agent 必须包含 `## Behaviour Rules`，作为共享区块插入锚点；新增步骤运行 `tools/sync_agent_sections.py --check`。
+- **`CONTRIBUTING.md`**：补充同步步骤；修正 “Adding a New Skill” 和本地校验示例中的错误路径（过去误写成不存在的根目录 `skills/`）；修正数量约束，Skill 数可以大于 Agent 数。
+- 修正 `CONTRIBUTING.md`、`docs/MASTER_INDEX.md`、`memory/README.md`、`FUTURE_WORK.md` 中过时的数量统计。
 
-## [Unreleased] — fix/signoff-achieved-template branch
+## [Unreleased] — fix/signoff-achieved-template 分支
 
-### Fixed
+### 修复
 
-- **13 orchestrators**: the `experiences.jsonl` template showed `"signoff_achieved": true` while the surrounding rules say the record is also written on escalation and abandonment (issue #74). `distill.py` counts sign-off with `is True`, so a template defaulting to `true` records failed runs as successes. The template now defaults to `false`, matching `pd` and `infrastructure`, and each one states the success condition directly beneath it (`soc` had no such sentence). A literal `false` is used rather than a `"<true|false>"` placeholder, because a string value never satisfies `is True`. `memory/README.md` carried the same literal in the canonical schema.
-- **8 orchestrators** (`dft`, `firmware`, `fpga`, `memory-ip`, `rtl-design`, `sta`, `synthesis`, `verification`): said "append one JSON line" and gave a template with no `run_id`, contradicting `memory/README.md` and their own skills. They now upsert by `run_id` like the rest. The `fpga` skill's separate append-only schema (`stage`, `outcomes`, `metrics`, `tools`), which `distill.py` could not read metrics from, now points at the shared record schema. `README.md` no longer calls the file append-only.
-- **6 orchestrators** (`architecture`, `dft`, `firmware`, `formal`, `fpga`, `hls`): the history `decision` enum omitted `await_approval`, which their own checkpoint gate writes.
+- **13 个 Orchestrator**：`experiences.jsonl` 模板原来写死 `"signoff_achieved": true`，但外围规则又要求 escalation/abandonment 时也写该记录（issue #74）。`distill.py` 使用 `is True` 统计 sign-off，因此默认 true 会把失败 run 错记成成功。模板现统一默认 false，与 `pd` 和 `infrastructure` 保持一致，并在模板下直接说明什么时候才允许改为 true（`soc` 过去没有该说明）。使用 literal `false`，而不是 `"<true|false>"` 字符串，因为字符串永远不会满足 `is True`。`memory/README.md` 的 canonical schema 也同步修正。
+- **8 个 Orchestrator**（`dft`、`firmware`、`fpga`、`memory-ip`、`rtl-design`、`sta`、`synthesis`、`verification`）：过去写着 “append one JSON line”，同时模板又没有 `run_id`，与 `memory/README.md` 及各自 Skill 自相矛盾。现在统一按 `run_id` upsert。`fpga` Skill 曾有一套独立 append-only schema（`stage`、`outcomes`、`metrics`、`tools`），`distill.py` 无法从中读取 metrics，现在改为引用共享 record schema。README 也不再称该文件为 append-only。
+- **6 个 Orchestrator**（`architecture`、`dft`、`firmware`、`formal`、`fpga`、`hls`）：history 中 `decision` enum 漏了 checkpoint gate 实际会写入的 `await_approval`，现已补齐。
 
-### Added
+### 新增
 
-- **`tests/test_agent_contract.py`**: static checks on agent and skill markdown — no hardcoded `"signoff_achieved": true`, no append-only wording, every experience template carries `run_id`, and every `decision` enum lists `await_approval` where the agent writes it.
+- **`tests/test_agent_contract.py`**：对 Agent/Skill Markdown 进行静态检查——禁止硬编码 `"signoff_achieved": true`、禁止 append-only 表述、每个 experience 模板都必须包含 `run_id`，以及任何会写 `await_approval` 的 Agent，其 `decision` enum 都必须列出该值。
 
 ## [1.8.0] — Memory IP Design domain
 
-### Added
+### 新增
 
-- **`chip-design-memory-ip` — 16th plugin, 14th design domain.** Embedded memory IP design (SRAM / register file / ROM): the pipeline previously treated memories as an externally supplied black box — PD placed them, synthesis `dont_touch`ed them, DFT tested them, SoC qualified their views, FPGA swapped them for BRAM — but nothing *produced* one. This domain fills that gap.
-  - **`plugins/memory-ip/skills/memory-ip-design/SKILL.md`** — seven stages: `memory_requirements → macro_selection → array_architecture → redundancy_repair → view_generation → integration_prep → memory_signoff`. Covers bandwidth and ECC sizing, column-mux/banking trade-offs, slow-corner access-time selection, write/read assist and Vmin, SECDED check-bit sizing and scrubbing, spare row/column allocation from defect density, soft vs. hard repair and efuse mapping, and view QA (pin consistency across `.lib`/`.lef`/`.v`, timing-arc completeness, corner coverage, LEF obstructions).
-  - **`plugins/memory-ip/agents/memory-ip-orchestrator.md`** — stage sequence, seven loop-back rules, sign-off criteria, and an explicit boundary rule: never insert MBIST or claim MBIST coverage (owned by `chip-design-dft`), never floorplan (`chip-design-pd`), never sign off timing (`chip-design-sta`), never assign the memory map (`chip-design-soc`).
-  - **`design_state.json` handoff** — new `memory_ip` block carrying `instances`, `views`, `repair` (scheme, spare counts, repair-register width, efuse map), `placement_constraints`, `ecc`, and `power_modes`. DFT consumes `instances` + `repair`; PD consumes `placement_constraints`; STA consumes `views.lib`; verification consumes `views.verilog`.
-  - **`constraints.memory_ip`** — `vmin_margin_mv` (50), `repair_yield_pct_min` (99), `ecc_required` (false), `max_aspect_ratio` (4.0), `retention_required` (true). `constraints.dft.mbist_coverage_pct` is read-only here.
-  - **`memory/memory-ip/knowledge.md`** seed and `docs/Memory_IP_Design_Flow.md`.
-  - `key_metrics`: `memory_instances`, `total_memory_area_um2`, `worst_access_time_ns`, `view_qa_errors`, `projected_repair_yield_pct`.
+- **`chip-design-memory-ip`——第 16 个插件、第 14 个设计 domain。** 负责嵌入式 Memory IP（SRAM / register file / ROM）设计。过去 pipeline 把 memory 当作外部黑盒：PD 负责放置、synthesis 对其 `dont_touch`、DFT 负责测试、SoC 验证 view、FPGA 用 BRAM 替换，但没有任何 domain 真正“产出” memory。该 domain 补上了这个缺口。
+  - **`plugins/memory-ip/skills/memory-ip-design/SKILL.md`**：7 个 stage：`memory_requirements → macro_selection → array_architecture → redundancy_repair → view_generation → integration_prep → memory_signoff`。覆盖 bandwidth/ECC sizing、column-mux/banking 权衡、slow-corner access time 选择、write/read assist 与 Vmin、SECDED check-bit sizing/scrubbing、基于 defect density 的 spare row/column 分配、soft/hard repair 与 efuse map，以及 view QA（`.lib/.lef/.v` pin 一致性、timing arc 完整性、corner coverage、LEF obstruction）。
+  - **`plugins/memory-ip/agents/memory-ip-orchestrator.md`**：定义 stage sequence、7 条 loop-back、sign-off 判据以及明确 domain 边界：不能插入 MBIST 或声称 MBIST coverage（属于 `chip-design-dft`），不能做 floorplan（属于 `chip-design-pd`），不能 timing sign-off（属于 `chip-design-sta`），不能分配 memory map（属于 `chip-design-soc`）。
+  - **`design_state.json` handoff**：新增 `memory_ip` block，包含 `instances`、`views`、`repair`（scheme、spare count、repair-register width、efuse map）、`placement_constraints`、`ecc`、`power_modes`。DFT 消费 `instances + repair`；PD 消费 `placement_constraints`；STA 消费 `views.lib`；verification 消费 `views.verilog`。
+  - **`constraints.memory_ip`**：`vmin_margin_mv`（50）、`repair_yield_pct_min`（99）、`ecc_required`（false）、`max_aspect_ratio`（4.0）、`retention_required`（true）。这里仅只读使用 `constraints.dft.mbist_coverage_pct`。
+  - 新增 `memory/memory-ip/knowledge.md` seed 与 `docs/Memory_IP_Design_Flow.md`。
+  - `key_metrics`：`memory_instances`、`total_memory_area_um2`、`worst_access_time_ns`、`view_qa_errors`、`projected_repair_yield_pct`。
 
-### Changed
+### 变更
 
-- Counts bumped to **16 plugins / 17 skills / 16 agents / 14 design domains** across `marketplace.json`, `package.json`, `README.md`, `CLAUDE.md`, `docs/PIPELINE.md`, `docs/MASTER_INDEX.md`, `docs/INSTALL.md`, the Codex/Gemini/Copilot IDE headers, and `.github/workflows/release.yml`.
-- **Manifest version realigned to the release tag line.** `package.json` and `.claude-plugin/marketplace.json` had drifted to `1.3.0` while tags advanced to `v1.7.0`, and PR #71 bumped them to `1.4.0` — which matched neither the drift nor the tag line, and implied a `v1.4.0` tag after `v1.7.0`. Both now read `1.8.0`, the next tag for this MINOR change (new orchestrator domain, per `CONTRIBUTING.md`). The `npm-publish` job in `release.yml` stamps these fields from the tag at publish time, so the in-repo values are informational — but they should not contradict the tag they will be released under.
-- `validate.yml` count asserts 15 → 16 (agents/marketplace and `applyto-map.json`); `tests/test_distill.py` domain count 14 → 15.
-- `distill.py`, `tools/qor_trends.py`, `memory/README.md`, and `memory-keeper/SKILL.md` registered the new domain; `projected_repair_yield_pct` added to `HIGHER_IS_BETTER`.
-- Installers updated: `install.sh` and `install.ps1` (plugin list, dir map, `enabledPlugins`, OpenCode mode map, completion message) and `bin/install.mjs` (`OPENCODE_MODE_DISPLAY`).
+- 全仓数量更新为 **16 plugins / 17 skills / 16 agents / 14 design domains**，涉及 `marketplace.json`、`package.json`、`README.md`、`CLAUDE.md`、`docs/PIPELINE.md`、`docs/MASTER_INDEX.md`、`docs/INSTALL.md`、Codex/Gemini/Copilot IDE header，以及 `.github/workflows/release.yml`。
+- **Manifest version 与 release tag 重新对齐。** `package.json` 和 `.claude-plugin/marketplace.json` 曾停在 1.3.0，而 tag 已前进到 v1.7.0；PR #71 又将其改为 1.4.0，既不符合当前 tag，也会产生 v1.7.0 之后再发 v1.4.0 的倒退。两处现统一为 1.8.0，作为该 MINOR 变更（新增 Orchestrator domain）的下一版本，符合 `CONTRIBUTING.md` 约定。发布时 `release.yml` 的 `npm-publish` job 会按 tag 重写版本号，因此仓内值只是信息性字段，但至少不能与计划发布 tag 矛盾。
+- `validate.yml` 的 count assert 由 15 → 16（agents/marketplace 和 `applyto-map.json`）；`tests/test_distill.py` 的 domain count 由 14 → 15。
+- `distill.py`、`tools/qor_trends.py`、`memory/README.md`、`memory-keeper/SKILL.md` 注册新 domain；`projected_repair_yield_pct` 加入 `HIGHER_IS_BETTER`。
+- 安装器更新：`install.sh`、`install.ps1`（plugin list、dir map、`enabledPlugins`、OpenCode mode map、completion message）以及 `bin/install.mjs`（`OPENCODE_MODE_DISPLAY`）。
 
-## [Unreleased] — feat/semantic-experience-search branch
+## [Unreleased] — feat/semantic-experience-search 分支
 
-### Added
+### 新增
 
-- **Semantic / keyword search over experiences** (FUTURE_WORK item 2): a new way for orchestrators to retrieve prior fixes by relevance to a natural-language query (e.g. "what fixed WNS issues on sky130 before?") instead of reading the whole `experiences.jsonl`.
-  - **`tools/experience_search.py`** — core library + standalone CLI. Default backend is a pure-stdlib **TF-IDF + cosine** ranker over the free-text fields (`issues_encountered`, `fixes_applied`, `notes`); reuses the shared `resolve_memory_root`, `load_records`, and `filter_by_design/pdk/tool` helpers so it sees exactly what orchestrators wrote. Returns ranked records with `score`, `matched_terms`, the `backend` used, and a `fell_back`/`fallback_reason` flag. CLI exit codes mirror the repo convention (`0` results, `1` no match, `2` error/bad memory root).
-  - **Optional embedding backend, dormant by default** — `get_embedding_backend()` returns `None` until a deployment wires in an embedding library, keeping the repo stdlib-only. It activates only when a backend is available **and** the domain has ≥ `--min-records` records (default **50**, per the issue threshold); otherwise the tool transparently falls back to keyword. Embeddings cache in a stdlib `sqlite3` index (`<domain>/.experience_index.sqlite3`) keyed by record content hash, with incremental `--reindex`.
-  - **`plugins/infrastructure/tools/mcp-memory.py`** — dedicated MCP stdio server (protocol `2024-11-05`, same scaffolding as `mcp-adapter.py`) exposing the `query_experiences` tool; **`plugins/infrastructure/mcp/mcp-memory.json`** — config template (server name `chip-design-memory`).
-  - **Tests** — `tests/test_experience_search.py` (tokenizer, TF-IDF ranking, filter pre-narrowing, threshold/backend selection, sqlite cache incrementality + stale-hash eviction, CLI exit codes) and `tests/test_mcp_memory.py` (JSON-RPC `initialize`/`tools/list`/`tools/call` smoke + error codes).
+- **Experience 的 semantic / keyword search**（FUTURE_WORK item 2）：Orchestrator 可以根据自然语言 query 的相关性查找历史修复，例如“之前 sky130 上 WNS 问题怎么解决”，不必每次读取完整 `experiences.jsonl`。
+  - **`tools/experience_search.py`**：核心库 + 独立 CLI。默认 backend 是纯 stdlib 的 **TF-IDF + cosine**，对自由文本字段（`issues_encountered`、`fixes_applied`、`notes`）进行排名；复用共享 `resolve_memory_root`、`load_records`、`filter_by_design/pdk/tool`，因此它看到的内容与 Orchestrator 实际写入一致。结果包含 `score`、`matched_terms`、`backend`、`fell_back/fallback_reason`。CLI exit code 遵循仓库约定：0=有结果、1=无匹配、2=错误/非法 memory root。
+  - **可选 embedding backend，默认休眠**：`get_embedding_backend()` 在部署环境没有接入 embedding library 时返回 None，因此仓库继续保持 stdlib-only。只有 backend 可用且该 domain 记录数 ≥ `--min-records`（默认 50）时才启用，否则透明回退 keyword。Embedding 缓存在 stdlib `sqlite3` index（`<domain>/.experience_index.sqlite3`）中，按 record content hash 索引，并支持增量 `--reindex`。
+  - **`plugins/infrastructure/tools/mcp-memory.py`**：独立 MCP stdio server（protocol `2024-11-05`，脚手架与 `mcp-adapter.py` 相同），暴露 `query_experiences` 工具；**`plugins/infrastructure/mcp/mcp-memory.json`**：配置模板，server name 为 `chip-design-memory`。
+  - **测试**：`tests/test_experience_search.py` 覆盖 tokenizer、TF-IDF ranking、filter pre-narrowing、threshold/backend selection、sqlite cache 增量更新与 stale-hash 清理、CLI exit code；`tests/test_mcp_memory.py` 覆盖 JSON-RPC `initialize` / `tools/list` / `tools/call` smoke test 和错误码。
+- **全部 15 个 Orchestrator**：在 session-start Memory block 新增可选 “semantic experience lookup” 说明；若 `query_experiences` MCP 可用则调用，否则继续只使用 `knowledge.md`。该查询只是增强，不替代 `knowledge.md`。Router（`pipeline-orchestrator`）会查询目标 producer domain；`infrastructure-orchestrator` 使用 opt-in 逻辑。
+- **`memory/README.md`**：增加 “Semantic / Keyword Experience Search” 章节，说明 CLI、MCP Server/config、threshold/fallback 行为、sqlite cache + `--reindex`，以及可选 Orchestrator read path。
+- **`FUTURE_WORK.md`**：item 2 标记已实现（分阶段），并说明为何放弃 sqlite-vec/Chroma/托管方案，选择 stdlib-only keyword 默认实现加可插拔 embedding hook。
 
-### Changed
+## [Unreleased] — feat/agent-auto-detect 分支
 
-- **All 15 orchestrators**: added an optional "semantic experience lookup" note to the session-start memory block — call the `query_experiences` MCP tool when available, otherwise proceed with `knowledge.md` only (augments, never replaces). The note is tailored for the router (`pipeline-orchestrator`, queries the target producer domain) and the opt-in `infrastructure-orchestrator`.
-- **`memory/README.md`**: new "Semantic / Keyword Experience Search" section documenting the CLI, the MCP server/config, the threshold/fallback semantics, the sqlite cache + `--reindex`, and the optional orchestrator read-path.
-- **`FUTURE_WORK.md`**: item 2 marked implemented (phased); documented why the sqlite-vec/Chroma/hosted options were rejected in favor of a stdlib-only keyword default with a pluggable embedding hook.
+### 新增
 
-## [Unreleased] — feat/agent-auto-detect branch
+- **自动检测已安装的 AI coding Agent**：安装器不带 `--ide` 时，会检测 5 类支持的 Agent（Claude Code、OpenAI Codex、OpenCode、Gemini、GitHub Copilot），打印检测结果和每个目标的写入位置，确认后安装。如果对应 CLI 在 `PATH` 中，或者其配置目录存在（`~/.claude`、`~/.codex`、`~/.config/opencode`、`~/.gemini`），就视为已安装；Copilot 为 project-scoped，通过 `gh` / `copilot` CLI 检测。新增 `bin/detect.mjs` 作为检测规则的单一来源。
+- 增加 `--yes` / `-y`（sh、mjs）和 `-Yes`（ps1），可跳过确认；在非交互 shell（CI、pipe）中也会自动继续。
 
-### Added
+### 变更
 
-- **Auto-detection of installed AI coding agents**: running the installer with no `--ide` flag now detects which of the five supported agents (Claude Code, OpenAI Codex, OpenCode, Gemini, GitHub Copilot) are present, prints what it found and where each would write, and installs to them after a confirmation prompt. An agent counts as installed if its CLI is on `PATH` **or** its config directory exists (`~/.claude`, `~/.codex`, `~/.config/opencode`, `~/.gemini`); Copilot is project-scoped and detected via the `gh` / `copilot` CLI. New `bin/detect.mjs` is the single source of truth for the detection signatures.
-- **`--yes` / `-y` (sh, mjs) and `-Yes` (ps1)** to skip the confirmation prompt; detection also auto-proceeds in non-interactive shells (CI, pipes).
+- **`bin/install.mjs` 现在原生使用 Node 安装全部 5 个 target**，不再依赖 Python。过去仅存在于 `install.sh` Python block 中的 Copilot/Gemini/OpenCode/Codex generator 已移植到 Node，生成结果在除绝对路径和 “Generated by” 注释外与原实现 byte-identical。Gemini/OpenCode 会嵌入 runtime file reference，因此使用 `npx` 时，相关 payload 会复制到持久路径 `~/.digital-chip-design-agents/payload/`，避免 npm 临时 package 目录回收后引用失效。显式 `--ide`（包括 `all`）跳过自动检测并保持原行为。
+- **`install.sh` / `install.ps1`** 也增加同样的自动检测模式，当未指定 `--ide` / `-IDE` 时默认启用。它们仍需要 `python3`，因为 Claude 安装逻辑用 Python 读取 plugin version 并 merge `settings.json`；完全无 Python 的路径是 npm 安装器。
+- **`README.md`**：补充自动检测、`--yes`，并明确 npm 路径现在支持全部 target。
 
-### Changed
+## [Unreleased] — feat/structured-failure-handling 分支
 
-- **`bin/install.mjs` now installs all five targets natively in Node** — no Python dependency. The Copilot / Gemini / OpenCode / Codex generators that previously lived only in the Python blocks of `install.sh` were ported to Node, producing byte-identical output (modulo absolute paths and the "Generated by" comment). Gemini and OpenCode embed runtime file references, so under `npx` the referenced payload is copied to a durable `~/.digital-chip-design-agents/payload/` so the references survive package-dir reclamation. Explicit `--ide` (including `all`) bypasses detection and keeps its prior behaviour.
-- **`install.sh` / `install.ps1`** gained the same detection mode (default when no `--ide`/`-IDE`). They still require `python3` (their Claude block reads plugin versions and merges `settings.json` via Python); the fully Python-free path is now the npm installer.
-- **`README.md`**: documented auto-detection, the `--yes` flag, and that the npm path now installs every supported target.
+### 新增
 
-## [Unreleased] — feat/structured-failure-handling branch
+- **`failure_class → retry_strategy` 映射**（FUTURE_WORK item 10）：每个 failure 都映射为恢复策略 `regenerate | refine | escalate`，使 retry 行为由结构化字段决定，而不是解析 prose。权威映射定义在 `plugins/meta/skills/pipeline-orchestration/SKILL.md` 的 `### Failure Classification & Retry Strategy`，继续复用已有 10-value `failure_class` enum，不引入新 taxonomy。早期草案中的 4 类（`invalid_rtl | verification_failure | interface_mismatch | incomplete_spec`）被记录为 alias。
+  - **`regenerate`**：丢弃错误 artifact，从干净状态重新运行生成 stage（`drc_lvs`、`connectivity`、`tool_error`）。
+  - **`refine`**：保留 artifact，针对已识别的具体 defect 携带详细反馈重新运行（`functional`、`timing`、`power_area`、`coverage_gap`）。
+  - **`escalate`**：停止并请求人工输入（`spec_gap`、`resource_limit`）；`none` 表示无需 retry。
+- **`retry_strategy` history 字段（`format_version "1.5"`）**：每个 `history[]` entry 都带有由 `failure_class` 确定的 `retry_strategy`。pipeline-orchestrator 决策表增加该列，并把它作为粗粒度 pre-filter；原有 `confidence` / `suggested_next_step` 优先级仍保留，`resource_limit` 和 low confidence 始终升级。
+- **可执行 escalation guidance**：当策略为 `escalate` 或达到最大迭代上限时，`pending_approval.reason` 必须包含 `failure_class` 以及用户需要提供什么才能解锁流程。
+- **更新示例 fixture**：`design_state.checkpoint.json` 和 `design_state.fix_request.json` 升级到 `"1.5"`，所有 history entry 增加 `retry_strategy`；checkpoint fixture 还增加一个 `timing/refine` 的 `synth_check` loop-back 示例，用于覆盖非 none 路径。
 
-### Added
+### 变更
 
-- **failure_class → retry_strategy mapping** (FUTURE_WORK item 10): every failure is now categorised into a recovery *strategy* — `regenerate | refine | escalate` — so retry behaviour is determined programmatically rather than by prose. The authoritative mapping is defined once in `plugins/meta/skills/pipeline-orchestration/SKILL.md` under `### Failure Classification & Retry Strategy`, reusing the existing 10-value `failure_class` enum (no new taxonomy). The four classes from the original draft (`invalid_rtl | verification_failure | interface_mismatch | incomplete_spec`) are reconciled as documented aliases.
-  - **`regenerate`** — discard the faulty artifact and re-run the generating stage from a clean slate (`drc_lvs`, `connectivity`, `tool_error`).
-  - **`refine`** — re-run targeting a specific defect with detailed feedback (`functional`, `timing`, `power_area`, `coverage_gap`).
-  - **`escalate`** — halt and request human input (`spec_gap`, `resource_limit`); `none` ⇒ no retry.
-- **`retry_strategy` history-entry field (`format_version "1.5"`)**: every `history[]` entry now carries `retry_strategy`, derived deterministically from `failure_class`. The pipeline-orchestrator decision table gains a `retry_strategy` column and branches on it as a coarse pre-filter (existing `confidence`/`suggested_next_step` precedence preserved; `resource_limit` and `low` confidence still always escalate).
-- **Actionable escalation guidance**: when a strategy resolves to `escalate` or a max-iteration cap is hit, `pending_approval.reason` must state the `failure_class` plus a plain-language description of what the user must supply to unblock the flow.
-- **Updated example fixtures**: `design_state.checkpoint.json` and `design_state.fix_request.json` bumped to `"1.5"` with `retry_strategy` on every history entry; the checkpoint fixture adds an illustrative `timing`/`refine` `synth_check` loop-back entry to exercise the non-`none` path.
+- **`format_version "1.5"`**：新增能力层，覆盖 `retry_strategy` 和程序化 retry branching。全部 14 个写 history 的 Orchestrator（13 个 domain + infrastructure）首次写入时升级到 1.5；包括原本从 1.3 起步的 compiler/firmware/infrastructure。旧版本继续可读，缺失 `retry_strategy` 时可从 `failure_class` 推导。
+- **全部 14 个 Orchestrator + `pipeline-orchestrator.md`**：Stage Agent Output Format 与 `history[]` schema 增加 `retry_strategy`（现在 10 字段）；per-stage trace 行为规则要求正确填写该值；format_version upgrade 同步更新。
+- **CI（`validate.yml`）**：`VALID_FORMAT_VERSIONS` 加入 1.5；新增 `VALID_RETRY_STRATEGY`、`RETRY_STRATEGY_MAP` 和 `check_retry_strategy`，验证 1.5 history entry 中 `retry_strategy` 是否同时与合法值及对应 `failure_class` 映射一致；两份 fixture 都会检查。
+- **`memory/README.md`**：在 history 字段说明中增加 `retry_strategy`，并补充 format_version 1.4 / 1.5 层级。
 
-### Changed
+## [Unreleased] — feat/infrastructure-memory 分支
 
-- **`format_version "1.5"`**: new capability tier covering the `retry_strategy` field and programmatic retry branching. All 14 history-writing orchestrators (the 13 domain orchestrators + infrastructure) upgrade to `"1.5"` on first write — including compiler/firmware/infrastructure, which advance from `"1.3"`; prior-version files remain readable (`retry_strategy` absent → derive from `failure_class`).
-- **All 14 orchestrators + `pipeline-orchestrator.md`**: added `retry_strategy` to the Stage Agent Output Format and `history[]` schema (now 10 fields), updated the per-stage-trace behaviour rule to set and require it, and bumped the format_version upgrade step.
-- **CI** (`validate.yml`): added `"1.5"` to `VALID_FORMAT_VERSIONS`, a `VALID_RETRY_STRATEGY` set and `RETRY_STRATEGY_MAP`, and a `check_retry_strategy` helper that validates each 1.5 history entry's `retry_strategy` against the value **and** its `failure_class` mapping, applied to both example fixtures.
-- **`memory/README.md`**: documented `retry_strategy` in the `history[]` field list and added the `"1.4"` and `"1.5"` format_version tiers.
+### 新增
 
-## [Unreleased] — feat/infrastructure-memory branch
+- **Infrastructure Orchestrator Memory**（FUTURE_WORK item 4）：在 `memory/infrastructure/` 下以 opt-in、environment-keyed 方式持久记录 tool version 和 setup 配置，继续使用 `knowledge.md + experiences.jsonl` 两级 Memory。
+  - **Opt-in，默认关闭**：只有 `design_state.pipeline_config.track_infrastructure == true` 或调用时带 `--track-memory`，infrastructure-orchestrator 才读写 `memory/infrastructure/`。未设置时完全不做 I/O，保持过去 memory-free 行为。这符合原来暂缓的理由：infra state 强依赖具体环境，而 lockfile 仍是版本的主要 source of truth。
+  - **Environment-keyed record**：每条 experience 携带环境 fingerprint（`host`、`os`、`os_version`、`arch`）以及 `environment_validation` 阶段采集的 `key_metrics.tool_versions`。价值在于跨 session 定位重复 version mismatch。Record 按环境区分，而不是设计，`design_name` 通常为 null。
+  - **初始化 `memory/infrastructure/knowledge.md`**：Tier-2 summary 预置环境不匹配失败模式，例如 Verilator <5.0 不支持 `--timing`、OpenROAD nightly 与 release ABI drift、module-unload 后 python3 fallback，以及常用 flag/install note 和工具 quirks。
+  - **完整接入 memory-keeper**：`infrastructure` 已注册到 `distill.py` 的 `VALID_DOMAINS`、`METRIC_FIELDS`（`tools_detected`、`tools_missing`、`wrappers_deployed`、`mcp_servers_configured`）以及 memory-keeper Skill Domains 表，可通过 `/chip-design-infrastructure:memory-keeper --domain infrastructure` 将环境经验蒸馏到 `knowledge.md`。
 
-### Added
+### 变更
 
-- **Infrastructure orchestrator memory** (FUTURE_WORK item 4): opt-in, environment-keyed persistent tracking of tool versions and setup configuration under `memory/infrastructure/`, following the existing two-tier memory pattern (`knowledge.md` + `experiences.jsonl`).
-  - **Opt-in, default off**: the infrastructure-orchestrator reads/writes `memory/infrastructure/` only when `design_state.pipeline_config.track_infrastructure == true` or it is invoked with `--track-memory`. When unset, no `memory/infrastructure/` I/O occurs — prior (memory-free) behavior is unchanged. This respects the original deferral rationale (infra state is environment-specific; lockfiles remain the primary version source of truth).
-  - **Environment-keyed records**: each `experiences.jsonl` record carries an `environment` fingerprint (`host`, `os`, `os_version`, `arch`) and a `key_metrics.tool_versions` per-tool version map captured at `environment_validation` — the core value-add for diagnosing repeated version-mismatch debugging across sessions. Records are differentiated by environment, not by design (`design_name` is typically `null`).
-  - **Seeded `memory/infrastructure/knowledge.md`**: Tier-2 summary with known env-mismatch failure patterns (e.g. Verilator < 5.0 lacks `--timing`, OpenROAD nightly vs release ABI drift, module-unload python3 fallback), successful flags/install notes, and tool quirks.
-  - **Full memory-keeper integration**: `infrastructure` registered in `distill.py` `VALID_DOMAINS` and `METRIC_FIELDS` (`tools_detected`, `tools_missing`, `wrappers_deployed`, `mcp_servers_configured`) and added to the memory-keeper SKILL Domains table, so infrastructure quirks distil into `knowledge.md` via `/chip-design-infrastructure:memory-keeper --domain infrastructure`.
+- **`memory/README.md`**：Directory Layout 新增 `infrastructure/`；Domain key_metrics 表增加 infrastructure 行；新增 “Infrastructure memory (opt-in, environment-keyed)” 章节，说明激活条件和按环境分键的 record。
+- **`infrastructure-orchestrator.md`**：新增 Behaviour Rule 8 和 “Infrastructure Memory” 章节，定义 activation gate、session-start read、`environment_validation` 后 upsert，以及 environment-keyed schema。
 
-### Changed
+## [Unreleased] — feat/central-constraint-handling 分支
 
-- **`memory/README.md`**: added `infrastructure/` to the Directory Layout, an `infrastructure` row to the Domain key_metrics Fields table, and a new "Infrastructure memory (opt-in, environment-keyed)" subsection documenting the activation flag and env-keyed records.
-- **`infrastructure-orchestrator.md`**: added Behaviour Rule 8 and an "Infrastructure Memory" section specifying the activation gate, session-start read, post-`environment_validation` upsert, and the environment-keyed record schema.
+### 新增
 
-## [Unreleased] — feat/central-constraint-handling branch
+- **从 `design_state.constraints` 动态加载 constraint**（FUTURE_WORK item 8）：`design_state.constraints` 现在是设计约束的唯一可信来源，包括 clock target、area/power budget、WNS/TNS、utilization、IR-drop、leakage、coverage、fault coverage、HLS II/latency 和 FPGA resource limit。11 个 constraint-bearing domain Skill 都改为引用具体 key，而不是硬编码 literal；原 literal 只作为 backward-compatible 默认值保留。
+- **完整 `constraints` schema（`format_version "1.4"`）**：权威 schema 统一定义于 `plugins/meta/skills/pipeline-orchestration/SKILL.md` 的 `### Constraints Schema`，分类包括 `clock`、`pvt_corners[]`、`timing`、`area`、`power`、`coverage`、`dft`、`hls`、`fpga`。所有非 null 默认值都与过去 Skill 中的 literal 一致。
+- **Stage-entry constraint validation**：每个需要 constraint 的 Orchestrator 在第一个消费约束的 stage 读取 `design_state.constraints`；若其 required subset 中某 key 缺失或为 null，则原子设置 `pending_approval.type="constraint_gap"` 并停止。Optional constraint 缺失时采用 schema default，同时写 WARN history。Required subset：`clock.clk_mhz`（architecture、rtl-design、synthesis、sta、pd、soc、fpga）；`area.area_um2 + power.power_mw`（architecture、synthesis、pd）；`pvt_corners` 至少一项 V/T 非 null（sta、pd）；HLS 至少 `hls.target_ii` / `hls.target_latency_cycles` 之一非 null。
+- **`pending_approval.type:"constraint_gap"`**：扩展现有 pending_approval，用于 constraint 缺失；pipeline-orchestrator 会输出类型专属提示，让用户补齐 constraint 并清空 pending_approval 后继续。
+- **`constraint_ref` tagging**：`history[]` entry 会标出 QoR 判断使用的 dot-path key，例如 `timing.wns_ns_target`、`power.power_mw`、`clock.clk_mhz`，使每次 stage decision 都能追溯到对应 constraint。
+- **更新 `design_state.checkpoint.json` 示例**：升级到 format_version 1.4，为 `example_dsp_core` 加入完整 constraints（500 MHz、28nm），并在 `perf_modelling`、`power_area_estimation`、`module_planning`、`synth_check` history 中使用真实 dot-path `constraint_ref`。
 
-### Added
+### 变更
 
-- **Dynamic constraint loading from `design_state.constraints`** (FUTURE_WORK item 8): `design_state.constraints` is now the single source of truth for all design constraint values — clock target, area/power budgets, timing sign-off thresholds (WNS/TNS), utilisation targets, IR-drop limits, leakage budget, coverage targets, fault-coverage targets, HLS II/latency, and FPGA resource limits. All 11 constraint-bearing domain SKILL.md files now reference constraint keys (e.g. `design_state.constraints.timing.wns_ns_target`) instead of hardcoded literals; the literals are retained as documented defaults for backward compatibility.
-- **Comprehensive `constraints` schema (`format_version "1.4"`)**: authoritative schema defined once in `plugins/meta/skills/pipeline-orchestration/SKILL.md` under `### Constraints Schema`. Nested by category: `clock`, `pvt_corners[]`, `timing`, `area`, `power`, `coverage`, `dft`, `hls`, `fpga`. All non-null defaults match the literals previously hardcoded in SKILL.md files.
-- **Stage-entry constraint validation** (hard-fail on missing required constraints): every constraint-bearing orchestrator now reads `design_state.constraints` at its entry stage and, for each key in its required subset, performs an atomic RMW to set `pending_approval.type = "constraint_gap"` and halts when the key is missing or null. Optional constraints fall back to schema defaults with a WARN history entry. Required subsets: `clock.clk_mhz` (architecture, rtl-design, synthesis, sta, pd, soc, fpga); `area.area_um2` + `power.power_mw` (architecture, synthesis, pd); `pvt_corners` with non-null V/T (sta, pd); at least one of `hls.target_ii` or `hls.target_latency_cycles` (hls).
-- **`pending_approval.type: "constraint_gap"`**: new discriminator value for the existing `pending_approval` mechanism. Pipeline-orchestrator prints a type-specific message directing the user to populate the missing constraint keys and clear `pending_approval` to resume.
-- **`constraint_ref` tagging**: `history[]` entries now carry the dot-path constraint key compared at each QoR evaluation step (e.g. `"timing.wns_ns_target"`, `"power.power_mw"`, `"clock.clk_mhz"`), making every stage decision traceable to the constraint that gated it.
-- **Updated `design_state.checkpoint.json` example**: `format_version` bumped to `"1.4"`, full `constraints` block added for `example_dsp_core` (500 MHz, 28nm), and `constraint_ref` set to real dot-path keys on `perf_modelling` (`"power.power_mw"`), `power_area_estimation`, `module_planning` (`"clock.clk_mhz"`), and `synth_check` (`"timing.wns_ns_target"`) history entries.
-
-### Changed
-
-- **`format_version "1.4"`**: new capability tier covering the full `constraints` object, stage-entry constraint validation, and `pending_approval.type: "constraint_gap"`. All 15 orchestrators upgrade to `"1.4"` on first write; prior-version files remain readable (`constraints` absent → apply schema defaults; missing `pending_approval.type` → treat as `"escalation"`).
-- **Architecture orchestrator** (`architecture-orchestrator.md`): expanded `constraints` stub from `{clk_mhz, area_um2, power_mw}` to the full nested schema; added Behaviour Rule 8 (populate constraints during `spec_analysis`) and Behaviour Rule 9 (hard-fail if required keys remain null after extraction).
-- **All 11 domain SKILL.md files** updated: `### QoR Metrics` and constraint-bearing `### Domain Rules` sections reworded to reference `design_state.constraints.<key>` with the prior literal as a documented default; each file gained a `## Constraint Validation` section listing the domain's required and optional keys.
-- **`formal` and `dft` orchestrators**: `constraints` added to Design State Read extract list (was previously missing).
-- **CI**: no schema-validation changes required — the edits are to tracked `.md` and `.json` files already covered by the existing lint checks.
+- **`format_version "1.4"`**：新增 constraint object、stage-entry validation 和 `pending_approval.type:"constraint_gap"`。全部 15 个 Orchestrator 首次写入时升级到 1.4；旧版仍兼容：没有 constraints 时使用 optional default，缺失 pending_approval.type 时视为 escalation。
+- **Architecture Orchestrator**：constraints stub 从扁平 `{clk_mhz, area_um2, power_mw}` 扩展为完整 nested schema；新增 Behaviour Rule 8（`spec_analysis` 阶段填充 constraint）和 Rule 9（required key 仍为 null 时 hard-fail）。
+- **全部 11 个 domain Skill**：QoR Metric 和使用约束的 Domain Rule 改为引用 `design_state.constraints.<key>`，并保留旧 literal 作为 documented default；每个文件新增 `## Constraint Validation`，列出 required/optional key。
+- **`formal`、`dft` Orchestrator**：Design State Read 增加 `constraints`。
+- **CI**：无需新增 schema-validation 逻辑，修改对象均已由现有 Markdown/JSON 检查覆盖。
 
 ---
 
-## [Unreleased] — feat/approval-gates-traceability branch
+## [Unreleased] — feat/approval-gates-traceability 分支
 
-### Added
+### 新增
 
-- **Approval checkpoints** (FUTURE_WORK item 11, part A): proactive human-in-the-loop gates at any orchestrator's sign-off boundary, controlled by `pipeline_config.checkpoints[]` in `design_state.json`. Default positions: `arch_signoff`, `rtl_signoff`, and `signoff` (PD tape-out). When a checkpoint fires, the orchestrator sets `pending_approval { type: "checkpoint", stage, agent }` and halts without completing sign-off; the user resumes by adding the stage to `approved_checkpoints[]` and re-invoking. Empty `checkpoints` ⇒ fully autonomous (backward compatible).
-- **Per-stage execution trace** (FUTURE_WORK item 11, part B): all 15 orchestrators now append one `history[]` entry per completed stage (PASS/FAIL/WARN) rather than a single terminal entry per run. Enables post-run audits without replaying the full agent conversation. Entry shape is unchanged (9-field schema).
-- **`format_version "1.3"`**: new capability tier in `design_state.json` covering checkpoints + per-stage trace. All orchestrators upgrade to `"1.3"` on first write; prior-version files remain readable.
-- **`design_state.checkpoint.json` fixture**: new golden example under `plugins/meta/skills/pipeline-orchestration/examples/` demonstrating a `pending_approval { type: "checkpoint" }` pause, `approved_checkpoints[]` entry, and per-stage history trace across architecture → RTL stages.
+- **Approval checkpoint**（FUTURE_WORK item 11A）：任何 Orchestrator 的 sign-off 边界都可配置主动 human-in-the-loop gate，由 `design_state.json` 中 `pipeline_config.checkpoints[]` 控制。默认建议位置为 `arch_signoff`、`rtl_signoff` 和 PD tape-out 的 `signoff`。触发 checkpoint 时，Orchestrator 设置 `pending_approval {type:"checkpoint", stage, agent}` 并停止，不完成 sign-off；用户把 stage 加入 `approved_checkpoints[]` 后重新调用即可恢复。`checkpoints:[]` 表示完全自动，保持 backward compatible。
+- **Per-stage execution trace**（FUTURE_WORK item 11B）：全部 15 个 Orchestrator 现在每完成一个 stage（PASS/FAIL/WARN）就向 `history[]` 写一条记录，而不只是每次 run 结束时写一条 terminal record。这样无需重放完整 Agent 对话也可审计过程。Entry shape 当时仍为 9 字段。
+- **`format_version "1.3"`**：覆盖 checkpoint + per-stage trace 的能力层。全部 Orchestrator 首次写入时升级到 1.3，旧文件仍可读。
+- **`design_state.checkpoint.json` fixture**：新增 golden example，展示 `pending_approval.type:"checkpoint"` 的 pause、`approved_checkpoints[]` 和 architecture → RTL 的 per-stage history。
 
-### Changed
+### 变更
 
-- **`pending_approval` schema extended**: added `type` (`checkpoint` | `escalation`), `stage`, and `agent` fields. Backward-compatible — readers treating missing `type` as `"escalation"` remain correct.
-- **Ownership rules amended**: domain orchestrators may now set `pending_approval` with `type: "checkpoint"` at their own sign-off stage; `type: "escalation"` remains the sole responsibility of the pipeline-orchestrator.
-- **`pipeline_config` extended**: added `checkpoints` array (list of stage name strings, default `[]`).
-- **`approved_checkpoints[]` added**: new top-level field; each entry `{ "stage", "approved_at", "approved_by" }`. Written by the user or by an orchestrator acting on an explicit approval instruction.
-- **All 15 orchestrators updated**: Design State Read now extracts `pipeline_config` and `approved_checkpoints`; Design State Write upgrades `format_version` to `"1.3"`; all orchestrators carry two new Behaviour Rules (per-stage trace + checkpoint gate).
-- **CI validation extended**: `VALID_FORMAT_VERSIONS` now includes `"1.3"`; new inline Python checks for `pipeline_config.checkpoints`, `approved_checkpoints`, `pending_approval.type`; both fixtures validated on every PR.
-- **`memory/README.md`** updated with `format_version 1.3` tier, `checkpoints`, `approved_checkpoints`, and extended `pending_approval` field documentation.
-
----
-
-## [Unreleased] — feat/rtl-verify-feedback-loop branch
-
-### Added
-
-- **Closed-loop verification↔RTL feedback** (FUTURE_WORK item 6): verification and formal orchestrators now write structured `fix_request` entries to `design_state.json` when a DUT bug or formal CEX is found, instead of suspending with prose-only output. The new `chip-design-meta` plugin (`plugins/meta/agents/pipeline-orchestrator.md`) detects open `fix_requests`, dispatches the RTL orchestrator to fix the bug, re-runs the originating verification or formal check, and loops up to 3 cross-domain iterations before escalating via `pending_approval`.
-- **`fix_request` schema** (`format_version 1.1`): two new top-level fields in `design_state.json` — `fix_requests[]` (structured bug handoff with id, failure_class, suspected_rtl, waveform_path, status lifecycle) and `cross_domain_iteration_count` (integer cap enforced by the pipeline-orchestrator). Fully backward-compatible — all existing readers treat missing keys as null/zero.
-- **`chip-design-meta` plugin** (`plugins/meta/`): 15th plugin in the marketplace, with `pipeline-orchestrator` agent, `pipeline-orchestration` skill (hosts authoritative fix_request schema and dispatch patterns), and persistent memory under `memory/meta/`.
-- **Formal orchestrator fix_request support**: `formal-orchestrator.md` now writes `failure_class=formal_cex` fix_requests (including CEX trace path) on property counter-example, matching the verification orchestrator's protocol. Both route to the RTL orchestrator for fixing in V1.
-
-### Changed
-
-- **Plugin count**: 14 → 15 plugins. CI assertion in `validate.yml` and `ides/copilot/applyto-map.json` domain count updated accordingly.
-- **`verification-orchestrator.md`**: loop-back rule for `directed_tests DUT bug found` and Behaviour Rule 4 updated to write structured fix_requests and exit with `decision=escalate`; Design State Read step extended to handle re-invocation context.
-- **`rtl-design-orchestrator.md`**: Design State Read step extended to detect and claim open fix_requests; new Behaviour Rule 6 documents the fix_request close protocol.
-- **`functional-verification/SKILL.md`**: Domain Rule 7 updated from "suspend and wait for confirmation" to "write fix_request and terminate for pipeline-orchestrator dispatch".
-- **`memory/README.md`**: design_state.json schema documentation updated with `fix_requests[]`, `cross_domain_iteration_count`, and `format_version 1.1` details.
-- **Divergence detection scoped to current session** (`pipeline_session_id`): the pipeline-orchestrator divergence check now compares only against `status=fixed` entries sharing the same `pipeline_session_id`, preventing false escalations when the same bug class legitimately recurs after a refactor in a later session.
-- **Archival on signoff**: pipeline-orchestrator success branch moves resolved `fix_requests[]` entries into `design_state.archive_fix_requests[]` and resets session state, preventing unbounded array growth across long-running designs.
-- **Configurable iteration cap** (`pipeline_config.max_cross_domain_iterations`): iteration limit lifted from hardcoded `3` to a user-tunable field in `design_state.json` (default 3 if absent). Set the field to tune per-design without editing agent files.
-- **LEC unmatched-points loop intentionally deferred to V2**: `lec_run: unmatched points` in `formal-orchestrator.md` is not connected to the fix_request protocol in V1 — proper support requires `synthesis-orchestrator` as a consumer. Documented in `pipeline-orchestration/SKILL.md` V2 extension points.
-- **Removed vestigial per-entry `iteration_count`** (S1): `fix_request` schema no longer includes `iteration_count` — the field was always 0 or 1 in practice because re-failures open a *new* entry. The top-level `cross_domain_iteration_count` is the sole iteration counter. Removed from `meta/SKILL.md`, both producer agent schemas, `rtl-design-orchestrator.md` Behaviour Rule 6 and Write step 5a, the fixture, and CI `REQUIRED_FIELDS`.
-- **Seeded `memory/meta/experiences.jsonl`** (S7): two illustrative records added — one `converged` (single-iteration MAC unit fix) and one `escalated` (AXI DMA cap exceeded after 3 iterations).
-- **Marketplace version bump** and **README reconciliation** (Cosmetic): `metadata.version` bumped to `1.3.0`; README header updated to "15 plugins · 16 skill files"; `chip-design-meta` added to the Available Plugins table.
+- **`pending_approval` schema 扩展**：增加 `type`（`checkpoint | escalation`）、`stage`、`agent`。Backward compatible：旧 reader 对缺失 type 可按 escalation 处理。
+- **所有权规则更新**：domain Orchestrator 现在可以在自己 sign-off stage 设置 `type:"checkpoint"`；`type:"escalation"` 仍只由 pipeline-orchestrator 设置。
+- **`pipeline_config` 扩展**：新增 `checkpoints` 数组，默认 `[]`。
+- **新增 `approved_checkpoints[]`**：top-level 字段，每项 `{"stage","approved_at","approved_by"}`，由用户或执行显式批准指令的 Orchestrator 写入。
+- **全部 15 个 Orchestrator 更新**：Design State Read 提取 `pipeline_config` 和 `approved_checkpoints`；Write 升级 `format_version` 到 1.3；增加 per-stage trace + checkpoint gate 两条 Behaviour Rule。
+- **CI 扩展**：`VALID_FORMAT_VERSIONS` 增加 1.3；新增 inline Python 检查 `pipeline_config.checkpoints`、`approved_checkpoints`、`pending_approval.type`；两份 fixture 每个 PR 都验证。
+- **`memory/README.md`**：补充 1.3 层级、checkpoints、approved_checkpoints 和扩展的 pending_approval 文档。
 
 ---
 
-## [Unreleased] — agent-scope-review branch
+## [Unreleased] — feat/rtl-verify-feedback-loop 分支
 
-### Added
-- **Pre-run context** (`## Pre-run Context`) section added to all 13 domain SKILL.md files:
-  agents now read `knowledge.md` and `run_state.md` at every invocation point, not only
-  at orchestrator session start.
-- **Run-state tracking**: all 13 domain SKILL.md files and the PD orchestrator now write
-  `memory/<domain>/run_state.md` as the first action before any tool invocation; `last_stage`
-  is updated after each stage so wakeup-loop prompts can resume correctly.
-- **Per-stage experience writes**: PD orchestrator (and all domain skills) now upsert to
-  `experiences.jsonl` after each stage rather than only on session end; partial runs are
-  persisted even if the session is interrupted.
-- **Optional claude-mem integration**: all 13 domain skills and the memory-keeper skill now
-  emit applied fixes to `mcp__plugin_ecc_memory__add_observations` when the MCP tool is
-  present; guard clause skips silently when absent so JSONL remains the canonical record.
-- **Clock gating opportunity analysis** added to `architecture` SKILL.md
-  (`power_area_estimation` stage): classifies each clock domain by activity factor α,
-  produces a `clock_power_budget` hand-off table (domain → frequency, α, est. clock power,
-  gating class), and enforces a new QoR gate (≥ 70% of register bits in gateable domains).
-- **Power intent / ICG insertion rules** added to `rtl-design` SKILL.md (`rtl_coding` stage):
-  RTL agent reads `clock_power_budget` from architecture hand-off and inserts ICG cells for
-  high/moderate gating domains; enforces `clock_gating_coverage` ≥ 60% QoR gate.
-- **Architecture → RTL handoff contract** updated in `docs/MASTER_INDEX.md` to include
-  `clock_power_budget` artifact.
-- `memory/README.md` updated to document run_state.md, per-stage write semantics, `run_id`
-  schema field, and the optional claude-mem index pattern.
-- `docs/Architecture_Evaluation_Flow.md` and `docs/RTL_Design_Flow.md` updated to match
-  the new clock gating analysis and ICG insertion rules added to the live SKILL.md files.
-- OpenROAD MCP config (`mcp-openroad.json`) comment improved to call out the two placeholder
-  values that require substitution during installation.
+### 新增
+
+- **Verification↔RTL 闭环反馈**（FUTURE_WORK item 6）：当发现 DUT bug 或 formal CEX 时，verification/formal Orchestrator 不再只输出 prose 并暂停，而是向 `design_state.json` 写结构化 `fix_request`。新增 `chip-design-meta` 插件中的 `pipeline-orchestrator` 会检测 open fix_request，dispatch RTL Orchestrator 修复，然后重新运行原始 verification/formal，最多跨域迭代 3 次，仍不收敛则通过 `pending_approval` 升级。
+- **`fix_request` schema**（format_version 1.1）：`design_state.json` 新增 top-level `fix_requests[]` 和 `cross_domain_iteration_count`。前者保存 id、failure_class、suspected_rtl、waveform_path、status lifecycle 等结构化 bug handoff；后者由 pipeline-orchestrator 强制限制迭代次数。完全 backward-compatible，旧 reader 对缺失 key 按 null/0 处理。
+- **`chip-design-meta` plugin**：Marketplace 第 15 个插件，包含 pipeline-orchestrator Agent、pipeline-orchestration Skill（存放权威 fix_request schema 与 dispatch pattern），以及 `memory/meta/` 持久化 Memory。
+- **Formal Orchestrator fix_request 支持**：`formal-orchestrator.md` 在 property CEX 时写 `failure_class=formal_cex` 的 fix_request，包含 CEX trace path，与 verification 使用相同协议。V1 中两者都路由到 RTL Orchestrator 修复。
+
+### 变更
+
+- **Plugin count**：14 → 15；`validate.yml` CI assert 和 `ides/copilot/applyto-map.json` domain count 同步更新。
+- **`verification-orchestrator.md`**：`directed_tests DUT bug found` loop-back 和 Behaviour Rule 4 改为写结构化 fix_request，并以 `decision=escalate` 退出；Design State Read 支持 re-invocation context。
+- **`rtl-design-orchestrator.md`**：Design State Read 支持检测并 claim open fix_request；Behaviour Rule 6 定义关闭协议。
+- **`functional-verification/SKILL.md`**：Domain Rule 7 从 “暂停并等待确认” 改为 “写 fix_request 并结束，由 pipeline-orchestrator dispatch”。
+- **`memory/README.md`**：补充 fix_requests、cross_domain_iteration_count 和 format_version 1.1。
+- **Divergence detection 限定当前 session**：pipeline-orchestrator 仅把与当前 `pipeline_session_id` 相同且 status=fixed 的历史请求用于 recurrence 判断，避免 refactor 后未来 session 再出现同类 bug 时误报 divergence。
+- **Sign-off 后归档**：pipeline-orchestrator success branch 将当前 session 已解决的 fix_request 移到 `design_state.archive_fix_requests[]`，并重置 session state，避免长项目中数组无限增长。
+- **迭代上限可配置**：`pipeline_config.max_cross_domain_iterations` 取代写死的 3，缺失时默认 3，可按 design 调整，无需改 Agent 文件。
+- **LEC unmatched-points 闭环推迟到 V2**：`formal-orchestrator.md` 的 `lec_run: unmatched points` 在 V1 中不进入 fix_request，因为正确 consumer 应是 `synthesis-orchestrator`，而不是 RTL。已记录到 Pipeline Skill 的 V2 extension point。
+- **删除多余 per-entry `iteration_count`**（S1）：每次 re-failure 实际会新建一条 request，所以该字段几乎总为 0 或 1。统一使用 top-level `cross_domain_iteration_count`。已从 meta Skill、两个 producer schema、RTL Behaviour Rule/Write step、fixture、CI required fields 中删除。
+- **初始化 `memory/meta/experiences.jsonl`**（S7）：加入两条示例，一条 converged（MAC unit 单轮修复），一条 escalated（AXI DMA 3 轮仍失败）。
+- **Marketplace version 和 README 对齐**：metadata.version → 1.3.0；README header 更新为 “15 plugins · 16 skill files”；Available Plugins 增加 `chip-design-meta`。
+
+---
+
+## [Unreleased] — agent-scope-review 分支
+
+### 新增
+
+- 所有 13 个 domain `SKILL.md` 增加 **`## Pre-run Context`**：无论从哪个入口调用，都先读取 `knowledge.md` 与 `run_state.md`，不再只在 Orchestrator session start 读取。
+- **Run-state tracking**：13 个 domain Skill 和 PD Orchestrator 在任何工具调用前第一步写 `memory/<domain>/run_state.md`；每个 stage 后更新 `last_stage`，供 wakeup-loop prompt 正确恢复。
+- **Per-stage experience write**：PD Orchestrator 与全部 domain Skill 现在每个 stage 后就 upsert `experiences.jsonl`，不再只在 session end 写；即使中断，partial run 也能保存。
+- **可选 claude-mem integration**：13 个 domain Skill 与 memory-keeper Skill 在 `mcp__plugin_ecc_memory__add_observations` 可用时把 applied fix 写为 observation；工具缺失时静默跳过，JSONL 仍是 canonical record。
+- **Architecture Skill 增加 clock-gating opportunity 分析**（`power_area_estimation`）：按 activity factor α 分类每个 clock domain，生成 `clock_power_budget` handoff 表（domain → frequency、α、estimated clock power、gating class），并加入 QoR gate：可 gating domain 中至少 70% register bit 需要被覆盖。
+- **RTL Design Skill 增加 power intent / ICG insertion 规则**（`rtl_coding`）：RTL Agent 读取 architecture handoff 中的 `clock_power_budget`，对 high/moderate gating domain 插入 ICG，并要求 `clock_gating_coverage ≥ 60%`。
+- **Architecture → RTL handoff contract** 在 `docs/MASTER_INDEX.md` 中增加 `clock_power_budget` artifact。
+- `memory/README.md` 补充 run_state、per-stage write、`run_id` schema 和可选 claude-mem index pattern。
+- `docs/Architecture_Evaluation_Flow.md`、`docs/RTL_Design_Flow.md` 同步新增 clock-gating/ICG 内容。
+- OpenROAD MCP config（`mcp-openroad.json`）注释明确标出安装时需要替换的两个 placeholder。
 
 ---
 
 ## [1.2.0] — 2026-04-14
 
-### Added
-- Multiple IDE support: GitHub Copilot, Google Gemini Code Assist, and OpenCode
-- `ides/copilot/` — Copilot workspace instructions and per-domain file-glob mapping (`applyto-map.json`)
-- `ides/gemini/` — preamble header injected into a generated `GEMINI.md`
-- `ides/opencode/` — base OpenCode config template with all 13 chip-design modes
-- `install.sh --ide <copilot|gemini|opencode|all>` flag to deploy IDE-specific config into the target project
-- `install.ps1 -IDE <copilot|gemini|opencode|all>` equivalent for Windows PowerShell
-- CI/CD validation extended to lint IDE config files on every PR
+### 新增
 
-### Changed
-- Agents and skills updated with explicit EDA tool usage annotations
-- AgentShield CI step removed (no `.claude` directory present in repo)
+- 支持多个 IDE：GitHub Copilot、Google Gemini Code Assist、OpenCode
+- `ides/copilot/`：Copilot workspace instruction 和按 domain 的 file-glob map（`applyto-map.json`）
+- `ides/gemini/`：生成 `GEMINI.md` 时注入的 preamble header
+- `ides/opencode/`：包含全部 13 个 chip-design mode 的基础 OpenCode config template
+- `install.sh --ide <copilot|gemini|opencode|all>`：把 IDE 专用配置部署到目标项目
+- Windows PowerShell 等效参数：`install.ps1 -IDE <copilot|gemini|opencode|all>`
+- CI/CD 扩展：每个 PR 都 lint IDE config file
+
+### 变更
+
+- Agent 和 Skill 增加明确的 EDA tool 使用说明
+- 删除 AgentShield CI step，因为仓库中没有 `.claude` 目录
 
 ---
 
 ## [1.1.1] — 2026-04-13
 
-### Added
-- AgentShield CI check to validate Claude agent files on every PR
+### 新增
 
-### Fixed
-- Issues reported after CodeRabbit review pass on the AgentShield integration
+- AgentShield CI check：每个 PR 验证 Claude Agent 文件
+
+### 修复
+
+- 修复 CodeRabbit review 后发现的 AgentShield integration 问题
 
 ---
 
 ## [1.1.0] — 2026-04-13
 
-### Added
-- Install scripts for all OS: `install.sh` (macOS / Linux / Git Bash) and `install.ps1` (Windows PowerShell)
-- `strict: true` set in `marketplace.json` to enforce exact plugin paths
+### 新增
 
-### Changed
-- **Breaking restructure:** all 13 agents and skills split from a shared flat directory into isolated per-plugin subdirectories (`plugins/<domain>/agents/` and `plugins/<domain>/skills/`) to eliminate file-system racing conditions when multiple plugins load concurrently
-- Each plugin now has its own `.claude-plugin/plugin.json` manifest
-- CI/CD updated for the new directory layout
-- README updated to document the new structure and remove the prior racing-issue caveat
+- 全平台安装脚本：`install.sh`（macOS / Linux / Git Bash）和 `install.ps1`（Windows PowerShell）
+- 在 `marketplace.json` 中设置 `strict:true`，强制精确 plugin path
 
-### Fixed
-- Recursion guard added to agent and skill invocation chains
-- Agents now read their skill file before executing; skills now spawn the corresponding orchestrator before executing
+### 变更
+
+- **不兼容目录重构**：13 个 Agent/Skill 从共享扁平目录拆分为每个 plugin 独立目录：`plugins/<domain>/agents/`、`plugins/<domain>/skills/`，消除多个 plugin 并发加载时的文件系统竞争问题
+- 每个 plugin 增加独立 `.claude-plugin/plugin.json`
+- CI/CD 适配新目录结构
+- README 更新，删除过去关于 racing issue 的限制说明
+
+### 修复
+
+- Agent 与 Skill invocation chain 增加递归保护
+- Agent 执行前会读取 Skill；Skill 收到完整流程任务时先启动对应 Orchestrator
 
 ---
 
 ## [1.0.3] — 2026-04-12
 
-### Fixed
-- Marketplace recursive-directory bug: strengthened schema checks to enforce path typing and prevent the marketplace registry from resolving into subdirectories recursively
+### 修复
+
+- Marketplace recursive-directory bug：加强 schema 检查，强制 path 类型正确，避免 Marketplace registry 递归解析到子目录
 
 ---
 
 ## [1.0.2] — 2026-04-12
 
-### Fixed
-- Validate CI and `plugin.json` incorrect formatting (follow-up to v1.0.1)
+### 修复
+
+- 修复 Validate CI 和 `plugin.json` 格式问题（v1.0.1 的 follow-up）
 
 ---
 
 ## [1.0.1] — 2026-04-12
 
-### Fixed
-- Validate CI pipeline failures on initial setup
-- `plugin.json` formatting errors flagged by the CI linter
-- Minor environment file corrections reported by CodeRabbit
-- Removed stray `.claude` settings file from repo root
+### 修复
+
+- 初始 setup 中的 Validate CI pipeline failure
+- CI linter 报告的 `plugin.json` 格式错误
+- CodeRabbit 报告的少量 environment file 修正
+- 删除 repo root 中遗留的 `.claude` settings file
 
 ---
 
-## [1.0.0] — 2026-04-12 — Initial Release
+## [1.0.0] — 2026-04-12 — 首次发布
 
-### Added
-- 13 Claude Code marketplace plugins covering the complete digital chip design pipeline
-- 13 skill files with YAML frontmatter, staged domain rules, QoR metrics, and fix guidance
-- 13 orchestrator agent markdown files with stage sequences, loop-back rules, and sign-off criteria
-- `.claude-plugin/plugin.json` — Claude Code plugin manifest
-- `.claude-plugin/marketplace.json` — marketplace registry for all 13 plugins
-- CI validation workflow (GitHub Actions) — validates every PR
-- Automated release workflow with tar.gz archive generation
+### 新增
 
-### Domains in v1.0.0
-Architecture Evaluation · RTL Design (SystemVerilog) · Functional Verification (UVM) ·
-Formal Verification (FPV/LEC) · Logic Synthesis · Design for Test (DFT) ·
-Static Timing Analysis (STA) · High-Level Synthesis (HLS) · Physical Design ·
-SoC IP Integration · Compiler Toolchain (LLVM) · Embedded Firmware · FPGA Emulation
+- 13 个 Claude Code Marketplace plugin，覆盖完整数字芯片设计 pipeline
+- 13 个带 YAML frontmatter、分阶段 domain rule、QoR metric 和 fix guidance 的 Skill
+- 13 个带 stage sequence、loop-back rule 和 sign-off criteria 的 Orchestrator Agent Markdown
+- `.claude-plugin/plugin.json`：Claude Code plugin manifest
+- `.claude-plugin/marketplace.json`：全部 13 个 plugin 的 Marketplace registry
+- GitHub Actions CI validation workflow：验证每个 PR
+- 自动 release workflow：生成 tar.gz archive
+
+### v1.0.0 覆盖领域
+
+Architecture Evaluation · RTL Design（SystemVerilog）· Functional Verification（UVM）·
+Formal Verification（FPV/LEC）· Logic Synthesis · Design for Test（DFT）·
+Static Timing Analysis（STA）· High-Level Synthesis（HLS）· Physical Design ·
+SoC IP Integration · Compiler Toolchain（LLVM）· Embedded Firmware · FPGA Emulation
