@@ -1,49 +1,47 @@
 ---
 name: pipeline-orchestration
 description: >
-  Cross-domain loop orchestration for the chip design pipeline. Provides the
-  fix_request protocol, iteration-cap logic, escalation templates, and dispatch
-  patterns for routing verification/formal failures to the RTL orchestrator and
-  back. Use when driving the closed-loop verification↔RTL feedback cycle.
+  芯片设计流水线的跨领域闭环编排。提供 fix_request 协议、迭代上限逻辑、
+  escalation 模板，以及把 verification/formal 失败路由给 RTL Orchestrator 再返回验证端的
+  dispatch 模式。适用于驱动 verification↔RTL 闭环反馈。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: Pipeline Orchestration
+# Skill: Pipeline Orchestration（流水线编排）
 
 ## Invocation
 
-- **If invoked by a user** presenting a pipeline loop task: immediately spawn the
-  `digital-chip-design-agents:pipeline-orchestrator` agent and pass the full user
-  request and any available context. Do not execute stages directly.
-- **If invoked inside another orchestrator**: read `design_state.json`, summarise open
-  `fix_requests[]`, and return — do not spawn subagents (anti-recursion rule).
+- **用户直接提出 pipeline-loop 任务**：立即启动
+  `digital-chip-design-agents:pipeline-orchestrator`，传入完整请求和所有可用上下文。
+  不要直接执行 stage。
+- **在另一个 Orchestrator 内被调用**：读取 `design_state.json`，
+  汇总 open 的 `fix_requests[]` 后返回；不要再启动 subagent（防递归）。
 
 ## Purpose
 
-This skill provides the closed-loop verification↔RTL feedback protocol. When a DUT bug
-is found during simulation or formal verification, it must be communicated to the RTL
-orchestrator in a machine-actionable way and the pipeline must iterate until the bug is
-fixed or the iteration limit is reached.
+本 Skill 定义 verification↔RTL 的闭环反馈协议。Simulation 或 formal verification
+发现 DUT bug 后，必须以机器可执行形式传递给 RTL Orchestrator，并不断迭代，
+直到 bug 修复或达到 iteration cap。
 
-The protocol has three participants:
+协议包含三个参与方：
 
 | Participant | Role |
 |---|---|
-| **verification-orchestrator** / **formal-orchestrator** | Detects the bug; writes a `fix_request` entry to `design_state.fix_requests[]` with `status=open`; terminates with `decision=escalate`. |
-| **rtl-design-orchestrator** | Reads the open `fix_request`; sets `status=claimed`; fixes the RTL; sets `status=fixed` with `rtl_response`; terminates. |
-| **pipeline-orchestrator** | Detects open entries; assigns a `pipeline_session_id`; dispatches RTL then re-verification in sequence; enforces a configurable cap (default 3, via `pipeline_config.max_cross_domain_iterations`); scopes divergence checks to the current session; archives resolved entries on signoff; escalates via `pending_approval` if cap exceeded. |
+| **verification-orchestrator / formal-orchestrator** | 发现 bug；向 `design_state.fix_requests[]` 写入 `status=open` 的 `fix_request`，并以 `decision=escalate` 结束。 |
+| **rtl-design-orchestrator** | 读取 open `fix_request`，设置 `status=claimed`；修改 RTL；完成后写 `status=fixed` 和 `rtl_response`。 |
+| **pipeline-orchestrator** | 检测 open request；分配 `pipeline_session_id`；顺序 dispatch RTL 再 re-verification；执行可配置迭代上限（默认 3，由 `pipeline_config.max_cross_domain_iterations` 控制）；divergence 只在当前 session 内判断；sign-off 时归档 resolved request；超过上限时通过 `pending_approval` 升级给用户。 |
 
 ## Domain Rules
 
 ### fix_request Schema (authoritative)
 
-All entries in `design_state.fix_requests[]` must conform to this schema. The
-machine-readable companion is `docs/design_state.schema.json` (JSON Schema Draft
-2020-12), which CI validates fixtures against — it is the authoritative encoding
-of the enums, required fields, and the `failure_class → retry_strategy` map below.
+`design_state.fix_requests[]` 中的全部条目必须符合以下 schema。
+机器可读 companion 是 `docs/design_state.schema.json`（JSON Schema Draft 2020-12），
+CI 会用它验证 fixture；其中的 enum、required field 以及下文
+`failure_class → retry_strategy` 映射才是权威机器编码。
 
 ```json
 {
@@ -74,14 +72,15 @@ of the enums, required fields, and the `failure_class → retry_strategy` map be
 }
 ```
 
-> **Reserved field — `route_to` (optional).** The schema accepts an optional
-> `route_to` string naming the servicer domain for a fix (default: `rtl-design`).
-> It is **forward-compatible scaffolding only**: the pipeline-orchestrator
-> currently always dispatches the RTL orchestrator (`dispatch_to_producer`), so
-> producers need not set it. It exists so multi-servicer dispatch can be added
-> later without a schema migration, mirroring the analog pipeline.
+> **保留字段——`route_to`（可选）。**
+> Schema 接受一个可选 `route_to` 字符串，用来指明负责修复的 servicer domain，
+> 默认 `rtl-design`。当前它只是**面向未来的兼容脚手架**：
+> pipeline-orchestrator 的 `dispatch_to_producer` 仍固定调用 RTL Orchestrator，
+> producer 无需设置它。预留该字段是为了未来增加 multi-servicer dispatch 时
+> 不必再迁移 schema，也与 analog pipeline 的模式保持一致。
 
-`rtl_response` (populated by rtl-design-orchestrator on close):
+`rtl_response` 由 rtl-design-orchestrator 在关闭 request 时填写：
+
 ```json
 {
   "fixed_at": "<ISO-8601>",
@@ -91,7 +90,8 @@ of the enums, required fields, and the `failure_class → retry_strategy` map be
 }
 ```
 
-`fix_request.history[]` — one entry per state transition:
+`fix_request.history[]`：每次状态转换一条记录：
+
 ```json
 {
   "timestamp": "<ISO-8601>",
@@ -104,18 +104,30 @@ of the enums, required fields, and the `failure_class → retry_strategy` map be
 
 ### Ownership rules
 
-- `rtl-design-orchestrator` owns the `open→claimed` and `claimed→fixed|abandoned` transitions.
-- Only the `rtl-design-orchestrator` sets `status=claimed→fixed` or `claimed→abandoned`.
-- Only the `pipeline-orchestrator` sets `cross_domain_iteration_count`, `pipeline_session_id`, `pipeline_config`, and moves resolved entries to `archive_fix_requests[]`.
-- Domain orchestrators **may** set `pending_approval` only at their two gates: `type: "checkpoint"` at their own sign-off stage, and `type: "constraint_gap"` at stage-entry constraint validation. `type: "escalation"` remains the sole responsibility of the `pipeline-orchestrator`. A domain orchestrator that escalates for any other reason (loop cap exhausted, fault in an upstream artifact) records it in the terminal `history[]` entry and does not set `pending_approval`.
-- `approved_checkpoints[]` is written by the user (or by an orchestrator executing an explicit approval instruction) and read by all orchestrators.
-- All agents may append to `fix_request.history[]` but must not overwrite each other's entries.
+- `rtl-design-orchestrator` 拥有 `open→claimed` 和 `claimed→fixed|abandoned` 状态转换。
+- 只有 `rtl-design-orchestrator` 可以把 `claimed` 改为 `fixed` 或 `abandoned`。
+- 只有 `pipeline-orchestrator` 可以设置 `cross_domain_iteration_count`、
+  `pipeline_session_id`、`pipeline_config`，并把 resolved entry 移入
+  `archive_fix_requests[]`。
+- Domain Orchestrator **只允许在两个 gate 设置 `pending_approval`**：
+  自己 sign-off stage 的 `type:"checkpoint"`，
+  以及 stage-entry constraint validation 的 `type:"constraint_gap"`。
+  `type:"escalation"` 仅由 `pipeline-orchestrator` 设置。
+  Domain Orchestrator 因其他原因升级（loop cap 用尽、上游 artifact 有问题）时，
+  只写 terminal `history[]`，不设置 `pending_approval`。
+- `approved_checkpoints[]` 由用户写入，或者由执行明确批准指令的 Orchestrator 写入；
+  所有 Orchestrator 只读取它进行 sign-off gate 判断。
+- 所有 Agent 都可向 `fix_request.history[]` 追加 entry，但不得覆盖其他 Agent 的记录。
 
 ### Iteration cap
 
-`cross_domain_iteration_count` in `design_state.json` tracks the total number of
-verification↔RTL dispatch cycles for the current pipeline session. The cap is controlled by
-`pipeline_config.max_cross_domain_iterations` (default: 3 if absent). The orchestrator treats the cap as "reaches or exceeds" (use `>= max_cross_domain_iterations`), writing a `pending_approval` entry and exiting as soon as the iteration count is equal to or greater than the cap, preventing an off-by-one extra cycle before escalation:
+`design_state.json` 中的 `cross_domain_iteration_count` 记录当前 pipeline session
+总共执行了多少次 verification↔RTL dispatch cycle。
+
+上限由 `pipeline_config.max_cross_domain_iterations` 控制，缺失时默认 3。
+判定采用 **`>= max_cross_domain_iterations`**，而不是 `>`。
+计数一旦达到或超过上限，就立即写入 `pending_approval` 并退出，
+避免 off-by-one 再多跑一轮：
 
 ```json
 {
@@ -131,27 +143,44 @@ verification↔RTL dispatch cycles for the current pipeline session. The cap is 
 }
 ```
 
-The user must review the escalation, manually fix the RTL or adjust the testbench, then
-clear `pending_approval` (set to `null`) and reset `cross_domain_iteration_count` to 0
-before invoking the pipeline-orchestrator again. Optionally increase
-`pipeline_config.max_cross_domain_iterations` if more iterations are warranted.
+用户需要检查 escalation，手工修 RTL 或调整 testbench，
+然后在重新调用 pipeline-orchestrator 前：
+- 将 `pending_approval` 设为 `null`
+- 将 `cross_domain_iteration_count` 重置为 0
+
+如果确实需要更多自动迭代，可以显式提高
+`pipeline_config.max_cross_domain_iterations`。
 
 ### Pipeline session fields
 
-Top-level fields in `design_state.json` managed by the `pipeline-orchestrator` and related infrastructure:
+以下 `design_state.json` 顶层字段由 pipeline-orchestrator 及相关基础设施管理：
 
-- **`pipeline_session_id`** (`"ps_<YYYYMMDD>_<HHMMSS>"` or `null`): identifies the active pipeline run. Set on entry, cleared (set to null) on successful signoff. Scopes divergence checks and archival to the current session — entries from prior sessions are ignored by the divergence check.
-- **`pipeline_config`** (`object`): user-tunable pipeline settings. Written with defaults on first run; never overwritten if already present.
-  - `max_cross_domain_iterations` (integer, default 3): the iteration cap for the feedback loop.
-  - `checkpoints` (array of strings, default `[]`): stage names that require human approval before the producing orchestrator may declare sign-off. Empty array ⇒ fully autonomous (preserves today's behavior). Example default: `["arch_signoff", "rtl_signoff", "signoff"]`. Written by the user; domain orchestrators read but never overwrite this field.
-- **`approved_checkpoints[]`**: list of stages the user has approved. Schema per entry: `{ "stage": "<stage name>", "approved_at": "<ISO-8601>", "approved_by": "user" }`. Written by the user (or by an orchestrator acting on an explicit approval instruction); read by all orchestrators at their sign-off gate check.
-- **`archive_fix_requests[]`**: resolved entries from completed pipeline sessions, moved here by the pipeline-orchestrator on successful signoff. Same schema as `fix_requests[]`. Never written by domain orchestrators.
+- **`pipeline_session_id`**：
+  格式 `"ps_<YYYYMMDD>_<HHMMSS>"` 或 null。
+  进入闭环时设置，成功 sign-off 后清空。
+  Divergence 与 archive 都只对当前 session 生效，旧 session entry 不参与 divergence 判断。
+
+- **`pipeline_config`**：
+  用户可调整的 pipeline 设置。首次运行可写默认值；已有用户值绝不能覆盖。
+  - `max_cross_domain_iterations`：整数，默认 3
+  - `checkpoints`：string array，默认 `[]`。列出 domain 在宣告 sign-off 前必须人工批准的 stage。
+    空数组表示完全自动，保持 backward compatibility。
+    示例：`["arch_signoff","rtl_signoff","signoff"]`。
+    该字段由用户写，domain Orchestrator 只读。
+
+- **`approved_checkpoints[]`**：
+  用户已经批准的 stage：
+  `{"stage":"<stage name>","approved_at":"<ISO-8601>","approved_by":"user"}`。
+
+- **`archive_fix_requests[]`**：
+  已完成 pipeline session 的 resolved fix_request。
+  由 pipeline-orchestrator 在成功 sign-off 时把当前 session 的条目移到这里。
+  Domain Orchestrator 不写该数组。
 
 ### Constraints Schema (authoritative)
 
-`design_state.constraints` is the single source of truth for design-intent parameters across all
-domain orchestrators. Defined once here; domain SKILL.md files reference these keys and document
-their default fallbacks.
+`design_state.constraints` 是所有 domain Orchestrator 的设计意图参数唯一可信来源。
+Schema 只在这里定义一次；各 domain `SKILL.md` 引用对应 key，并说明自己的 fallback。
 
 ```json
 "constraints": {
@@ -221,146 +250,137 @@ their default fallbacks.
 }
 ```
 
-Non-null values are **documented defaults** matching current hardcoded SKILL.md literals.
-`null` values must be supplied by the user for constraint-bearing domains.
+非 null 值是**文档化默认值**，与现有 Skill 中历史 hardcoded literal 保持一致。
+对于需要 design-specific constraint 的 domain，null 值必须由用户提供。
 
 #### Required vs. optional constraints
 
-| Constraint key | Required by (hard-fail if missing/null) |
+| Constraint key | Required by（缺失/null 时 hard-fail） |
 |---|---|
 | `clock.clk_mhz` | architecture, rtl-design, synthesis, sta, pd, soc, fpga |
 | `area.area_um2` | architecture, synthesis, pd |
 | `power.power_mw` | architecture, synthesis, pd |
-| `pvt_corners` (≥1 entry with non-null `voltage_v` and `temp_c`) | sta, pd |
-| `hls.target_ii` or `hls.target_latency_cycles` (at least one non-null) | hls |
+| `pvt_corners`（至少一项 `voltage_v/temp_c` 非 null） | sta, pd |
+| `hls.target_ii` 或 `hls.target_latency_cycles`（至少一项非 null） | hls |
 
-All other keys are **optional** — absent keys fall back to the schema default with a WARN.
+其他 key 均为 **optional**；缺失时采用 schema default，同时产生 WARN。
 
 #### Stage-entry constraint validation rule
 
-Every constraint-bearing domain orchestrator applies this rule at the **first stage** that
-consumes design constraints. Skip entirely when invoked in fix-request-servicing mode (a
-`fix_request.id` was passed in the prompt):
+每个需要 constraint 的 domain Orchestrator，在**第一个消费设计约束的 stage**
+执行以下规则。若 prompt 中传入 `fix_request.id`，说明处于 fix-request-servicing 模式，
+则整个 constraint gate 跳过：
 
-1. Read `design_state.constraints`. Treat missing key as `{}`.
-2. For each key in this domain's **required** set: if missing or `null`, perform atomic RMW —
-   set `pending_approval`:
-   ```json
-   {
-     "type": "constraint_gap",
-     "stage": "<entry stage name>",
-     "agent": "<this-orchestrator>",
-     "reason": "required constraint <key> missing from design_state.constraints",
-     "fix_request_id": null,
-     "last_summary": "<comma-separated list of missing keys>",
-     "requires_user": true
-   }
-   ```
-   Append a `history[]` entry: `decision: "escalate"`, `confidence: "high"`,
-   `failure_class: "spec_gap"`, `suggested_next_step: "escalate"`,
-   `constraint_ref: "<missing key>"`. Print the gate message and **halt**.
-3. For **optional** absent constraints: use the schema default, continue, and include a
-   fallback note in the stage's history `reason` field.
+1. 读取 `design_state.constraints`；缺失按 `{}` 处理。
+2. 对该 domain 的每个 required key：如果缺失或 null，执行原子 RMW 并设置：
 
-**Resume path**: populate the missing constraint(s) in `design_state.constraints`, set
-`pending_approval = null`, and re-invoke the orchestrator.
+```json
+{
+  "type": "constraint_gap",
+  "stage": "<entry stage name>",
+  "agent": "<this-orchestrator>",
+  "reason": "required constraint <key> missing from design_state.constraints",
+  "fix_request_id": null,
+  "last_summary": "<comma-separated list of missing keys>",
+  "requires_user": true
+}
+```
+
+同时追加 history：
+- `decision:"escalate"`
+- `confidence:"high"`
+- `failure_class:"spec_gap"`
+- `suggested_next_step:"escalate"`
+- `constraint_ref:"<missing key>"`
+
+输出 gate message 后**停止**。
+
+3. Optional 缺失项使用 schema default，并在 stage history `reason` 中写 fallback note。
+
+**恢复方式：**
+补齐 `design_state.constraints` 中缺失的 key，
+设置 `pending_approval=null`，重新调用 Orchestrator。
 
 #### Decision tagging via `constraint_ref`
 
-In every `history[]` entry emitted after a stage that evaluates QoR against a constraint, set
-`constraint_ref` to the primary constraint key compared using dot-path notation
-(e.g. `"timing.wns_ns_target"`, `"clock.clk_mhz"`, `"area.utilization_pct_max"`).
-Comma-separate if a stage gates on multiple keys. All other history entries retain
-`constraint_ref: null`.
+任何 stage 如果用 constraint 判断 QoR，都应在对应 `history[]` entry 中设置
+`constraint_ref`，使用 dot-path，例如
+`timing.wns_ns_target`、`clock.clk_mhz`、`area.utilization_pct_max`。
+一个 stage 依赖多个 key 时可用逗号分隔。其他 entry 保持 null。
 
 #### Decision tagging via `retry_strategy`
 
-In every `history[]` entry, set `retry_strategy` to the value mapped from the entry's
-`failure_class` per the Failure Classification & Retry Strategy section. Entries with
-`failure_class: "none"` (PASS, `await_approval`) use `retry_strategy: "none"`. This field
-is the strategy label read by the pipeline-orchestrator alongside `confidence` and
-`suggested_next_step`.
+每条 `history[]` 必须根据下节映射从 `failure_class` 推导 `retry_strategy`。
+`failure_class:"none"`（PASS、`await_approval`）使用 `retry_strategy:"none"`。
+Pipeline Orchestrator 会同时读取 `retry_strategy`、`confidence`、`suggested_next_step`
+做程序化决策。
 
 ### Failure Classification & Retry Strategy
 
-Every failure is categorised so recovery is determined programmatically rather than by
-prose. Two fields work together on each `history[]` entry:
+每个 failure 都要结构化分类，让 recovery 不依赖解析自由文本。
 
-- `failure_class` — *what* went wrong (the existing 10-value enum, unchanged).
-- `retry_strategy` — *how* to recover, derived deterministically from `failure_class`.
+- `failure_class`：发生了什么
+- `retry_strategy`：怎么恢复
 
-`retry_strategy` ∈ `none | regenerate | refine | escalate`:
+`retry_strategy ∈ none | regenerate | refine | escalate`：
 
-- **regenerate** — discard the faulty artifact and re-run the *generating* stage from a clean
-  slate using the error log as context (malformed/invalid output: tool crash, DRC/LVS,
-  broken connectivity). Concrete action is typically `retry_stage` or
-  `loop_back_to:<generating stage>`.
-- **refine** — keep the artifact and re-run the stage targeting a *specific* identified defect
-  with detailed feedback (failing test + waveform, timing path, coverage hole, violated
-  interface). Iterative, not from scratch. Action is typically `loop_back_to:<stage>`,
-  usually carrying a `fix_request`.
-- **escalate** — halt and request human input; the result cannot be improved automatically
-  (ambiguous spec) or a budget/cap was hit. Action is `escalate` / `abandon`.
-- **none** — no failure (PASS or `await_approval`); pairs only with `failure_class: "none"`.
+- **regenerate**：丢弃错误 artifact，从 clean state 重新执行生成 stage，携带 error log。
+  典型场景：tool crash、malformed output、DRC/LVS、broken connectivity。
+- **refine**：保留 artifact，针对具体 defect 带详细反馈增量修正，如 failing test + waveform、
+  timing path、coverage hole、interface violation。
+- **escalate**：自动流程无法改进，需要人工输入，如 ambiguous spec、iteration cap、resource limit。
+- **none**：没有 failure，只与 `failure_class:"none"` 配对。
 
-`retry_strategy` is the strategy *label*; `suggested_next_step` remains the concrete *action*.
-They are complementary, not redundant.
+`retry_strategy` 是策略标签，`suggested_next_step` 是具体 action，两者互补。
 
 #### Mapping (authoritative — `failure_class` → default `retry_strategy`)
 
-| `failure_class` | `retry_strategy` | rationale | legacy alias |
+| `failure_class` | `retry_strategy` | 理由 | legacy alias |
 |---|---|---|---|
-| `none` | `none` | no failure | — |
-| `functional` | `refine` | re-run rtl_coding with failing test + waveform | verification_failure |
-| `timing` | `refine` | re-run optimisation targeting failing paths | — |
-| `power_area` | `refine` | re-run targeting the budget overage | — |
-| `coverage_gap` | `refine` | add targeted stimulus to close holes | — |
-| `connectivity` | `refine` | re-run targeting the violated interface/connection | interface_mismatch |
-| `drc_lvs` | `regenerate` | re-run place/route from a clean state | — |
-| `tool_error` | `regenerate` | re-run the same stage from scratch (≡ `retry_stage`) | invalid_rtl |
-| `spec_gap` | `escalate` | ambiguous/missing spec — needs user clarification | incomplete_spec |
-| `resource_limit` | `escalate` | iteration cap / memory exceeded — human decision | — |
+| `none` | `none` | 无 failure | — |
+| `functional` | `refine` | 带 failing test + waveform 重跑 rtl_coding | verification_failure |
+| `timing` | `refine` | 针对 failing path 优化 | — |
+| `power_area` | `refine` | 针对超预算项优化 | — |
+| `coverage_gap` | `refine` | 增加 targeted stimulus 关闭 hole | — |
+| `connectivity` | `refine` | 针对 interface/connection 修正 | interface_mismatch |
+| `drc_lvs` | `regenerate` | 从 clean state 重新 place/route | — |
+| `tool_error` | `regenerate` | 同 stage 从头重跑 | invalid_rtl |
+| `spec_gap` | `escalate` | spec 缺失/歧义 | incomplete_spec |
+| `resource_limit` | `escalate` | iteration/memory 上限 | — |
 
-The "legacy alias" column reconciles the four classes proposed in an earlier draft
-(`invalid_rtl | verification_failure | interface_mismatch | incomplete_spec`) onto the live
-enum — no separate taxonomy is introduced. Producers that emit a `fix_request`
-(verification, formal) set its `retry_strategy` to `refine` (all their classes map to refine).
+Legacy alias 只是早期草案到 live enum 的映射，不引入第二套 taxonomy。
+Verification/Formal 产生 fix_request 时，其 `retry_strategy` 固定为 `refine`。
 
 #### Actionable escalation guidance
 
-Whenever `retry_strategy` resolves to `escalate` **or** a max-iteration cap is hit, the
-escalation `reason` must state both the `failure_class` and a plain-language description of
-what the user must supply to unblock the flow. For a domain orchestrator that is the terminal
-`history[]` entry's `reason`; where `pending_approval` is also set (a gate, or the
-`pipeline-orchestrator`'s `type: "escalation"`), its `reason` must say the same. E.g.:
+当 `retry_strategy=escalate` 或达到 max-iteration cap，
+`reason` 必须同时包含 `failure_class` 和用户要提供什么才能解锁。
 
-- `spec_gap` → "spec_gap: clarify <ambiguous requirement> — provide the intended <behaviour/value>."
-- `resource_limit` → "resource_limit: loop cap (N) reached on <stage> — relax the constraint, raise the cap, or accept current QoR."
+示例：
+- spec_gap：澄清具体 ambiguous requirement，并给出预期 behavior/value。
+- resource_limit：说明哪个 stage 达到 N 次 cap，并让用户选择放宽 constraint、提高 cap 或接受当前 QoR。
 
 ### format_version
 
-`design_state.json` version tiers (each tier is a superset of the previous):
-- **`"1.1"`**: `fix_requests[]` and `cross_domain_iteration_count` present.
-- **`"1.2"`**: `history[]` entries carry standardized `confidence`, `failure_class`, and `suggested_next_step` fields.
-- **`"1.3"`**: `pipeline_config.checkpoints`, `approved_checkpoints[]`, `pending_approval.type/stage/agent` present; per-stage `history[]` entries (one entry per completed stage, not just one terminal entry per run).
-- **`"1.4"`**: `constraints` object present (authoritative nested schema defined in the Constraints Schema section); stage-entry constraint validation; `pending_approval.type: "constraint_gap"`.
-- **`"1.5"`**: every `history[]` entry carries `retry_strategy` (`none | regenerate | refine | escalate`), derived from `failure_class` via the mapping in the Failure Classification & Retry Strategy section; escalations include `failure_class` + actionable guidance in the `history[]` entry's `reason`, and in `pending_approval.reason` where one is set.
+`design_state.json` 版本层级：
 
-All orchestrators must:
-- Upgrade to `"1.5"` if absent or currently `"1.0"`, `"1.1"`, `"1.2"`, `"1.3"`, or `"1.4"`; never downgrade.
-- All prior-version requirements are subsumed by `"1.5"` — no separate upgrades required.
-- Treat missing `fix_requests` or `cross_domain_iteration_count` as `[]` / `0`.
-- Treat missing `confidence`, `failure_class`, or `suggested_next_step` in history entries as `null` for backward compatibility.
-- Treat missing `retry_strategy` in history entries as derivable from `failure_class` via the mapping (`none` ⇒ `none`) for backward compatibility.
-- Treat missing `pipeline_config.checkpoints` as `[]` (no checkpoints — fully autonomous).
-- Treat missing `approved_checkpoints` as `[]`.
-- Treat missing `pending_approval.type` as `"escalation"` for backward compatibility.
-- Treat missing `constraints` as `{}` — apply schema defaults for all optional keys; halt on first missing required key per the Constraints Schema section.
+- **1.1**：`fix_requests[]`、`cross_domain_iteration_count`
+- **1.2**：history 增加 `confidence`、`failure_class`、`suggested_next_step`
+- **1.3**：checkpoint/approval + per-stage history
+- **1.4**：authoritative `constraints` + constraint validation + `constraint_gap`
+- **1.5**：每条 history 增加 `retry_strategy`，escalation 带 actionable guidance
+
+所有 Orchestrator：
+- 缺失或版本 1.0–1.4 时升级到 1.5，不 downgrade 更高版本。
+- 缺 `fix_requests/cross_domain_iteration_count` 按 `[]/0`。
+- 旧 history 缺标准字段时兼容读取；缺 `retry_strategy` 时根据 mapping 推导。
+- 缺 checkpoints/approved_checkpoints 时按空数组。
+- 缺 pending_approval.type 时按 escalation。
+- 缺 constraints 时按空 object；optional 用 default，required 按规则 halt。
 
 ### Approval Checkpoints
 
-Proactive human-in-the-loop gates at configurable stage boundaries. Orthogonal to the
-failure-driven `pending_approval` (type `escalation`) set by the pipeline-orchestrator.
+可配置 stage boundary 上的主动 human-in-the-loop gate，与 failure-driven escalation 分离。
 
 #### Checkpoint configuration
 
@@ -375,120 +395,85 @@ failure-driven `pending_approval` (type `escalation`) set by the pipeline-orches
 }
 ```
 
-Default: `checkpoints: []` → no gates, fully autonomous (backward compatible).
+默认 `checkpoints:[]`：完全自动。
 
-#### Gate logic (applied by every domain orchestrator at its sign-off stage)
+#### Gate logic
 
-Before setting the domain's `signoff=true` and writing it to `design_state.json`:
+设置 domain `signoff=true` 前：
 
-1. **Skip the gate in fix-request-servicing mode**: if a `fix_request.id` was passed in the
-   prompt (invoked by meta to repair a bug), skip the checkpoint check entirely. Checkpoints
-   gate forward design progression, not the automated verify↔RTL repair loop.
-
-2. Read `pipeline_config.checkpoints` from `design_state.json`. If the orchestrator's
-   sign-off stage name appears in the list **and** does not appear in `approved_checkpoints[].stage`:
-   - Atomic RMW: set `pending_approval`:
-     ```json
-     {
-       "type": "checkpoint",
-       "stage": "<sign-off stage name>",
-       "agent": "<this-orchestrator>",
-       "reason": "checkpoint <stage> requires human approval before proceeding",
-       "fix_request_id": null,
-       "last_summary": "<QoR one-liner>",
-       "requires_user": true
-     }
-     ```
-   - Append a `history[]` entry with `decision: "await_approval"`, `confidence: "high"`,
-     `failure_class: "none"`, `suggested_next_step: "escalate"`, `reason: "checkpoint <stage> requires human approval"`.
-   - **Do not** set `signoff=true`. Print the gate message to the user and halt.
-
-3. On re-invocation: if the stage now appears in `approved_checkpoints[]`, clear
-   `pending_approval` (atomic RMW → set to `null`), then proceed to set `signoff=true`.
+1. Prompt 有 `fix_request.id` 时跳过 gate；repair loop 不被 checkpoint 阻塞。
+2. 若当前 sign-off stage 在 checkpoints 中且未在 approved_checkpoints：
+   设置 `pending_approval.type:"checkpoint"`，写 stage/agent/reason/last_summary；
+   追加 `decision:"await_approval"` history；
+   **不得**设置 signoff=true；打印 gate message 后停止。
+3. 重新调用时若已批准，清空 pending_approval 后继续。
 
 #### Resume paths
 
-The user may resume a gated orchestrator by either:
-- **Manual edit**: append `{ "stage": "<stage>", "approved_at": "<ISO-8601>", "approved_by": "user" }` to `approved_checkpoints[]` and set `pending_approval=null` in `design_state.json`, then re-invoke the orchestrator.
-- **Approval instruction**: invoke the orchestrator with "approve checkpoint `<stage>`" in the prompt — the orchestrator performs the `approved_checkpoints[]` append and `pending_approval` clear (atomic RMW) itself, then continues.
+- **Manual edit**：向 approved_checkpoints 追加 stage/approved_at/approved_by，并清空 pending_approval。
+- **Approval instruction**：用 prompt 明确 “approve checkpoint <stage>”，由 Orchestrator 原子写入并继续。
 
-#### pending_approval type-awareness (pipeline-orchestrator)
+#### pending_approval type-awareness
 
-The `pipeline-orchestrator`'s `detect_open_fix_requests` halts on **any** non-null
-`pending_approval` (conservative — a domain checkpoint also blocks meta dispatch). It prints
-a type-specific message:
-- `type: "checkpoint"`: "Checkpoint `<stage>` is awaiting human approval (set by `<agent>`). Approve or skip to continue."
-- `type: "escalation"`: (existing message) "Fix-request loop escalation — review required."
-- `type: "constraint_gap"`: "Stage `<stage>` is missing required constraint(s) (set by `<agent>`). Populate `design_state.constraints` and clear `pending_approval` to continue."
+Pipeline Orchestrator 遇到任何非 null pending_approval 都先停止：
+- checkpoint：提示等待批准
+- escalation：提示 fix-request loop 需要 review
+- constraint_gap：提示补齐 design_state.constraints
 
-#### Per-stage history trace (format_version 1.3)
+#### Per-stage history trace
 
-Every domain orchestrator appends one `history[]` entry after each internal stage completes
-(PASS, FAIL, WARN), not just at session end. The last entry written is the terminal entry
-read by the pipeline-orchestrator's decision table. At format_version 1.5 the entry carries a
-`retry_strategy` field derived from `failure_class` (10-field schema). This enables post-run
-audits without replaying the full conversation.
+每个内部 stage（PASS/FAIL/WARN）都写一条 history；最后一条是 Pipeline Orchestrator
+的 terminal decision source。1.5 起包含 `retry_strategy`，形成 10-field schema。
 
 ### Programmatic branching on standardized history[] fields
 
-After a domain orchestrator completes, the pipeline-orchestrator reads the terminal
-`history[]` entry to make retry/escalate decisions without string-parsing prose. Decision
-table (evaluated in order):
-
 | `confidence` | `failure_class` | `retry_strategy` | `suggested_next_step` | Pipeline action |
 |---|---|---|---|---|
-| any | `resource_limit` | `escalate` | any | Escalate via `pending_approval` — cap exceeded |
-| `low` | any | any | `escalate` | Escalate — result unreliable, human review required |
-| `low` | any | any | any (not escalate) | Escalate — low confidence overrides any retry intent |
-| any | `tool_error` | `regenerate` | `retry_stage` | Re-dispatch the same orchestrator once; if still `tool_error`, escalate |
-| any | `drc_lvs` \| `connectivity` | `refine` | `loop_back_to:<stage>` | Re-dispatch the generating orchestrator from a clean slate with the error log |
-| any | `functional` \| `coverage_gap` | `refine` | `escalate` | Append new `fix_request` and loop back via RTL orchestrator |
-| any | `timing` \| `power_area` | `refine` | `loop_back_to:<stage>` | Re-dispatch targeting the violating path/budget with QoR feedback |
-| any | `spec_gap` | `escalate` | `escalate` | Escalate — ambiguous spec; reason states what the user must clarify |
-| `high` \| `medium` | `none` | `none` | `proceed` | Advance to next stage / signoff |
-| any | any | any | `abandon` | Escalate via `pending_approval` — child reports unrecoverable, human decision required |
+| any | `resource_limit` | `escalate` | any | 通过 pending_approval 升级 |
+| `low` | any | any | `escalate` | 升级，结果不可靠 |
+| `low` | any | any | 非 escalate | 仍升级，low confidence 优先 |
+| any | `tool_error` | `regenerate` | `retry_stage` | 同一 Orchestrator 重试一次，仍失败则升级 |
+| any | `drc_lvs` \| `connectivity` | `refine` | `loop_back_to:<stage>` | 带 error log 重跑 generating Orchestrator |
+| any | `functional` \| `coverage_gap` | `refine` | `escalate` | 新建 fix_request，经 RTL 闭环 |
+| any | `timing` \| `power_area` | `refine` | `loop_back_to:<stage>` | 带 QoR feedback 定向优化 |
+| any | `spec_gap` | `escalate` | `escalate` | 升级，要求澄清 spec |
+| `high` \| `medium` | `none` | `none` | `proceed` | 下一 stage / signoff |
+| any | any | any | `abandon` | 升级，child 判定不可恢复 |
 
-`retry_strategy` is the deterministic map of `failure_class` (see the Failure Classification &
-Retry Strategy section) and serves as a coarse pre-filter; `confidence` and
-`suggested_next_step` still refine the final action. Precedence is preserved: `resource_limit`
-and `low` confidence escalate regardless of the mapped strategy. For any combination not in the
-table, apply the most conservative matching rule (prefer `escalate` over retry). When the action
-is an escalation, `pending_approval.reason` must carry the `failure_class` and actionable
-guidance (see Actionable escalation guidance). Programmatic branches must read from the history
-entry's structured fields — do not re-derive intent from `reason` (free-text, for humans only).
+`resource_limit` 和 low confidence 始终优先升级。
+未匹配组合采用最保守规则：宁可 escalate，不盲目 retry。
+程序化 branch 只能读取结构化字段，不得重新解析自由文本 `reason`。
 
 ### Dispatch pattern (pipeline-orchestrator)
 
-Sequential dispatch — never parallel:
-1. RTL orchestrator (fix the bug) — block until complete.
-2. Verification or formal orchestrator (validate the fix) — block until complete.
+严格串行：
 
-Spawn form for the Agent/Task tool:
-- RTL: `subagent_type: chip-design-rtl:rtl-design-orchestrator`
-- Verification: `subagent_type: chip-design-verification:verification-orchestrator`
-- Formal: `subagent_type: chip-design-formal:formal-orchestrator`
+1. RTL Orchestrator 修 bug，等待完成。
+2. Verification/Formal Orchestrator 验证修复，等待完成。
 
-Always pass the `fix_request.id` in the subagent prompt so the child can locate its work item without scanning the whole array.
+Spawn：
+- RTL：`subagent_type: chip-design-rtl:rtl-design-orchestrator`
+- Verification：`subagent_type: chip-design-verification:verification-orchestrator`
+- Formal：`subagent_type: chip-design-formal:formal-orchestrator`
 
-### V2 extension points (not wired in V1)
+始终在 child prompt 传 `fix_request.id`。
 
-- Architecture↔RTL refinement loop: `architecture.refinement_needed=true` could trigger
-  an arch re-run. The `fix_request` schema is intentionally producer-agnostic; only
-  `created_by` would need a new value (`architecture-orchestrator`).
-- Formal property-bug routing: `failure_class=formal_cex` with `suspected_owner=formal`
-  would route to the formal orchestrator instead of RTL. Not implemented in V1.
-- **LEC unmatched-points loop**: `lec_run: unmatched points` in `formal-orchestrator.md` is intentionally **not** connected to the fix_request protocol in V1. LEC failures are netlist↔RTL mismatches introduced at synthesis — the correct consumer is `synthesis-orchestrator`, not `rtl-design-orchestrator`. Deferred to V2.
+### V2 extension points（V1 尚未连接）
+
+- Architecture↔RTL refinement：未来 `architecture.refinement_needed=true` 可触发 arch re-run。
+- Formal property-bug routing：未来可根据 formal owner 路由给 Formal，而非 RTL。
+- LEC unmatched-points：V1 故意不接 fix_request；其正确 consumer 是 synthesis-orchestrator，推迟到 V2。
 
 ## QoR Metrics
 
-- `cross_domain_iteration_count` — number of RTL↔verify dispatch cycles (target: ≤ 2 for clean designs)
-- `time_to_signoff` — wall-clock time from first open `fix_request` to `verification_status.signoff=true`
-- `escalation_rate` — fraction of design sessions that hit the 3-iteration cap (target: < 10%)
-- `fix_request_abandonment_rate` — fraction of `fix_requests` that reach `status=abandoned` (target: 0%)
+- `cross_domain_iteration_count`：RTL↔verify dispatch cycle 数，clean design 目标 ≤2
+- `time_to_signoff`：首个 open fix_request 到 verification signoff 的 wall-clock time
+- `escalation_rate`：hit 3-iteration cap 的 session 比例，目标 <10%
+- `fix_request_abandonment_rate`：最终 abandoned 的 request 比例，目标 0%
 
 ## Output Required
 
-- `design_state.json` with all `fix_requests[]` entries at terminal status (`fixed` or `abandoned`)
-- `design_state.json` with `cross_domain_iteration_count` updated
-- `memory/meta/experiences.jsonl` entry for this run
-- A console summary to the user: which fix_requests were processed, how many iterations, and the outcome (converged / escalated / no open requests)
+- 当前 pipeline session 的 fix_request 最终达到 fixed 或 abandoned
+- `cross_domain_iteration_count` 更新
+- 写入 `memory/meta/experiences.jsonl`
+- Console summary：处理了哪些 request、用了多少轮、结果为 converged / escalated / no open requests
