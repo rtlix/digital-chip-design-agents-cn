@@ -1,5 +1,5 @@
 {
-  "_comment": "gem5 batch MCP server — suitable only for short targeted benchmark runs (minutes). Full-system simulations that take >10 min should be launched via Bash and results read from stats.txt directly. Replace /absolute/path/to with the actual repo root path.",
+  "_comment": "gem5 批处理 MCP Server —— 仅适合较短的定向 benchmark（分钟级）。运行时间超过 10 分钟的 full-system 仿真应通过 Bash 启动，并直接读取 stats.txt。请把 /absolute/path/to 替换为本仓库实际绝对路径。",
   "mcpServers": {
     "gem5": {
       "type": "stdio",
@@ -8,7 +8,7 @@
         "/absolute/path/to/plugins/infrastructure/tools/mcp-adapter.py",
         "--wrapper", "/absolute/path/to/plugins/infrastructure/tools/wrap-gem5.sh",
         "--tool", "gem5",
-        "--description", "Run gem5 simulation and return compact JSON: sim_insts, ipc, host_seconds. Use only for short targeted runs; full-system runs should use Bash + read stats.txt."
+        "--description", "运行 gem5 仿真并返回紧凑 JSON：sim_insts、ipc、host_seconds。仅用于短时定向运行；full-system 运行请使用 Bash 并读取 stats.txt。"
       ],
       "env": {
         "GEM5_HOME": "/path/to/gem5",
