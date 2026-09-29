@@ -1,51 +1,25 @@
-# Memory IP Design Domain Knowledge
+# Memory IP Design Domain Knowledge（Memory IP 设计领域知识）
 
 ## Known Failure Patterns
 
-- **Pin-name drift between `.lib`, `.lef`, and `.v`**: Compiler-generated views can disagree on
-  pin naming (e.g. `CLK` vs `clk`, `WEN` vs `WEB`) when the wrapper is hand-edited after
-  generation. Nothing errors at generation time — the mismatch surfaces as an unconnected port
-  at PD or an LEC mismatch much later. Always diff the pin lists across all three views before
-  declaring `view_generation` clean.
-- **Typical-corner macro selection**: Selecting a macro on typical-corner access time leaves no
-  margin at the slow corner, where the sense-amp path degrades disproportionately compared to
-  logic. A macro that passes at typical and fails at SS is the most common cause of a late
-  loop-back from STA. Always select on slow-corner margin.
-- **Permissive behavioural model hides collision bugs**: If the `.v` behavioural model returns
-  old data on a write-during-read collision while the real macro returns X, the testbench passes
-  and silicon fails. The behavioural model must propagate X for exactly the collision cases the
-  macro does not define.
-- **ECC treated as a substitute for redundancy**: ECC corrects soft errors; redundancy replaces
-  hard defects found at test. Counting ECC toward the post-repair yield target overstates yield
-  and is discovered only at wafer sort. Keep the two calculations separate.
+- **`.lib/.lef/.v` pin-name drift**：compiler-generated view 在 wrapper 手工修改后可能出现 `CLK` vs `clk`、`WEN` vs `WEB` 等差异，生成时不报错，直到 PD unconnected port 或 LEC mismatch 才暴露。宣告 `view_generation` clean 前必须 diff 三类 view 的 pin list。
+- **按 typical corner 选 macro**：typical access-time 通过并不代表 slow corner 有 margin，sense-amp path 在 slow corner 退化更明显，是晚期 STA loop-back 的常见根因。Macro selection 必须基于 slow-corner margin。
+- **过于宽松的 behavioural model 掩盖 collision bug**：真实 macro 在 write-during-read collision 返回 X，而 `.v` model 返回 old data 时，testbench 会假通过、silicon 才失败。Model 必须对 macro 未定义的 collision 情况准确传播 X。
+- **把 ECC 当作 redundancy 替代**：ECC 修 soft error，redundancy 修制造 hard defect。把 ECC 算入 post-repair yield 会高估良率，应完全分开计算。
 
 ## Successful Tool Flags
 
-- `cacti -infile cache.cfg` with `-cache_size`, `-block_size`, `-associativity` — use for the
-  first-pass area/power estimate at `memory_requirements` before committing to a compiler run;
-  treat its output as an uncertainty band, not a point value.
-- `sta -exit lib_check.tcl` running `read_liberty <macro>.lib` per corner — catches missing
-  timing arcs and malformed Liberty far faster than waiting for a full STA run.
-- `klayout -b -r gds_qa.py -rd gds=<macro>.gds` — batch GDS QA for boundary and obstruction-layer
-  checks; scriptable per-instance across the whole inventory.
-- `magic -dnull -noconsole -rcfile <pdk>.magicrc` with `drc check` / `extract` — macro-level
-  DRC/LVS for OpenRAM-generated layout. Skip for vendor pre-hardened macros.
+- `cacti -infile cache.cfg` 配合 `-cache_size/-block_size/-associativity`：在 `memory_requirements` 做第一轮 area/power estimate；结果应视为 uncertainty band，不是精确点值。
+- `sta -exit lib_check.tcl` + 每 corner `read_liberty <macro>.lib`：比等完整 STA 更快发现 missing timing arc 或 malformed Liberty。
+- `klayout -b -r gds_qa.py -rd gds=<macro>.gds`：批量 GDS boundary/obstruction QA。
+- `magic -dnull -noconsole -rcfile <pdk>.magicrc` + `drc check` / `extract`：OpenRAM layout 的 macro-level DRC/LVS；vendor pre-hardened macro 可跳过。
 
 ## PDK / Tool Quirks
 
-- **OpenRAM vs vendor compilers**: OpenRAM generates a complete view set but supports a narrower
-  configuration space (limited mux factors and port arrangements). Check that the target
-  configuration is generatable before treating it as a candidate — an ungeneratable config that
-  looks good on paper wastes a full selection round.
-- **sky130 pre-hardened SRAM macros**: The sky130 macro set offers fixed depth/width combinations
-  only. Requirements that fall between the available sizes must round up, so capture the resulting
-  area over-provisioning explicitly at `macro_selection` rather than discovering it at `pd`.
+- **OpenRAM vs vendor compiler**：OpenRAM 能生成完整 view set，但支持的 mux/port configuration 较窄。把 configuration 纳入候选前先确认可生成，避免浪费 selection round。
+- **sky130 pre-hardened SRAM**：只有固定 depth/width，需求介于可选 size 之间时必须 round up；在 `macro_selection` 显式记录 area over-provisioning。
 
 ## Notes
 
-- Record the rejection rationale for every losing macro candidate. Re-spins revisit the same
-  trade space, and the reason a candidate lost (aspect ratio, slow-corner margin, leakage) is the
-  highest-value thing to carry forward.
-- Repair-register width is a hard handoff number to DFT's `bist_insertion`. Changing the spare
-  row/column count after DFT has built the BISR chain forces a DFT loop-back — freeze it at
-  `redundancy_repair`.
+- 每个 losing macro candidate 都要记录 rejection rationale，re-spin 时这是最有价值的历史。
+- Repair-register width 是 DFT `bist_insertion` 的硬 handoff；DFT 建好 BISR chain 后再改 spare count 会强制 DFT loop-back，应在 `redundancy_repair` 冻结。
