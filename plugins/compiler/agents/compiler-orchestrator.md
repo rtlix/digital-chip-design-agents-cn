@@ -110,20 +110,48 @@ EDA log，而不是 compiler 或 test output。应直接执行：
    如果 Loop-Back Rules 或 Behaviour Rules 为这种情况定义了 `fix_request` hand-off，
    则严格执行；否则 history entry 与最终报告就是 hand-off，不要写入 `fix_requests[]`。
 5. **`pending_approval` 只用于 gate。**
-   只有 Behaviour Rules 明确要求的地方才设置它。
+   只有 Behaviour Rules 明确要求的地方才设置它
+   （checkpoint gate，以及适用时的 constraint validation）。
    `type:"escalation"` 仅由 pipeline-orchestrator 使用。
-6. escalation 终止时本 domain `signoff:false`，experience `signoff_achieved:false`。
+6. 上述两类 escalation 终止时，本 domain 的 `signoff` 必须保持 `false`，
+   experience record 中 `signoff_achieved` 也必须为 `false`。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:reporting-contract (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## 报告契约
-1. **先运行，再报告。** 所有声称通过的 gate/Sign-off Criteria 都必须实际运行或读取完成结果，并给出准确输出。
-2. **未运行不得报 PASS。** 无法确认时报告 NOT RUN 并说明原因。
-3. **Exit 0 不等于 PASS。** 空/不可解析输出或 `verified:false` 视为未验证。
-4. **结束前重新核对交付物。**
+
+适用于你生成的每一份报告：stage result、escalation 以及最终 summary。
+
+1. **先运行，再报告。**
+   对任务中点名的每个 gate，以及你声称通过的每项 Sign-off Criteria，
+   都必须在本次会话真实运行，或读取已经完成的 result file，
+   并给出命令及其准确输出（或 wrapper/MCP JSON）。
+   长输出可以裁剪到 summary 行，但数值绝不能改写。
+2. **本次会话没有运行、也没有读取完整结果的 gate，绝不能报告为 PASS。**
+   如果因为工具缺失、硬件不可用、job 仍在运行或 turn budget 不足而无法确认，
+   必须明确说明原因，并把该 gate 报告为 NOT RUN，而不是 PASS。
+3. **Exit 0 不代表 PASS。**
+   工具 exit 0 但输出为空或无法解析，或者 wrapper/MCP 返回
+   `"verified": false`，都不能算通过。
+   必须找到该工具本应生成的结果；如果结果不存在，则把 gate 报告为 unverified。
+4. **结束前立即重新核对交付物清单。**
+   回到任务原文以及当前 Orchestrator 的 `Output:` 规则，
+   逐项确认是否完成。任何未完成项都必须列出并解释原因。
 5. **区分 measured 与 inferred。**
-6. **检查 generated artifact provenance。**
-7. **只有全部判据 measured-PASS 才允许 `signoff/signoff_achieved=true`。**
+   引用你真正观察到的数值及来源（命令、文件、行号）。
+   其他内容——估算、预期、从 Memory 或前一 session 带来的结果——必须标记为 inference。
+6. **检查 artifact provenance。**
+   如果 test 或 gate 使用 generated artifact
+   （`.hex`、ELF、netlist、`.lib/.lef` view、SPEF、GDS、bitstream），
+   必须在每个真正会运行该 test 的环境里确认 artifact 的来源，而不只是检查你当前环境。
+   要么 artifact 已提交，要么那个环境实际执行的步骤会重新生成它。
+   仅因为本地磁盘已有文件而通过，不能证明 CI 或下游 domain 能运行。
+   每个此类 artifact 都要说明采用了哪一种保证方式。
+7. **记录你实际报告的结果。**
+   只有每项 Sign-off Criteria 都是 measured-PASS 时，
+   domain 的 `signoff` 和 `signoff_achieved` 才能设为 `true`。
+   任一判据为 NOT RUN 或 unverified，都意味着 signoff=false；
+   必须在 `history[]` 的 `reason` 和 `notes` 中指出。
 <!-- END SHARED:reporting-contract -->
 
 ## Memory
