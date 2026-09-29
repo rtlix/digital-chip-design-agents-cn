@@ -1,11 +1,11 @@
-# SoC IP Integration Flow — Full Architecture Design
+# SoC IP 集成流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven flow for assembling a complete SoC from first-party RTL blocks, licensed hard/soft IPs, and memory macros. Covers IP procurement, integration, bus fabric configuration, and chip-level verification.
+> **目的**：AI 驱动的完整 SoC 组装流程，把自研 RTL、licensed hard/soft IP 和 memory macro 集成为芯片。覆盖 IP procurement、integration、bus fabric configuration 和 chip-level verification。
 
 ---
 
-## 1. Shared State Object
+## 1. 共享状态对象
 
 ```json
 {
@@ -53,7 +53,7 @@
 
 ---
 
-## 3. Skill File Specifications
+## 3. Skill 文件说明
 
 ### 3.1 `sv-soc-ip-procurement/SKILL.md`
 
@@ -61,39 +61,39 @@
 # Skill: SoC — IP Procurement and Quality Check
 
 ## Purpose
-Evaluate, procure, and qualify all third-party IPs before integration.
+在集成前评估、获取并 qualification 全部第三方 IP。
 
 ## IP Qualification Checklist
-- [ ] Deliverable format: RTL (.v/.sv), GDSII, or encrypted netlist?
-- [ ] Technology node: certified for target process?
-- [ ] Timing libraries: SS/TT/FF corners available?
-- [ ] LEF/DEF: available for PD flow?
-- [ ] Simulation models: behavioral/RTL for verification?
-- [ ] UPF: power intent delivered?
-- [ ] Databook: register map, timing diagrams, integration guide?
-- [ ] DFT: scan-enabled? BIST available?
-- [ ] Silicon proven: on which node/process?
-- [ ] Support: SLA for bug fixes and updates?
+- [ ] Deliverable：RTL、GDSII 或 encrypted netlist
+- [ ] 已针对目标 process node 认证
+- [ ] SS/TT/FF timing lib 可用
+- [ ] LEF/DEF 可用于 PD
+- [ ] Verification model 可用
+- [ ] UPF/power intent 已交付
+- [ ] Databook 包含 register map/timing/integration guide
+- [ ] DFT/scan/BIST 信息明确
+- [ ] Silicon-proven 状态明确
+- [ ] Support SLA 明确
 
-## Hard IP vs Soft IP Integration Differences
-| Aspect         | Hard IP (GDSII)          | Soft IP (RTL)              |
-|----------------|--------------------------|----------------------------|
-| Area           | Fixed                    | Synthesis-dependent        |
-| Timing         | Characterized libs only  | Optimizable                |
-| PD effort      | Place as macro           | Goes through full PD flow  |
-| Customization  | None                     | Parameterizable            |
-| Verification   | Behavioral model only    | Full RTL simulation        |
+## Hard IP vs Soft IP
+| 方面 | Hard IP | Soft IP |
+|---|---|---|
+| Area | 固定 | 由综合决定 |
+| Timing | Characterized lib | 可优化 |
+| PD | Macro placement | 完整 PD |
+| Customization | 很少 | 可参数化 |
+| Verification | Behavioral model 为主 | Full RTL sim |
 
 ## Memory Macro Qualification
-1. Verify compiler-generated views: .lib, .lef, .v (behavioral)
-2. Check access time vs target frequency
-3. Verify retention and power-down modes (if UPF power domain)
-4. MBIST compatibility: verify BIST ports available
+1. 检查 .lib/.lef/.v
+2. Access time 满足 target clock
+3. Retention/power-down mode 正确
+4. BIST port 可供 DFT 使用
 
 ## Output Required
-- IP qualification report per IP
-- IP deliverable checklist (all views received)
-- IP risk register (any gaps in deliverables)
+- Per-IP qualification report
+- Deliverable checklist
+- IP risk register
 ```
 
 ---
@@ -104,43 +104,42 @@ Evaluate, procure, and qualify all third-party IPs before integration.
 # Skill: SoC — Bus Fabric Configuration
 
 ## Purpose
-Configure and verify the on-chip bus interconnect that connects
-all IP blocks in the SoC.
+配置并验证连接全部 SoC IP 的片上 bus/interconnect。
 
 ## Bus Fabric Selection
-| Fabric Type      | Use Case                          | Bandwidth  |
-|------------------|-----------------------------------|------------|
-| AXI4 Crossbar    | High-bandwidth data paths         | High       |
-| AXI4-Lite        | Low-bandwidth control registers   | Low        |
-| APB3             | Peripheral register access        | Low        |
-| AHB              | Legacy peripheral bus             | Medium     |
-| NoC              | Many-core, complex topologies     | Very High  |
+| Fabric | 用途 | Bandwidth |
+|---|---|---|
+| AXI4 Crossbar | 高带宽 data path | High |
+| AXI4-Lite | Control register | Low |
+| APB3 | Peripheral register | Low |
+| AHB | Legacy peripheral | Medium |
+| NoC | Many-core complex topology | Very High |
 
 ## Configuration Requirements
-1. Master/slave port assignment: every IP mapped to correct bus
-2. Address decoding: non-overlapping address regions for all slaves
-3. Data width conversion: AXI width adapters where needed
-4. Clock domain crossing: async bridges for multi-clock SoC
-5. QoS: traffic class assignment for latency-sensitive masters
-6. Outstanding transactions: configure per master (depth)
-7. Error handling: define response for out-of-range addresses (DECERR)
+1. Master/slave port assignment 正确
+2. Address region 无 overlap
+3. 需要时加入 data-width adapter
+4. Multi-clock 使用 async bridge
+5. Latency-sensitive master 配置 QoS
+6. 设置 per-master outstanding depth
+7. Out-of-range address 返回 DECERR
 
 ## Memory Map Validation
-- No address region overlaps
-- All peripherals accessible from all required masters
-- Reserved regions correctly handled (no decode → DECERR)
-- Aliasing: verify no unintended address aliases
+- 无 overlap
+- 所需 master 都能访问对应 peripheral
+- Reserved region 无 decode 时返回 DECERR
+- 无意外 alias
 
 ## QoR Metrics
-- Address decode: complete, no gaps, no overlaps
-- All IP blocks: connected to correct bus with correct width
-- CDC bridges: in place for all clock domain crossings
-- Simulation: all registers read/write correctly
+- Address decode 完整
+- IP 接到正确 bus/width
+- CDC bridge 完整
+- Simulation 中全部 register 可正确 R/W
 
 ## Output Required
-- Bus fabric configuration file
-- Memory map document (final, versioned)
-- Address decoder verification report
+- Bus fabric configuration
+- Final versioned memory map
+- Address-decoder verification report
 ```
 
 ---
@@ -151,41 +150,40 @@ all IP blocks in the SoC.
 # Skill: SoC — Top-Level Integration
 
 ## Purpose
-Assemble all IP blocks, bus fabric, memories, and IOs into
-the chip top-level module.
+把 IP、bus fabric、memory 和 IO 组装到 chip top-level。
 
 ## Top-Level Integration Rules
-1. Top module: wiring only — no logic at top level
-2. All IPs instantiated once (no duplicate instances without intent)
-3. All ports connected — no unconnected ports (use lint to verify)
-4. Clock generation: PLL/clock mux module at top or near-top
-5. Reset generation: reset synchronizer per domain at top level
-6. IO ring: all pads instantiated and connected
-7. Tie cells: VDD/VSS tie-offs for floating inputs
+1. Top module 只做 wiring，不放功能逻辑
+2. IP 不重复实例化，除非设计明确要求
+3. Active signal 不得悬空
+4. PLL/clock mux 放 top 或 near-top
+5. 每个 clock domain 有对应 reset synchronizer
+6. IO ring/pad 全部连接
+7. Floating input 使用 tie cell
 
-## Integration Checklist (Per IP)
-- [ ] Correct module name and parameters
-- [ ] All required ports connected (no NC ports on active signals)
-- [ ] Clock connected to correct domain clock
-- [ ] Reset connected to correct domain reset (correct polarity)
-- [ ] Power/ground ports connected (for UPF power domains)
-- [ ] Scan chain: SI/SO connected to scan chain backbone
-- [ ] JTAG: TDI/TDO routed through JTAG chain
+## Integration Checklist
+- [ ] Module name/parameter 正确
+- [ ] Required port 全连接
+- [ ] Clock 接到正确 domain
+- [ ] Reset domain/polarity 正确
+- [ ] Power/ground 正确
+- [ ] Scan chain SI/SO 正确
+- [ ] JTAG TDI/TDO 正确串接
 
 ## Common Integration Bugs
-- Wrong clock domain for a signal → metastability in silicon
-- Polarity inversion on reset → block never comes out of reset
-- Unconnected valid/enable → block runs freely or never runs
-- AXI address offset: peripheral at wrong base address
+- 错 clock domain → metastability
+- Reset polarity 反 → block 永不出 reset
+- valid/enable 未连接
+- AXI address offset 错误
 
 ## QoR Metrics
-- Lint: 0 unconnected ports on active signals
-- CDC check: no new violations introduced at top level
-- Memory map: all IPs respond to correct addresses in simulation
-- Smoke test: all IPs accessible via bus in simulation
+- Lint unconnected active port =0
+- Top-level CDC 无新增 violation
+- IP 在正确 address 响应
+- Smoke test 全部 IP 可访问
 
 ## Output Required
-- Top-level RTL (soc_top.sv)
+- soc_top.sv
 - Integration lint report
 - IP connectivity summary
 ```
@@ -198,44 +196,43 @@ the chip top-level module.
 # Skill: SoC — Chip-Level Simulation and Verification
 
 ## Purpose
-Verify the assembled SoC through chip-level simulation,
-checking all IPs work together correctly.
+通过 chip-level simulation 验证整颗 SoC 中各 IP 能正确协同。
 
 ## Chip-Level Simulation Strategy
-1. Boot test: CPU boots, executes from reset vector
-2. Peripheral access: read/write all peripheral registers
-3. DMA test: DMA transfers between memory regions
-4. Interrupt test: each peripheral can interrupt CPU
-5. Multi-master: concurrent bus access from multiple masters
-6. Clock switching: verify clock mux operates correctly
-7. Power mode: enter/exit sleep/deep-sleep modes
-8. Reset: warm reset, cold reset, per-domain reset
+1. CPU boot/reset-vector test
+2. 全 peripheral register R/W
+3. DMA between memory region
+4. 每 peripheral interrupt
+5. Multi-master concurrent bus access
+6. Clock switching
+7. Sleep/deep-sleep enter/exit
+8. Warm/cold/per-domain reset
 
 ## Simulation Infrastructure
-1. Chip-level testbench: models entire board environment
-2. External memory model: DRAM/Flash behavioral model
-3. PHY models: for USB, Ethernet, SERDES (or transactor)
-4. Protocol checkers: AXI assertion checkers on all buses
-5. Self-checking: firmware prints PASS/FAIL to UART model
+1. Chip-level testbench 模拟 board environment
+2. External DRAM/Flash model
+3. USB/Ethernet/SERDES PHY model 或 transactor
+4. 全 bus protocol checker
+5. Firmware 通过 UART model 报 PASS/FAIL
 
 ## Regression Structure
-| Test               | Scope                    | Run time |
-|--------------------|--------------------------|----------|
-| Smoke              | Boot + reg access        | < 1hr    |
-| Full regression    | All peripheral tests     | < 24hr   |
-| Long-run           | Stress: throughput, IRQ  | 48hr     |
+| Test | Scope | Run time |
+|---|---|---:|
+| Smoke | Boot + register access | <1h |
+| Full regression | 全 peripheral | <24h |
+| Long-run | Throughput/IRQ stress | 48h |
 
 ## QoR Metrics
-- All peripheral register tests: PASS
-- Boot test: CPU reaches application code
-- DMA: correct data at correct address
-- No AXI protocol violations (checker clean)
-- No X propagation at key outputs after reset
+- Peripheral register test 全 PASS
+- CPU 到 application code
+- DMA 数据与地址正确
+- AXI protocol violation =0
+- Reset 后关键 output 无 X
 
 ## Output Required
 - Chip-level simulation report
 - Per-test pass/fail log
-- Protocol checker clean report
+- Protocol-checker clean report
 ```
 
 ---
@@ -262,3 +259,5 @@ Track ip_status{} and connectivity_errors[] in state.
 Block progression if any IP has unresolved qualification issues.
 Output: Integration-complete SoC RTL package ready for synthesis.
 ```
+
+> 固定 stage 名和机器接口保留英文。
