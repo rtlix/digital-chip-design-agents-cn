@@ -1,4 +1,4 @@
-"""MCP smoke tests for plugins/infrastructure/tools/mcp-memory.py.
+"""plugins/infrastructure/tools/mcp-memory.py 的 MCP smoke test。
 
 Drives the server over stdin with newline-delimited JSON-RPC and asserts the
 responses on stdout, mirroring the MCP protocol shape of mcp-adapter.py.
