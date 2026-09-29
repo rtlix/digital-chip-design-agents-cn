@@ -29,7 +29,7 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 
 无论本 Skill 是由用户直接加载还是由 Orchestrator 中途调用，都必须执行上述预读，确保诊断前已查询历史修复经验。
 
-## 目的
+## Purpose（目的）
 
 指导 RTL 从模块层次规划一路推进到 lint clean、CDC clean 和 synthesis-ready。
 强制执行业界常用的 SystemVerilog 编码规范，并产出可交付仿真/综合的 RTL package。
@@ -54,7 +54,7 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 
 ## Stage: module_planning
 
-### 领域规则
+## Domain Rules（领域规则）
 1. 自顶向下拆分：从 top-level module 开始，逐级拆到 leaf cell
 2. 每个 module 只承担一种明确职责
 3. 编码前先定义全部 port（direction、width、type）
@@ -64,7 +64,7 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 7. 顶层集成 module 只做 wiring，不放功能逻辑
 8. datapath 和 control 尽量拆分为独立子模块
 
-### 必须输出
+## Output Required（必须输出）
 - Module hierarchy tree
 - 每个 module 的 descriptor（name、purpose、clock domain、ports、sub-modules）
 - Interface/port list 文档
@@ -147,7 +147,7 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 4. 未经 architect 批准，不允许 ERROR-level waiver
 5. 所有 waiver 记录在 `lint_waivers.csv`
 
-### QoR 指标
+## QoR Metrics（QoR 指标）
 - ERROR count：进入下一阶段前必须为 0
 - WARNING count：全部评审，waive 时提供理由
 - 所有 RTL 文件均已检查，而不仅仅是 top-level
