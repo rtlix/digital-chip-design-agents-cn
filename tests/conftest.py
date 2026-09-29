@@ -1,4 +1,4 @@
-"""Shared pytest fixtures: import the repo's standalone tool scripts as modules.
+"""共享 pytest fixture：把仓库中的独立工具脚本作为 module 导入。
 
 The tools (``tools/qor_trends.py`` and the memory-keeper ``distill.py``) are run
 as scripts in production, not installed as a package, so the tests load them by
@@ -37,7 +37,7 @@ def distill():
 
 @pytest.fixture
 def experience_search():
-    # Function-scoped so tests may monkeypatch get_embedding_backend in isolation.
+    # 使用 function scope，使测试可以相互独立地 monkeypatch get_embedding_backend。
     return _load("experience_search", "tools/experience_search.py")
 
 
@@ -47,7 +47,7 @@ def fixtures_dir() -> Path:
 
 
 def write_experiences(memory_dir: Path, domain: str, records: list[dict]) -> Path:
-    """Write records as JSONL to ``<memory_dir>/<domain>/experiences.jsonl``."""
+    """把 record 以 JSONL 写入 ``<memory_dir>/<domain>/experiences.jsonl``。"""
     d = memory_dir / domain
     d.mkdir(parents=True, exist_ok=True)
     path = d / "experiences.jsonl"
