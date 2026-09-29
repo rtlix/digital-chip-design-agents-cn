@@ -29,7 +29,7 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 
 无论本 Skill 是由用户直接加载，还是由 Orchestrator 在中途调用，都必须执行上述预读，以确保任何诊断前都已查询历史修复经验。
 
-## 目的
+## Purpose（目的）
 
 指导完整的 UVM 功能验证流程，从 testbench 架构一直到覆盖率收敛后的 regression sign-off。
 最终产出带有覆盖率记录、且回归干净的已验证 RTL 包。
@@ -54,7 +54,7 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 
 ## Stage: tb_architecture
 
-### 领域规则
+## Domain Rules（领域规则）
 1. 遵循 UVM 1.2 / IEEE 1800.2
 2. DUT 每个接口对应一个 UVM agent（driver、monitor、sequencer）
 3. Active agent：负责驱动激励；Passive agent：只负责监视
@@ -75,12 +75,12 @@ uvm_test
        └─ virtual_sequencer
 ```
 
-### 要评估的 QoR 指标
+## QoR Metrics（QoR 指标）
 - DUT 所有接口都有对应 Agent
 - Reference model 足以检查所有 DUT 输出
 - TB 编译错误数：0
 
-### 必须输出
+## Output Required（必须输出）
 - TB 架构图
 - UVM 组件列表与层次结构
 - Interface-to-agent 映射表
