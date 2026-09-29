@@ -94,66 +94,76 @@ Each stage must return:
 9. Constraint validation (at `memory_requirements`, skip in fix-request-servicing mode): read `design_state.constraints`. Required: `clock.clk_mhz`. If missing or `null`, perform atomic RMW — set `pending_approval = { "type": "constraint_gap", "stage": "memory_requirements", "agent": "memory-ip-orchestrator", "reason": "required constraint clock.clk_mhz missing from design_state.constraints", "fix_request_id": null, "last_summary": "clock.clk_mhz", "requires_user": true }`, append a `history[]` entry with `decision: "escalate"`, `failure_class: "spec_gap"`, `suggested_next_step: "escalate"`, `constraint_ref: "clock.clk_mhz"`, and halt. For optional absent constraints (`vmin_margin_mv`, `repair_yield_pct_min`, `ecc_required`, `max_aspect_ratio`, `retention_required`, `fit_target_fit_per_mb`), use schema defaults and include a fallback note in the stage `reason`. Two need explicit handling beyond a default: (a) if `constraints.pvt_corners` is absent or contains no entry with non-null `voltage_v` and `temp_c`, `view_generation` cannot establish required corner coverage — treat this as a `constraint_gap` escalation at `view_generation` entry rather than characterising at typical only; (b) `retention_required` is a **default, not an override** — it applies only to instances with no explicit per-instance retention requirement, and an explicit per-instance value wins in both directions. If the constraint itself is absent, default to `true` and state in the stage `reason` that retention was assumed mandatory. Additionally, if `design_state.rtl` and `design_state.architecture` disagree on an instance's type, port arrangement, depth, or width, escalate a `constraint_gap` at `memory_requirements` naming the instance and both values rather than picking one by read order. Tag `constraint_ref` in history entries when evaluating QoR against a constraint (e.g. `"memory_ip.repair_yield_pct_min"` at `redundancy_repair`).
 
 <!-- BEGIN SHARED:stage-gating (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
-## Stage Gating and Escalation
-These rules apply to every stage and take precedence over keeping the flow moving.
+## Stage Gate 与升级
 
-1. **Read the result before deciding.** After every tool run, read what it produced — the exit
-   code plus the wrapper/MCP JSON (`status`, `summary`, `errors`) or the tool's own report or
-   log summary — before assigning the stage `status`. A command having returned is not a result.
-2. **Never proceed past a FAIL without applying the loop-back rule.** A stage that returns FAIL
-   follows its row in Loop-Back Rules or ends the run. It is never skipped, downgraded to WARN,
-   or deferred to a later stage.
-3. **Loop cap exhausted: escalate clearly — show state and root cause.** When a loop-back row
-   has used its `max N×`, do not run the stage again. Append the terminal `history[]` entry
-   with `decision: "escalate"`, `failure_class: "resource_limit"`, `retry_strategy: "escalate"`,
-   `suggested_next_step: "escalate"`, and a `reason` stating the cap reached, the last measured
-   failure, and what the user must relax, supply, or accept. Then report the stage, the
-   iterations used, what each iteration changed, the last measured QoR, and the suspected root
-   cause.
-4. **Fault is upstream: stop looping and hand back.** If the evidence shows the defect is in an
-   input this domain consumes but does not own (RTL, netlist, constraints, IP views, a generated
-   image), retrying here cannot fix it. Do not spend the remaining loop iterations and do not
-   patch the upstream artifact yourself. Append the terminal `history[]` entry with
-   `decision: "escalate"`, the observed `failure_class` with its mapped `retry_strategy`,
-   `suggested_next_step: "escalate"`, and a `reason` naming the upstream domain, the artifact,
-   and the evidence. If your Loop-Back Rules or Behaviour Rules define a `fix_request` hand-off
-   for this case, follow it exactly. Otherwise the history entry and your final report are the
-   hand-off — do not write to `fix_requests[]`.
-5. **`pending_approval` is for gates only.** Set it only where your Behaviour Rules say so (the
-   checkpoint gate and, where present, constraint validation). `type: "escalation"` is reserved
-   for the pipeline-orchestrator.
-6. In both escalation cases leave the domain `signoff` field `false` and write
-   `signoff_achieved: false` in the experience record.
+这些规则适用于每个 stage，并且优先级高于“继续推进流程”。
+
+1. **先读取结果，再做判断。** 每次工具运行后，都必须读取它真正生成的结果：
+   exit code 加 wrapper/MCP JSON（`status`、`summary`、`errors`），或者工具自己的
+   report/log summary，然后才能给 stage 设置 `status`。命令返回本身不等于已经得到有效结果。
+2. **FAIL 不能直接越过。** Stage 返回 FAIL 时，必须按 Loop-Back Rules 对应项处理，
+   或结束本次运行。不得跳过、降级为 WARN，或推迟到后续 stage。
+3. **循环上限耗尽时必须明确升级，并展示状态与根因。**
+   某条 loop-back 已使用完 `max N×` 后，不要再次运行该 stage。
+   追加 terminal `history[]`，设置
+   `decision:"escalate"`、`failure_class:"resource_limit"`、
+   `retry_strategy:"escalate"`、`suggested_next_step:"escalate"`，
+   并在 `reason` 中说明达到的上限、最后一次 measured failure，
+   以及用户必须放宽、补充或接受什么。
+   最终报告要列出 stage、已使用的迭代次数、每轮改变了什么、最后测得的 QoR，以及疑似根因。
+4. **如果故障属于上游，停止本域循环并交回。**
+   如果证据表明缺陷位于本 domain 只消费但不拥有的输入
+   （RTL、netlist、constraint、IP view、generated image），
+   在本域继续 retry 无法修复。不要浪费剩余 loop，也不要自行 patch 上游 artifact。
+   追加 terminal `history[]`，设置 `decision:"escalate"`，
+   使用观测到的 `failure_class` 及其映射出的 `retry_strategy`，
+   `suggested_next_step:"escalate"`，
+   并在 `reason` 中写明上游 domain、artifact 和证据。
+   如果 Loop-Back Rules 或 Behaviour Rules 为这种情况定义了 `fix_request` hand-off，
+   则严格执行；否则 history entry 与最终报告就是 hand-off，不要写入 `fix_requests[]`。
+5. **`pending_approval` 只用于 gate。**
+   只有 Behaviour Rules 明确要求的地方才设置它
+   （checkpoint gate，以及适用时的 constraint validation）。
+   `type:"escalation"` 仅由 pipeline-orchestrator 使用。
+6. 上述两类 escalation 终止时，本 domain 的 `signoff` 必须保持 `false`，
+   experience record 中 `signoff_achieved` 也必须为 `false`。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:reporting-contract (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
-## Reporting Contract
-Applies to every report you make: a stage result, an escalation, and the final summary.
+## 报告契约
 
-1. **Run before you report.** Run every gate named in the task and every Sign-off Criteria item
-   you claim, and paste each command with its exact output (or the wrapper/MCP JSON). Trim long
-   output to the summary lines, but never paraphrase a number.
-2. **Never report a gate as passing unless, in this session, you ran it or read its completed
-   result file.** If you could not — tool missing, hardware unavailable, job still running,
-   turn budget — say so explicitly, say why, and report the gate as NOT RUN, not as PASS.
-3. **Exit 0 is not a pass.** A tool that exits 0 with empty or unparsable output, or a
-   wrapper/MCP result with `"verified": false`, is NOT a pass. Find the result the tool was
-   meant to produce; if it is absent, report the gate as unverified.
-4. **Re-read the deliverable list immediately before finishing.** Go back to the task as
-   written and to this orchestrator's `Output:` rule and confirm each item. List any item you
-   did not complete, and why.
-5. **Separate measured from inferred.** Quote the value you observed and where it came from
-   (command, file, line). Mark anything else — estimates, expectations, results carried over
-   from memory or an earlier session — as inference.
-6. **Check artifact provenance.** If a test or gate consumes a generated artifact (`.hex` or ELF
-   image, netlist, `.lib`/`.lef` view, SPEF, GDS, bitstream), verify its provenance in every
-   environment that will run the test, not just yours. Either the artifact is committed, or a
-   step that environment actually performs regenerates it. Passing locally because the file was
-   already on disk is not evidence that CI or a downstream domain can run it. State which of the
-   two holds for each such artifact.
-7. **Record what you reported.** The domain `signoff` field and `signoff_achieved` may be `true`
-   only when every Sign-off Criteria item is measured-PASS. A criterion that is NOT RUN or
-   unverified means signoff is false; name it in the `history[]` `reason` and in `notes`.
+适用于你生成的每一份报告：stage result、escalation 以及最终 summary。
+
+1. **先运行，再报告。**
+   对任务中点名的每个 gate，以及你声称通过的每项 Sign-off Criteria，
+   都必须在本次会话真实运行，或读取已经完成的 result file，
+   并给出命令及其准确输出（或 wrapper/MCP JSON）。
+   长输出可以裁剪到 summary 行，但数值绝不能改写。
+2. **本次会话没有运行、也没有读取完整结果的 gate，绝不能报告为 PASS。**
+   如果因为工具缺失、硬件不可用、job 仍在运行或 turn budget 不足而无法确认，
+   必须明确说明原因，并把该 gate 报告为 NOT RUN，而不是 PASS。
+3. **Exit 0 不代表 PASS。**
+   工具 exit 0 但输出为空或无法解析，或者 wrapper/MCP 返回
+   `"verified": false`，都不能算通过。
+   必须找到该工具本应生成的结果；如果结果不存在，则把 gate 报告为 unverified。
+4. **结束前立即重新核对交付物清单。**
+   回到任务原文以及当前 Orchestrator 的 `Output:` 规则，
+   逐项确认是否完成。任何未完成项都必须列出并解释原因。
+5. **区分 measured 与 inferred。**
+   引用你真正观察到的数值及来源（命令、文件、行号）。
+   其他内容——估算、预期、从 Memory 或前一 session 带来的结果——必须标记为 inference。
+6. **检查 artifact provenance。**
+   如果 test 或 gate 使用 generated artifact
+   （`.hex`、ELF、netlist、`.lib/.lef` view、SPEF、GDS、bitstream），
+   必须在每个真正会运行该 test 的环境里确认 artifact 的来源，而不只是检查你当前环境。
+   要么 artifact 已提交，要么那个环境实际执行的步骤会重新生成它。
+   仅因为本地磁盘已有文件而通过，不能证明 CI 或下游 domain 能运行。
+   每个此类 artifact 都要说明采用了哪一种保证方式。
+7. **记录你实际报告的结果。**
+   只有每项 Sign-off Criteria 都是 measured-PASS 时，
+   domain 的 `signoff` 和 `signoff_achieved` 才能设为 `true`。
+   任一判据为 NOT RUN 或 unverified，都意味着 signoff=false；
+   必须在 `history[]` 的 `reason` 和 `notes` 中指出。
 <!-- END SHARED:reporting-contract -->
 
 ## Memory

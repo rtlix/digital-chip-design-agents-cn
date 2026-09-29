@@ -179,13 +179,38 @@ detect_open_fix_requests → dispatch_to_producer → await_completion → re_ve
 <!-- BEGIN SHARED:reporting-contract (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## 报告契约
 
-1. **先运行，再报告。** 对声称通过的每个 gate 和 Sign-off Criteria，必须在本次会话实际运行或读取完成结果，并给出命令及真实输出。
-2. **没有 measured 结果就不能报告 PASS。** 工具缺失、硬件不可用、job 未完成或 turn budget 不足时，标记 NOT RUN。
-3. **Exit 0 不代表 PASS。** 输出为空、不可解析或 wrapper/MCP 返回 `verified:false` 时，都不能算通过。
-4. **结束前重新核对交付物。** 再次检查用户要求及 Output 规则，列出未完成项和原因。
-5. **区分 measured 与 inferred。** 观察值注明来源，其他估计或历史信息标记 inference。
-6. **检查 artifact provenance。** 对 `.hex`、ELF、netlist、`.lib/.lef`、SPEF、GDS、bitstream 等生成文件，确认每个下游环境都能从提交或真实生成步骤获得。
-7. **记录所报告结果。** 只有全部 Sign-off Criteria measured-PASS，`signoff` 和 `signoff_achieved` 才可为 true；任何 NOT RUN/unverified 都使 signoff=false。
+适用于你生成的每一份报告：stage result、escalation 以及最终 summary。
+
+1. **先运行，再报告。**
+   对任务中点名的每个 gate，以及你声称通过的每项 Sign-off Criteria，
+   都必须在本次会话真实运行，或读取已经完成的 result file，
+   并给出命令及其准确输出（或 wrapper/MCP JSON）。
+   长输出可以裁剪到 summary 行，但数值绝不能改写。
+2. **本次会话没有运行、也没有读取完整结果的 gate，绝不能报告为 PASS。**
+   如果因为工具缺失、硬件不可用、job 仍在运行或 turn budget 不足而无法确认，
+   必须明确说明原因，并把该 gate 报告为 NOT RUN，而不是 PASS。
+3. **Exit 0 不代表 PASS。**
+   工具 exit 0 但输出为空或无法解析，或者 wrapper/MCP 返回
+   `"verified": false`，都不能算通过。
+   必须找到该工具本应生成的结果；如果结果不存在，则把 gate 报告为 unverified。
+4. **结束前立即重新核对交付物清单。**
+   回到任务原文以及当前 Orchestrator 的 `Output:` 规则，
+   逐项确认是否完成。任何未完成项都必须列出并解释原因。
+5. **区分 measured 与 inferred。**
+   引用你真正观察到的数值及来源（命令、文件、行号）。
+   其他内容——估算、预期、从 Memory 或前一 session 带来的结果——必须标记为 inference。
+6. **检查 artifact provenance。**
+   如果 test 或 gate 使用 generated artifact
+   （`.hex`、ELF、netlist、`.lib/.lef` view、SPEF、GDS、bitstream），
+   必须在每个真正会运行该 test 的环境里确认 artifact 的来源，而不只是检查你当前环境。
+   要么 artifact 已提交，要么那个环境实际执行的步骤会重新生成它。
+   仅因为本地磁盘已有文件而通过，不能证明 CI 或下游 domain 能运行。
+   每个此类 artifact 都要说明采用了哪一种保证方式。
+7. **记录你实际报告的结果。**
+   只有每项 Sign-off Criteria 都是 measured-PASS 时，
+   domain 的 `signoff` 和 `signoff_achieved` 才能设为 `true`。
+   任一判据为 NOT RUN 或 unverified，都意味着 signoff=false；
+   必须在 `history[]` 的 `reason` 和 `notes` 中指出。
 <!-- END SHARED:reporting-contract -->
 
 ## Memory
