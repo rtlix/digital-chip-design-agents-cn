@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wrap-opensta.sh — run OpenSTA and emit a compact JSON summary
+# wrap-opensta.sh —— 运行 OpenSTA，并输出紧凑 JSON summary
 set -euo pipefail
 
 TOOL="sta"
@@ -46,7 +46,7 @@ if endpoint_m: summary["worst_endpoint"]    = endpoint_m.group(1)
 summary["error_count"]   = len(errors)
 summary["warning_count"] = len(warnings)
 
-# PASS needs a result found in the output; exit 0 alone is not one.
+# PASS 必须有工具输出中的可识别结果；仅 exit 0 不能作为 PASS 依据。
 evidence = bool(wns_m or tns_m or endpoint_m)
 
 if exit_code != 0 or errors:
