@@ -63,7 +63,7 @@ export const TARGETS = [
     bins: ["claude"],
     dirs: [process.env.CLAUDE_CONFIG_DIR || join(HOME, ".claude")],
     destination: () =>
-      `${process.env.CLAUDE_CONFIG_DIR || join(HOME, ".claude")} (global plugin cache)`,
+      `${process.env.CLAUDE_CONFIG_DIR || join(HOME, ".claude")} （全局插件缓存）`,
   },
   {
     id: "codex",
@@ -114,9 +114,9 @@ export function detectAgents({ global = false } = {}) {
         break;
       }
     }
-    if (foundBin) reasons.push(`'${foundBin}' on PATH`);
+    if (foundBin) reasons.push(`PATH 中找到 '${foundBin}'`);
     const foundDir = t.dirs.find(dirExists);
-    if (foundDir) reasons.push(`${foundDir} exists`);
+    if (foundDir) reasons.push(`配置目录存在：${foundDir}`);
     return {
       id: t.id,
       label: t.label,
