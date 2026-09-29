@@ -1,5 +1,5 @@
 {
-  "_comment": "SymbiYosys (sby) batch MCP server — suitable for bounded proof runs and short property checks. Unbounded proofs that may run >1h should be launched via Bash. The MCP tool name exposed to agents is 'symbiflow'. Replace /absolute/path/to with the actual repo root path.",
+  "_comment": "SymbiYosys（sby）批处理 MCP Server —— 适合 bounded proof 和较短 property check。可能运行超过 1 小时的 unbounded proof 应通过 Bash 启动。暴露给 Agent 的 MCP tool name 为 'symbiflow'。请把 /absolute/path/to 替换为本仓库实际绝对路径。",
   "mcpServers": {
     "symbiflow": {
       "type": "stdio",
@@ -8,7 +8,7 @@
         "/absolute/path/to/plugins/infrastructure/tools/mcp-adapter.py",
         "--wrapper", "/absolute/path/to/plugins/infrastructure/tools/wrap-symbiflow.sh",
         "--tool", "symbiflow",
-        "--description", "Run SymbiYosys formal verification and return compact JSON: proved/failed/unknown property lists, counterexample trace path"
+        "--description", "运行 SymbiYosys formal verification 并返回紧凑 JSON：proved/failed/unknown property 列表、counterexample trace 路径"
       ],
       "env": {
         "SOLVER": "bitwuzla",
