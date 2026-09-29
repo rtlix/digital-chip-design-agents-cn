@@ -81,15 +81,15 @@ def load_records(jsonl_path: Path) -> list[dict]:
                 obj = json.loads(raw)
             except json.JSONDecodeError:
                 malformed += 1
-                print(f"  [warn] malformed JSON on line {lineno}, skipping", file=sys.stderr)
+                print(f"  [警告] 第 {lineno} 行 JSON 格式错误，已跳过", file=sys.stderr)
                 continue
             if not isinstance(obj, dict):
                 malformed += 1
-                print(f"  [warn] line {lineno} is valid JSON but not an object, skipping", file=sys.stderr)
+                print(f"  [警告] 第 {lineno} 行虽然是合法 JSON，但不是对象，已跳过", file=sys.stderr)
                 continue
             records.append(obj)
     if malformed:
-        print(f"  [warn] {malformed} malformed line(s) ignored", file=sys.stderr)
+        print(f"  [警告] 已忽略 {malformed} 个格式错误的记录", file=sys.stderr)
     return records
 
 
@@ -164,20 +164,20 @@ def extract_tool_flag_candidates(records: list[dict]) -> list[str]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Distil experiences.jsonl for a domain")
-    parser.add_argument("domain", choices=VALID_DOMAINS, help="Domain name")
+    parser = argparse.ArgumentParser(description="将某个领域的 experiences.jsonl 蒸馏为结构化经验摘要")
+    parser.add_argument("domain", choices=VALID_DOMAINS, help="领域名称")
     parser.add_argument(
         "--min-records",
         type=int,
         default=5,
         metavar="N",
-        help="Minimum record count required (default: 5)",
+        help="执行蒸馏所需的最少记录数（默认：5）",
     )
     parser.add_argument(
         "--memory-root",
         default=None,
         metavar="PATH",
-        help="Path to the memory/ directory (default: auto-detect from script location)",
+        help="Memory 根目录路径（默认：按统一规则自动解析）",
     )
     args = parser.parse_args()
 
@@ -197,7 +197,7 @@ def main() -> None:
                 "domain": args.domain,
                 "record_count": n,
                 "min_records": args.min_records,
-                "reason": f"Only {n} record(s); threshold is {args.min_records}",
+                "reason": f"仅有 {n} 条记录；阈值为 {args.min_records}",
             }),
             flush=True,
         )
