@@ -1,4 +1,4 @@
-"""Unit tests for tools/qor_trends.py."""
+"""tools/qor_trends.py 的单元测试。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ QOR = Path(__file__).resolve().parents[1] / "tools/qor_trends.py"
 
 
 def test_valid_domains_have_numeric_metrics(qor_trends):
-    # Every trending domain must declare a numeric-metric list.
+    # 每个支持趋势分析的 domain 都必须声明 numeric metric 列表。
     for dom in qor_trends.VALID_DOMAINS:
         assert dom in qor_trends.NUMERIC_METRICS, f"{dom} missing from NUMERIC_METRICS"
 
@@ -54,7 +54,7 @@ def test_extract_series_filters_metric_and_sorts(qor_trends):
     ]
     series = qor_trends.extract_series(records, "synthesis", "wns_ns", None)
     pts = series["wns_ns"][qor_trends._ALL_KEY]
-    # Sorted by timestamp ascending; only the requested metric is present.
+    # 按 timestamp 升序排列；只保留请求的 metric。
     assert [v for _, v in pts] == [-0.4, -0.2]
     assert "cells" not in series
 
@@ -69,13 +69,13 @@ def test_extract_series_groups_by_pdk(qor_trends):
 
 
 def test_detect_regression_higher_is_better(qor_trends):
-    # wns_ns is higher-is-better (closer to 0 is better); a drop is a regression.
+    # wns_ns 越高越好（越接近 0 越好）；数值下降属于 regression。
     assert qor_trends.detect_regression("wns_ns", [-0.1, -0.5]) is not None
     assert qor_trends.detect_regression("wns_ns", [-0.5, -0.1]) is None
 
 
 def test_detect_regression_lower_is_better(qor_trends):
-    # drc_violations: lower is better; a rise is a regression.
+    # drc_violations 越低越好；数值上升属于 regression。
     assert qor_trends.detect_regression("drc_violations", [0, 3]) is not None
     assert qor_trends.detect_regression("drc_violations", [3, 0]) is None
 
@@ -111,12 +111,12 @@ def test_main_missing_memory_root_exits_2(tmp_path):
 
 
 def test_main_reports_trend_and_regression(tmp_path, fixtures_dir):
-    # The committed fixture loads, trends, and surfaces a regression in the table.
+    # 已提交的 fixture 应可加载、生成趋势，并在表中暴露 regression。
     mem = tmp_path / "memory"
     (mem / "synthesis").mkdir(parents=True)
     (mem / "synthesis" / "experiences.jsonl").write_text(
         (fixtures_dir / "sample_experiences.jsonl").read_text())
     res = _run("--design", "demo_cpu", "--memory-root", str(mem))
     assert res.returncode == 0, res.stderr
-    # wns_ns trends 0.05 -> -0.02 -> -0.35 (higher-is-better): a regression.
+    # wns_ns 从 0.05 → -0.02 → -0.35（越高越好），因此是 regression。
     assert "REGRESSION" in res.stdout
