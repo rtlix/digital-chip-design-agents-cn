@@ -1,5 +1,5 @@
 {
-  "_comment": "Yosys batch MCP server — paste the mcpServers block into your .claude/settings.json. Replace /absolute/path/to with the actual repo root path.",
+  "_comment": "Yosys 批处理 MCP Server —— 将 mcpServers 配置块粘贴到 .claude/settings.json。请把 /absolute/path/to 替换为本仓库实际绝对路径。",
   "mcpServers": {
     "yosys": {
       "type": "stdio",
@@ -8,7 +8,7 @@
         "/absolute/path/to/plugins/infrastructure/tools/mcp-adapter.py",
         "--wrapper", "/absolute/path/to/plugins/infrastructure/tools/wrap-yosys.sh",
         "--tool", "yosys",
-        "--description", "Run Yosys synthesis and return compact JSON: cells, chip_area_um2, error/warning counts"
+        "--description", "运行 Yosys 综合并返回紧凑 JSON：cells、chip_area_um2、error/warning 数量"
       ],
       "env": {
         "TOOL_TIMEOUT_S": "300"
