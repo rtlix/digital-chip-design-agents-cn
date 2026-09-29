@@ -1,196 +1,174 @@
 ---
 name: physical-design
 description: >
-  Full physical design flow — floorplan, placement, clock tree synthesis, routing,
-  timing optimisation, power optimisation, area optimisation, and tape-out sign-off.
-  Use when implementing a gate-level netlist through to GDS-II, closing timing and
-  power, or performing any individual PD stage analysis.
+  完整 Physical Design 流程——floorplan、placement、CTS、routing、timing/power/area
+  optimization 和 tape-out sign-off。适用于把 gate-level netlist 实现到 GDS-II，
+  做 timing/power closure，或分析任意单个 PD stage。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: Physical Design
+# Skill: Physical Design（物理设计）
 
 ## Invocation
-
-- **If invoked by a user** presenting a physical design task: immediately spawn
-  the `digital-chip-design-agents:physical-design-orchestrator` agent and pass
-  the full user request and any available context. Do not execute stages directly.
-- **If invoked by the `physical-design-orchestrator` mid-flow**: do not spawn a
-  new agent. Treat this file as read-only — return the requested stage rules,
-  sign-off criteria, or loop-back guidance to the calling orchestrator.
-
-Spawning the orchestrator from within an active orchestrator run causes recursive
-delegation and must never happen.
+- 用户直接提出 PD 任务：立即启动 `digital-chip-design-agents:physical-design-orchestrator`，
+  传入完整请求与上下文，不直接执行 stage。
+- 由 physical-design-orchestrator 中途调用：不要再次启动 Agent；本文件只作为规则库。
 
 ## Pre-run Context
-
-Before executing or advising on **any** stage, read the following files if they exist:
-
-1. `memory/pd/knowledge.md` — known failure patterns, successful tool flags, PDK quirks.
-   Incorporate its guidance into every stage decision. If absent, proceed without it.
-2. `memory/pd/run_state.md` — current run identity (`run_id`, `design_name`, `pdk`,
-   `last_stage`). Use this to resume correctly after interruption. If absent, a new run
-   is starting; the orchestrator will create this file before the first stage.
-
-This pre-run read applies whether this skill is loaded by a user or called by the
-orchestrator mid-flow. It ensures the fix database is consulted before any diagnosis step.
+任何 stage 前，如存在则读取：
+1. `memory/pd/knowledge.md`
+2. `memory/pd/run_state.md`
+并应用已知 failure pattern、tool flag、PDK quirk 和 run state。
 
 ## Purpose
-Guide the complete physical implementation flow from gate-level netlist to
-tape-out-ready GDS-II. Eight stages with explicit QoR gates and loop-back
-criteria enforced by the physical-design orchestrator.
+指导从 gate-level netlist 到 tape-out-ready GDS-II 的完整物理实现流程。
+八个 stage 都有明确 QoR gate 与 loop-back criteria，由 Orchestrator 强制执行。
 
 ---
 
 ## Supported EDA Tools
-
 ### Open-Source
-- **OpenROAD / ORFS** (`make DESIGN_CONFIG=./designs/<platform>/<design>/config.mk`) — full PD pipeline; executes sequentially (see sequential flow note below)
-- **LibreLane / OpenLane 2** (`openlane <config.json>`) — sequential PD pipeline built on OpenROAD; (see sequential flow note below)
-- **KLayout** (`klayout`) — DRC, LVS, and GDS-II viewing/editing; used for signoff DRC in open-source flows
+- **OpenROAD / ORFS**：完整 PD pipeline
+- **LibreLane / OpenLane2**：基于 OpenROAD 的 sequential pipeline
+- **KLayout**：DRC/LVS/GDS viewer/editor
 
 ### Proprietary
-- **Cadence Innovus** (`innovus`) — floorplan through signoff; interactive and batch modes
-- **Synopsys IC Compiler 2** (`icc2_shell`) — hierarchical PD with Fusion technology
-- **Siemens Aprisa** — physical implementation for advanced nodes
+- **Cadence Innovus**
+- **Synopsys IC Compiler 2**
+- **Siemens Aprisa**
 
-### Sequential Flow Log Review (OpenROAD / LibreLane)
+### Sequential Flow Log Review
+ORFS/LibreLane 一次 invocation 会顺序跑完整 pipeline，中途不会等待 Agent。
+运行结束或中途失败后，Agent 必须读取 per-stage log 再判断 QoR/loop-back。
 
-OpenROAD Flow Scripts (ORFS) and LibreLane execute the **entire PD pipeline in a single
-invocation**. Stages run sequentially without pausing for agent intervention. After the
-run completes (or fails mid-stage), the agent **must read the per-stage log files** to
-evaluate QoR and apply loop-back logic.
-
-**ORFS log layout:**
+**ORFS log：**
 ```
 logs/<platform>/<design>/
-  1_1_yosys.log         # synthesis (Yosys)
-  2_1_floorplan.log     # floorplan (OpenROAD)
-  3_1_place.log         # global placement (OpenROAD)
-  3_4_resizer.log       # resizer / timing-driven placement
-  4_1_cts.log           # clock tree synthesis (OpenROAD)
-  5_1_route.log         # global routing (OpenROAD)
-  5_3_fillcell.log      # filler cell insertion
-  6_1_finishing.log     # signoff: DRC (KLayout/Magic), LVS (Netgen), final STA
+  1_1_yosys.log
+  2_1_floorplan.log
+  3_1_place.log
+  3_4_resizer.log
+  4_1_cts.log
+  5_1_route.log
+  5_3_fillcell.log
+  6_1_finishing.log
 ```
-Invocation: `make DESIGN_CONFIG=./designs/<platform>/<design>/config.mk`
-Resume from stage: `make do-<stage>` (e.g. `make do-3_2_place`)
+启动：`make DESIGN_CONFIG=./designs/<platform>/<design>/config.mk`
+从 stage 恢复：`make do-<stage>`
 
-**LibreLane (OpenLane 2) log layout:**
+**LibreLane log：**
 ```
 runs/<design>/<run_tag>/logs/
-  synthesis/            # Yosys synthesis logs
-  floorplan/            # OpenROAD floorplan logs
-  placement/            # OpenROAD placement logs (global + detail)
-  cts/                  # OpenROAD CTS logs
-  routing/              # OpenROAD global + detailed routing (DRT) logs
-  signoff/              # Magic/Netgen DRC+LVS, OpenSTA final timing
+  synthesis/
+  floorplan/
+  placement/
+  cts/
+  routing/
+  signoff/
 ```
-Invocation: `openlane <config.json>` (or `python3 -m openlane <config.json>`)
-Resume from step: `openlane --from <step_name> <config.json>`
+启动：`openlane <config.json>`
+恢复：`openlane --from <step_name> <config.json>`
 
-**Agent procedure after run:**
-1. Identify the last successfully completed stage from log timestamps or exit codes
-2. Read the log for each completed stage and extract the relevant QoR metrics
-   (WNS, DRC count, congestion, IR drop) defined in the `## Stage:` sections below
-3. Apply loop-back rules from this skill; correct the input config or constraints
-4. Re-invoke from the failed stage using the resume command above
+Agent 流程：
+1. 根据 log timestamp/exit code 找最后成功 stage
+2. 读取每个完成 stage 的 log，提取 WNS、DRC、congestion、IR drop 等 QoR
+3. 应用本 Skill loop-back，修 config/constraint
+4. 从失败 stage 重新启动
 
 ---
 
 ## Stage: floorplan
 
 ### Domain Rules
-1. Core utilisation target: `design_state.constraints.area.utilization_pct_target`% (default: 75%) — leave margin for routing congestion
-2. Macros: place at die edges or corners with halos (typically 5–10 μm)
-3. IO pads: distribute evenly; match package pin assignment
-4. Power grid: VDD/VSS straps every N rows (technology-node specific)
-5. Blockages: hard blockages around analog/RF macros
-6. Aspect ratio: keep close to 1:1 unless package constrains otherwise
-7. Voltage island boundaries must align to row boundaries
+1. Core utilization target = `constraints.area.utilization_pct_target`%，默认 75%。
+2. Macro 放 die edge/corner 并留 halo，常见 5–10 μm。
+3. IO pad 均匀分布并匹配 package pin assignment。
+4. Power grid strap 间距按工艺节点规则。
+5. Analog/RF macro 周围设置 hard blockage。
+6. 除非 package 限制，aspect ratio 尽量接近 1:1。
+7. Voltage island boundary 对齐 row boundary。
 
 ### QoR Metrics to Evaluate
-- Estimated congestion (H and V): flag if > 80%
-- Estimated WNS from floorplan-stage STA: flag if < −2 ns
-- IR drop estimate: flag if > 2× `design_state.constraints.power.ir_drop_pct_max`% of VDD (default threshold: 10%)
+- H/V congestion >80% 告警
+- Floorplan-stage WNS <−2 ns 告警
+- IR drop > 2× `power.ir_drop_pct_max` 告警，默认阈值 10% VDD
 
 ### Output Required
-- Floorplan DEF (floorplan.def)
-- Power grid DEF or script
+- floorplan.def
+- Power-grid DEF/script
 - Macro placement report
-- Estimated congestion map
+- Congestion map
 
 ---
 
 ## Stage: placement
 
 ### Domain Rules
-1. Sequence: global → legalise → detailed → pre-CTS optimisation
-2. Pre-CTS timing: ideal clocks; uncertainty = skew + jitter estimate
-3. Max utilisation per partition: 80%
-4. High-fanout nets: buffer before placement or apply constraints
-5. Timing-critical paths: co-locate related cells with placement constraints
-6. Scan chains: re-order after placement for minimum wirelength
+1. global → legalise → detailed → pre-CTS optimization。
+2. Pre-CTS 使用 ideal clock，uncertainty = skew + jitter estimate。
+3. 每 partition utilization 不超过 80%。
+4. High-fanout net 在 placement 前 buffer 或加 constraint。
+5. Timing-critical cell 尽量 co-locate。
+6. Scan chain placement 后 reorder 降低 wirelength。
 
 ### QoR Metrics to Evaluate
-- Pre-CTS WNS: > −0.3 ns (early stage gate; sign-off target is `constraints.timing.wns_ns_target`, default: 0)
-- Cell density hotspots: flag if any region > 90%
-- Max utilisation per partition: `design_state.constraints.area.utilization_pct_max`% (default: 85%); flag if exceeded
-- Estimated routing congestion overflow: flag if > 1%
+- Pre-CTS WNS > −0.3 ns；最终 target 由 `timing.wns_ns_target` 决定
+- Density hotspot >90% 告警
+- Utilization > `area.utilization_pct_max`（默认 85%）告警
+- Routing congestion overflow >1% 告警
 
 ### Output Required
 - Placed DEF
-- Pre-CTS timing report (setup and hold)
-- Cell density and congestion report
+- Pre-CTS setup/hold report
+- Density/congestion report
 
 ---
 
 ## Stage: cts
 
 ### Domain Rules
-1. Target skew: < `design_state.constraints.timing.skew_ps_max` ps (default: 100 ps, or per SDC set_clock_uncertainty)
-2. Max transition on clock nets: per technology DRC rule (`design_state.constraints.timing.transition_ps_max` ps, default: 200 ps)
-3. Max fanout per clock buffer: per library (`design_state.constraints.timing.fanout_max`, default: 16–32)
-4. Useful skew: only with explicit sign-off approval
-5. Clock gating: integrate into CTS; verify enable pin timing
-6. Multi-clock: handle each domain independently; check CDC after CTS
+1. Target skew < `timing.skew_ps_max`，默认 100 ps。
+2. Clock max transition ≤ `transition_ps_max`，默认 200 ps。
+3. Clock-buffer fanout ≤ `fanout_max`，默认 16–32。
+4. Useful skew 只有 sign-off 明确批准时使用。
+5. Clock gating 与 CTS 集成并检查 enable timing。
+6. 多 clock domain 独立处理，CTS 后重新检查 CDC。
 
 ### QoR Metrics to Evaluate
-- Global skew per domain: flag if > 1.5× `design_state.constraints.timing.skew_ps_max` ps (default threshold: 150 ps)
-- Max insertion delay: flag if > `design_state.constraints.timing.insertion_delay_ps_max` ps (default: 500 ps)
-- Post-CTS WNS (setup): flag if < −0.2 ns
-- Post-CTS hold slack: must be ≥ 0 before routing
+- Global skew >1.5× target 告警
+- Insertion delay > `insertion_delay_ps_max`（默认 500 ps）告警
+- Post-CTS setup WNS <−0.2 ns 告警
+- Routing 前 hold slack 必须 ≥0
 
 ### Output Required
 - Post-CTS DEF
-- Clock tree report (skew, insertion delay per domain)
-- Post-CTS timing report (setup and hold)
+- Clock tree skew/insertion report
+- Post-CTS setup/hold report
 
 ---
 
 ## Stage: routing
 
 ### Domain Rules
-1. Sequence: global → track assignment → detailed → search-and-repair
-2. Follow foundry DRC deck (spacing, width, via enclosure)
-3. Shield critical clock and analog nets
-4. Upper metals for power, lower metals for signals
-5. Antenna rules: insert diodes or use jump-via strategy
-6. Double/multi-patterning (7 nm and below): resolve same-colour violations
+1. global → track assignment → detailed → search-and-repair。
+2. 遵循 foundry DRC deck。
+3. Critical clock/analog net shield。
+4. Upper metal 优先 power，lower metal 主要 signal。
+5. Antenna violation 用 diode/jump-via 处理。
+6. 先进节点处理 double/multi-patterning color violation。
 
 ### QoR Metrics to Evaluate
-- DRC violations: 0 at sign-off
-- LVS errors: 0 at sign-off
-- Post-route WNS: flag if < 0
-- Routing overflow: 0
+- Sign-off DRC = 0
+- LVS error = 0
+- Post-route WNS <0 告警
+- Routing overflow = 0
 
 ### Output Required
 - Routed DEF
-- DRC report
-- LVS report
+- DRC/LVS report
 - Post-route timing report
 
 ---
@@ -198,48 +176,48 @@ Resume from step: `openlane --from <step_name> <config.json>`
 ## Stage: timing_optimization
 
 ### Domain Rules
-1. Multi-corner: SS (setup), FF (hold), TT (typical)
-2. Setup: upsize drivers, insert repeaters, retime registers
-3. Hold: insert HVT delay buffers
-4. Vt swapping: SVT/LVT for speed-critical; HVT for power-insensitive paths
-5. ECO: formal ECO → place in reserved sites → re-route ECO nets
-6. Do not modify scan chain order without DFT approval
-7. Apply POCV/AOCV per foundry sign-off agreement
+1. Multi-corner：SS setup、FF hold、TT typical。
+2. Setup：driver upsize、repeater、retiming。
+3. Hold：插入 HVT delay buffer。
+4. Vt swapping：critical path 用 SVT/LVT；非 critical 可 HVT。
+5. ECO：formal ECO → reserved site placement → reroute ECO net。
+6. 未经 DFT 批准不得改 scan-chain order。
+7. 按 foundry sign-off agreement 应用 POCV/AOCV。
 
 ### QoR Metrics to Evaluate
-- WNS: ≥ `design_state.constraints.timing.wns_ns_target` (default: 0) all corners
-- TNS: = `design_state.constraints.timing.tns_ns_target` (default: 0) all corners
-- Hold slack: ≥ 0 after fixing
-- ECO cell count: flag if > 2% of total cells
+- 所有 corner WNS ≥ `wns_ns_target`
+- TNS = `tns_ns_target`，默认 0
+- Hold slack ≥0
+- ECO cell >2% 总 cell 时告警
 
 ### Output Required
-- Timing closure report (all corners)
-- ECO change list
+- All-corner timing closure report
+- ECO list
 - SPEF
-- Updated routed DEF (post-ECO)
+- Post-ECO routed DEF
 
 ---
 
 ## Stage: power_optimization
 
 ### Domain Rules
-1. Dynamic: clock gating insertion, operand isolation, multi-Vt swapping
-2. Leakage: swap non-critical cells to HVT; verify timing after each batch
-3. Power domains: validate UPF (isolation, level-shifters, retention regs)
-4. Voltage islands: verify IR drop per domain
-5. Always-on logic: verify correct library cells
-6. Power gating: verify wakeup/shutdown sequences before routing changes
+1. Dynamic：clock gating、operand isolation、multi-Vt。
+2. Leakage：非 critical cell 换 HVT，每批后重查 timing。
+3. Power domain：验证 UPF isolation/level shifter/retention。
+4. Voltage island：逐域检查 IR drop。
+5. Always-on logic 使用正确 library cell。
+6. Power gating：修改 routing 前验证 wakeup/shutdown sequence。
 
 ### QoR Metrics to Evaluate
-- Total power: within `design_state.constraints.power.power_mw` budget
-- Leakage: flag if > `design_state.constraints.power.leakage_pct_max`% of total at TT corner (default: 15%)
-- IR drop: < `design_state.constraints.power.ir_drop_pct_max`% VDD across all domains (default: 5%)
-- Post-power-opt WNS: must remain ≥ `design_state.constraints.timing.wns_ns_target` (default: 0)
+- Total power ≤ `power.power_mw`
+- Leakage ≤ `leakage_pct_max`%，默认 15%
+- IR drop < `ir_drop_pct_max`% VDD，默认 5%
+- Post-opt WNS ≥ target
 
 ### Output Required
-- Power analysis report (dynamic + static, per domain)
-- IR drop report
-- Updated DEF (post-power-opt)
+- Dynamic/static per-domain power report
+- IR-drop report
+- Post-power-opt DEF
 - UPF compliance report
 
 ---
@@ -247,44 +225,44 @@ Resume from step: `openlane --from <step_name> <config.json>`
 ## Stage: area_optimization
 
 ### Domain Rules
-1. Remove redundant buffers and inverter pairs
-2. Downsize non-timing-critical cells to minimum drive strength
-3. Reclaim unused standard cell sites
-4. Do not drop WNS margin below 50 ps buffer
-5. Re-run DRC after any area ECO
+1. 删除冗余 buffer/inverter pair。
+2. 非 critical cell downsize。
+3. 回收 unused standard-cell site。
+4. WNS margin 不低于 50 ps buffer。
+5. Area ECO 后重跑 DRC。
 
 ### QoR Metrics to Evaluate
-- Core utilisation: target `design_state.constraints.area.utilization_pct_target`% (default: 75%); hard limit `design_state.constraints.area.utilization_pct_max`% (default: 85%)
-- WNS: must remain ≥ `design_state.constraints.timing.wns_ns_target` (default: 0)
-- DRC: must remain clean
+- Core utilization target 默认 75%，hard limit 默认 85%
+- WNS ≥ target
+- DRC 保持 clean
 
 ### Output Required
-- Area utilisation report (pre vs post)
+- Pre/post area report
 - Updated DEF
-- Cell count breakdown
+- Cell-count breakdown
 
 ---
 
 ## Stage: signoff
 
-### Sign-off Pass Criteria (all must pass)
+### Sign-off Pass Criteria
 | Check | Criterion |
-|-------|-----------|
-| Setup WNS | ≥ `design_state.constraints.timing.wns_ns_target` (default: 0) all corners |
-| Setup TNS | = `design_state.constraints.timing.tns_ns_target` (default: 0) all corners |
-| Hold WNS | ≥ `design_state.constraints.timing.wns_ns_target` (default: 0) all corners |
-| DRC violations | = 0 |
-| LVS errors | = 0 |
-| Antenna violations | = 0 |
-| IR drop | < `design_state.constraints.power.ir_drop_pct_max`% VDD (default: 5%) |
-| Metal density | Within foundry window |
+|---|---|
+| Setup WNS | ≥ `timing.wns_ns_target`，所有 corner |
+| Setup TNS | = `timing.tns_ns_target`，所有 corner |
+| Hold WNS | ≥ target，所有 corner |
+| DRC | 0 |
+| LVS | 0 |
+| Antenna | 0 |
+| IR drop | < `power.ir_drop_pct_max`% VDD |
+| Metal density | Foundry window 内 |
 
 ### Domain Rules
-1. STA sign-off: run all required PVT corners with POCV/AOCV
-2. DRC: foundry-approved deck — zero violations
-3. LVS: netlist vs layout — zero errors
-4. ERC: electromigration and IR drop sign-off
-5. Final GDS: merge all layers, add seal ring, chip-level DRC
+1. STA sign-off 跑全部 required PVT + POCV/AOCV。
+2. 使用 foundry-approved DRC deck，0 violation。
+3. LVS netlist vs layout，0 error。
+4. ERC 做 EM/IR sign-off。
+5. Final GDS merge 全 layer、seal ring、chip-level DRC。
 
 ### Failure Escalation
 - Timing fail → timing_optimization
@@ -292,69 +270,34 @@ Resume from step: `openlane --from <step_name> <config.json>`
 - Power/EM fail → power_optimization
 
 ### Output Required
-- Sign-off STA report (all corners)
+- All-corner sign-off STA
 - DRC clean report
 - LVS clean report
 - Final GDS-II
-- Completed tape-out checklist
+- Tape-out checklist
 
 ---
 
 ## Constraint Validation
+进入 `floorplan` 必须有：
+- `clock.clk_mhz`
+- `area.area_um2`
+- `power.power_mw`
+- 至少一个有效 V/T 的 `pvt_corners`
 
-See `plugins/meta/skills/pipeline-orchestration/SKILL.md` §Constraints Schema for the authoritative schema and stage-entry validation rule.
-
-**Required at entry (`floorplan`) — hard-fail if missing:**
-- `constraints.clock.clk_mhz` — target clock frequency
-- `constraints.area.area_um2` — die area budget
-- `constraints.power.power_mw` — total power budget
-- `constraints.pvt_corners` — at least one entry with non-null `voltage_v` and `temp_c`
-
-**Optional (schema defaults apply when absent):**
-- `constraints.timing.wns_ns_target` (default: 0) — WNS sign-off threshold
-- `constraints.timing.tns_ns_target` (default: 0) — TNS sign-off threshold
-- `constraints.timing.skew_ps_max` (default: 100) — CTS skew target
-- `constraints.timing.transition_ps_max` (default: 200) — clock transition limit
-- `constraints.timing.insertion_delay_ps_max` (default: 500) — max clock insertion delay
-- `constraints.timing.fanout_max` (default: 32) — max clock buffer fanout
-- `constraints.area.utilization_pct_target` (default: 75) — target core utilisation %
-- `constraints.area.utilization_pct_max` (default: 85) — hard utilisation ceiling %
-- `constraints.power.leakage_pct_max` (default: 15) — leakage as % of total power
-- `constraints.power.ir_drop_pct_max` (default: 5) — IR drop limit as % of VDD
+Optional timing/area/power threshold 使用 schema default。
 
 ---
 
 ## Memory
 
-### Run state (write before first stage, update after each stage)
-Write `memory/pd/run_state.md` as the **first action** before launching any tool:
-```markdown
-run_id:      pd_<YYYYMMDD>_<HHMMSS>
-design_name: <design>
-pdk:         <pdk or unknown>
-tool:        <primary tool>
-start_time:  <ISO-8601>
-last_stage:  null
-```
-Update `last_stage` to the completed stage name only after each stage finishes successfully. This file allows wakeup-loop prompts
-and resumed sessions to identify the correct run directory without relying on in-memory state.
+### Run state
+任何工具前第一步写 `memory/pd/run_state.md`，包含 run_id/design_name/pdk/tool/start_time/last_stage。
 
 ### Write on stage completion
-After each stage completes (regardless of whether an orchestrator session is active),
-upsert one JSON record in `memory/pd/experiences.jsonl` keyed by `run_id` — do not
-append a second line for the same run. Write with the stages completed so far and
-`signoff_achieved: false`; overwrite to `true` only when signoff passes.
-
-Use `run_id` = `pd_<YYYYMMDD>_<HHMMSS>` (set once at flow start; reuse on each
-stage update). **Every JSON record written to experiences.jsonl must include a top-level
-"run_id" field** (string) inside the record itself — upsert behavior is keyed by this field.
-Do not rely on external metadata; the "run_id" property must be present in the JSON object.
-Records should be written with stages completed and `signoff_achieved: false`, and only
-overwritten to `true` when signoff passes. Create the file and parent directories if they
-do not exist.
+每 stage 完成后按 `run_id` upsert `memory/pd/experiences.jsonl`，
+不得同一 run 追加第二行。最终 sign-off 前 `signoff_achieved:false`。
+Record 必须在 JSON object 内包含顶层 `run_id`。
 
 ### Optional: claude-mem index
-If `mcp__plugin_ecc_memory__add_observations` is available in this session, also emit
-each new fix as an observation to entity `chip-design-pd-fixes` after writing to
-`experiences.jsonl`. Skip this step silently if the tool is absent — the JSONL file
-is the canonical record.
+如 memory observation 工具可用，把新 fix 写到 `chip-design-pd-fixes`；否则跳过。
