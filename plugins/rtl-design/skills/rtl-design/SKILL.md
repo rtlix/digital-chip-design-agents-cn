@@ -1,176 +1,159 @@
 ---
 name: rtl-design
 description: >
-  SystemVerilog RTL design — module planning, coding standards enforcement, lint
-  checking, CDC/RDC analysis, and synthesis readiness verification. Use when
-  writing, reviewing, or debugging RTL for ASIC or FPGA targets, or when
-  checking an existing RTL package for synthesis readiness.
+  SystemVerilog RTL 设计——模块规划、编码规范约束、lint 检查、CDC/RDC 分析以及综合就绪性验证。
+  适用于 ASIC/FPGA RTL 的编写、审查、调试，以及检查已有 RTL 包是否具备综合条件。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: RTL Design (SystemVerilog)
+# Skill：RTL 设计（SystemVerilog）
 
-## Invocation
+## 调用方式
 
-When this skill is loaded and a user presents an RTL design task, **do not
-execute stages directly**. Immediately spawn the
-`digital-chip-design-agents:rtl-design-orchestrator` agent and pass the full
-user request and any available context to it. The orchestrator enforces the stage
-sequence, loop-back rules, and sign-off criteria defined below.
+当本 Skill 被加载且用户提出 RTL 设计任务时，**不要直接执行各阶段**。
+应立即启动 `digital-chip-design-agents:rtl-design-orchestrator` Agent，
+并将用户完整请求及所有可用上下文传给它。
+Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off 判据。
 
-Use the domain rules in this file only when the orchestrator reads this skill
-mid-flow for stage-specific guidance, or when the user asks a targeted reference
-question rather than requesting a full flow execution.
+只有在 Orchestrator 流程中为某阶段读取本 Skill，或用户只是询问某个针对性参考问题而不是要求执行完整流程时，才直接使用本文件中的领域规则。
 
-## Pre-run Context
+## 运行前上下文
 
-Before executing or advising on **any** stage, read the following files if they exist:
+在执行或建议**任何** stage 前，如果以下文件存在，应先读取：
 
-1. `memory/rtl-design/knowledge.md` — known failure patterns, successful tool flags, PDK/tool quirks.
-   Incorporate its guidance into every stage decision. If absent, proceed without it.
-2. `memory/rtl-design/run_state.md` — current run identity (`run_id`, `design_name`, `tool`,
-   `last_stage`). Use this to resume correctly after interruption. If absent, a new run
-   is starting; the orchestrator will create this file before the first stage.
+1. `memory/rtl-design/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。每个 stage 的决策都应吸收其中经验。
+2. `memory/rtl-design/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`），用于中断后恢复。若不存在，表示新运行开始，Orchestrator 会在第一阶段前创建。
 
-This pre-run read applies whether this skill is loaded by a user or called by the
-orchestrator mid-flow. It ensures the fix database is consulted before any diagnosis step.
+无论本 Skill 是由用户直接加载还是由 Orchestrator 中途调用，都必须执行上述预读，确保诊断前已查询历史修复经验。
 
-## Purpose
-Guide RTL development from module hierarchy planning through lint-clean,
-CDC-clean, synthesis-ready RTL. Enforces industry-standard SystemVerilog
-coding practices and produces a signed-off RTL package ready for simulation
-and synthesis handoff.
+## 目的
+
+指导 RTL 从模块层次规划一路推进到 lint clean、CDC clean 和 synthesis-ready。
+强制执行业界常用的 SystemVerilog 编码规范，并产出可交付仿真/综合的 RTL package。
 
 ---
 
-## Supported EDA Tools
+## 支持的 EDA 工具
 
-### Open-Source
-- **Verilator** (`verilator --lint-only`) — fast lint and simulation
-- **Slang** (`slang`) — modern, standards-compliant SV parser and elaborator
-- **Surelog** (`surelog`) — SystemVerilog pre-processor and front-end for Yosys
-- **sv2v** (`sv2v`) — SystemVerilog-to-Verilog converter
-- **Icarus Verilog** (`iverilog`) — Verilog/SV simulator for quick sanity checks
+### 开源
+- **Verilator**（`verilator --lint-only`）—— 快速 lint 和仿真
+- **Slang**（`slang`）—— 现代、标准兼容的 SystemVerilog parser/elaborator
+- **Surelog**（`surelog`）—— SystemVerilog preprocess/front-end，可配合 Yosys
+- **sv2v**（`sv2v`）—— SystemVerilog 转 Verilog
+- **Icarus Verilog**（`iverilog`）—— 适合快速 sanity check 的 Verilog/SV 仿真器
 
-### Proprietary
-- **Synopsys SpyGlass** (`spyglass`) — lint, CDC, RDC, and clock-domain analysis
-- **Cadence JasperGold CDC** (`jg`) — formal CDC verification
-- **Siemens Questa CDC** (`vsim`) — CDC analysis and sign-off
+### 商业
+- **Synopsys SpyGlass**（`spyglass`）—— lint、CDC、RDC、clock-domain 分析
+- **Cadence JasperGold CDC**（`jg`）—— formal CDC 验证
+- **Siemens Questa CDC**（`vsim`）—— CDC 分析与 sign-off
 
 ---
 
 ## Stage: module_planning
 
-### Domain Rules
-1. Top-down decomposition: start with top-level module, recurse to leaf cells
-2. Each module: single clear responsibility (single responsibility principle)
-3. Define all port lists before coding (direction, width, type)
-4. Identify all clock domains per module; mark CDC crossings explicitly
-5. Identify all reset domains; mark synchronous vs asynchronous
-6. Parameterise widths and depths wherever possible
-7. No logic in top-level integration modules — wiring only
-8. Separate datapath and control into distinct sub-modules
+### 领域规则
+1. 自顶向下拆分：从 top-level module 开始，逐级拆到 leaf cell
+2. 每个 module 只承担一种明确职责
+3. 编码前先定义全部 port（direction、width、type）
+4. 为每个 module 标出全部 clock domain，并显式标记 CDC crossing
+5. 标出全部 reset domain，并注明 synchronous / asynchronous
+6. width/depth 尽量参数化
+7. 顶层集成 module 只做 wiring，不放功能逻辑
+8. datapath 和 control 尽量拆分为独立子模块
 
-### Output Required
+### 必须输出
 - Module hierarchy tree
-- Module descriptor (name, purpose, clock domain, ports, sub-modules) per module
-- Interface/port list document
+- 每个 module 的 descriptor（name、purpose、clock domain、ports、sub-modules）
+- Interface/port list 文档
 
 ---
 
 ## Stage: rtl_coding
 
-### Domain Rules — General
-1. Always use `logic` type (not wire/reg distinction)
-2. All ports: explicitly typed and directioned
-3. `default_nettype none` at top of every file
-4. No latches: all always_comb blocks must have complete case and assignment coverage
-5. No blocking assignments (=) in always_ff blocks
-6. No non-blocking assignments (<=) in always_comb blocks
-7. One always block per register or coherent register group
-8. Reset all registers explicitly; synchronous reset preferred for ASIC
+### 领域规则——通用
+1. 优先使用 `logic`，不再依赖 wire/reg 区分
+2. 所有 port 必须显式写明 type 和 direction
+3. 每个文件顶部使用 `default_nettype none`
+4. 禁止 latch：所有 `always_comb` 必须覆盖完整 case 和 assignment
+5. `always_ff` 中禁止 blocking assignment（=）
+6. `always_comb` 中禁止 non-blocking assignment（<=）
+7. 每个寄存器或相关寄存器组使用独立 always block
+8. 所有 register 都应显式 reset；ASIC 场景优先 synchronous reset
 
-### Domain Rules — Naming Conventions
-- Clocks:       `clk_[domain]`
-- Resets:       `rst_n_[domain]` (active-low) or `rst_[domain]`
-- Active-low:   `signal_n` suffix
-- Registered:   `signal_q` suffix
-- Next-state:   `signal_d` suffix
-- Parameters:   `UPPER_SNAKE_CASE`
-- Modules/Signals: `lower_snake_case`
+### 命名约定
+- Clock：`clk_[domain]`
+- Reset：`rst_n_[domain]`（低有效）或 `rst_[domain]`
+- Active-low：后缀 `_n`
+- Registered：后缀 `_q`
+- Next-state：后缀 `_d`
+- Parameter：`UPPER_SNAKE_CASE`
+- Module/Signal：`lower_snake_case`
 
-### Domain Rules — Synthesis Safety
-1. No delays (#) in RTL — simulation only
-2. No initial blocks in ASIC RTL
-3. Use `unique case` with explicit don't-cares instead of casez/casex
-4. Flag any net with fanout > `design_state.constraints.timing.fanout_max` (default: 32) for buffering intent review
-5. No combinational loops — will cause synthesis errors
-6. Pipeline registers: clearly marked with `_q` suffix at each stage
+### 综合安全规则
+1. RTL 中禁止 delay（#），仅可用于仿真代码
+2. ASIC RTL 中禁止 initial block
+3. 使用 `unique case` 和显式 don't-care，避免 `casez/casex`
+4. fanout 超过 `design_state.constraints.timing.fanout_max`（默认 32）时标记出来，供 buffering intent 评审
+5. 禁止 combinational loop
+6. 各 pipeline stage 的寄存器使用 `_q` 后缀清晰标识
 
-### Domain Rules — CDC
-1. Two-FF synchroniser for every single-bit CDC crossing
-2. Async FIFO for multi-bit CDC data paths
-3. Gray-coded pointers for async FIFO crossing
-4. Never sample asynchronous data directly in synchronous logic
+### CDC 规则
+1. 所有 single-bit CDC crossing 使用 2-FF synchronizer
+2. Multi-bit CDC data path 使用 async FIFO
+3. Async FIFO crossing 使用 Gray-coded pointer
+4. 同步逻辑中不得直接采样异步数据
 
-### Domain Rules — Power Intent (Clock Gating)
-Apply these rules for every clock domain. Read `clock_power_budget` from the architecture
-hand-off package. **For orchestrated Architecture → RTL runs, the `clock_power_budget` table
-is a required handoff contract; if missing, treat as a handoff violation and abort with a
-clear error directing the user to notify upstream packaging.** For non-orchestrated or local
-RTL-only runs, classify domains using toggle-count estimates from Verilator simulation as
-a fallback.
+### Power Intent（Clock Gating）
 
-1. **High gating opportunity domains** (α < `design_state.constraints.power.activity_factors.default` (default: 0.15) from architecture, or toggle rate below that threshold from Verilator): insert an ICG cell (`CLKGATETST_X*` or technology-equivalent) at the outermost clock enable boundary. Do not rely on synthesis to infer clock gates — explicit ICG insertion at RTL is required.
-2. **Moderate gating opportunity domains** (`activity_factors.default` ≤ α < `activity_factors.high` (defaults: 0.15–0.40)): insert ICG at the sub-block level for any register file or datapath wider than 32 bits.
-3. **Always-on domains** (α ≥ `activity_factors.high` (default: 0.40), or documented as always-on in architecture hand-off):
-   no ICG required; add a `/* always-on: <reason> */` comment at the clock port declaration.
-4. ICG enable signal: must be registered (setup-timing safe); combinational enable
-   is a lint error.
-5. ICG cells: use only library-approved cells (`CLKGATETST_*` for testability with
-   scan-enable override); do not use behavioural `if (enable) clk_gated = clk` constructs.
-6. After inserting ICGs, measure `clock_gating_coverage`:
+每个 clock domain 都应用以下规则。优先读取 architecture hand-off 中的 `clock_power_budget`。
+对于 orchestrated Architecture → RTL 运行，`clock_power_budget` 是必需 handoff contract；缺失时视为上游交付违例，应中止并明确提示用户检查 architecture packaging。
+对本地 RTL-only 运行，可使用 Verilator toggle-count 估算作为 fallback。
+
+1. **High gating opportunity**：α < `design_state.constraints.power.activity_factors.default`（默认 0.15），或 Verilator toggle rate 低于该阈值。应在最外层 clock-enable 边界显式插入 ICG（`CLKGATETST_X*` 或工艺等价单元），不能完全依赖综合工具自动推断 clock gate。
+2. **Moderate gating opportunity**：`activity_factors.default` ≤ α < `activity_factors.high`（默认 0.15–0.40）。对宽度 >32 bit 的 register file/datapath，在 sub-block 级插入 ICG。
+3. **Always-on domain**：α ≥ `activity_factors.high`（默认 0.40），或 architecture hand-off 明确标为 always-on。无需 ICG，但在 clock port 声明处增加 `/* always-on: <reason> */`。
+4. ICG enable 必须注册，满足 setup timing；combinational enable 视为 lint error。
+5. 只使用库批准的 ICG cell（如 `CLKGATETST_*`，带 scan-enable override）；禁止行为级 `if (enable) clk_gated = clk` 写法。
+6. 插入 ICG 后测量 `clock_gating_coverage`：
    `coverage = (register bits behind an ICG) / (total register bits in domain) × 100%`
-   Report this metric in the `rtl_signoff` output.
+   并在 `rtl_signoff` 输出中报告。
 
-### Supported Tools for Power Intent
+### Power Intent 支持工具
 
-| Tool | Type | Use |
+| Tool | 类型 | 用途 |
 |------|------|-----|
-| Verilator | Open-source | Toggle coverage → activity factor for gating classification |
-| SpyGlass (Synopsys) | Proprietary | RTL power lint, missing ICG detection |
-| VC Static (Synopsys) | Proprietary | Power-intent rule checking |
-| Questa PowerPro (Siemens) | Proprietary | Formal power analysis |
+| Verilator | 开源 | Toggle coverage → activity factor，用于 gating 分类 |
+| SpyGlass (Synopsys) | 商业 | RTL power lint、缺失 ICG 检测 |
+| VC Static (Synopsys) | 商业 | Power-intent rule checking |
+| Questa PowerPro (Siemens) | 商业 | Formal power analysis |
 
-### Output Required
-- RTL source files (.sv) per module
-- SVA assertion files per module
-- Inline comments on all non-obvious logic
-- `clock_gating_coverage` metric per domain (appended to sign-off record)
+### 必须输出
+- 每个 module 的 RTL 源文件（.sv）
+- 每个 module 的 SVA assertion 文件
+- 对不明显逻辑增加 inline comment
+- 每个 domain 的 `clock_gating_coverage`，附加到 sign-off 记录
 
 ---
 
 ## Stage: lint_check
 
-### Domain Rules
-1. ERROR level (must fix): latches, incomplete sensitivity lists,
-   undriven outputs, multiply-driven signals, X-propagation sources
-2. WARNING level (review): unused ports, truncated assignments,
-   bit-width mismatches, constant conditions
-3. All waivers: must include signal name, rule ID, justification, approver
-4. No ERROR-level waivers without architect approval
-5. All waivers logged in `lint_waivers.csv`
+### 领域规则
+1. ERROR（必须修复）：latch、incomplete sensitivity、undriven output、multi-driven signal、X-propagation source
+2. WARNING（必须评审）：unused port、truncated assignment、bit-width mismatch、constant condition
+3. 所有 waiver 必须包含 signal name、rule ID、justification、approver
+4. 未经 architect 批准，不允许 ERROR-level waiver
+5. 所有 waiver 记录在 `lint_waivers.csv`
 
-### QoR Metrics to Evaluate
-- ERROR count: must be 0 before proceeding
-- WARNING count: review all; waive with documented justification
-- All RTL files checked (not just top-level)
+### QoR 指标
+- ERROR count：进入下一阶段前必须为 0
+- WARNING count：全部评审，waive 时提供理由
+- 所有 RTL 文件均已检查，而不仅仅是 top-level
 
-### Output Required
-- Lint report (per file, per rule)
+### 必须输出
+- Lint report（按 file/rule）
 - Waiver file
 - Clean lint summary
 
@@ -178,107 +161,111 @@ a fallback.
 
 ## Stage: cdc_rdc_analysis
 
-### CDC Rules
-1. Every CDC crossing: approved synchroniser primitive
-2. Single-bit control: 2-FF synchroniser minimum
-3. Multi-bit data: async FIFO or handshake protocol
-4. Pulse crossings: pulse stretcher + synchroniser
-5. Zero CDC violations (unwaived) before proceeding
+### CDC 规则
+1. 每个 CDC crossing 使用批准的 synchronizer primitive
+2. Single-bit control：至少 2-FF synchronizer
+3. Multi-bit data：async FIFO 或 handshake protocol
+4. Pulse crossing：pulse stretcher + synchronizer
+5. 未豁免 CDC violation 必须为 0
 
-### RDC Rules
-1. All reset domains explicitly defined in constraints
-2. Reset de-assertion: synchronous to receiving clock domain
-3. No combinational logic between reset sources
-4. Retention registers: correct UPF annotation
+### RDC 规则
+1. 所有 reset domain 必须在 constraint 中显式定义
+2. Reset de-assertion 必须同步到 receiving clock domain
+3. Reset source 之间不得有 combinational logic
+4. Retention register 必须有正确 UPF annotation
 
-### QoR Metrics to Evaluate
-- CDC violations (unwaived): 0
-- RDC violations (unwaived): 0
-- All clock domains verified in tool constraints
+### QoR 指标
+- CDC violations（unwaived）：0
+- RDC violations（unwaived）：0
+- 所有 clock domain 都已在工具 constraint 中验证
 
-### Output Required
+### 必须输出
 - CDC/RDC report
-- Synchroniser instance list
+- Synchronizer instance list
 - Waiver file
 
 ---
 
 ## Stage: synth_check
 
-### Domain Rules
-1. Run synthesis at target frequency with typical corner
-2. Check for unmapped cells (technology library gaps)
-3. Identify critical paths — report to architect if WNS < −0.5 ns
-4. Check area vs microarch estimate (< 120% acceptable)
-5. Check for multi-driven nets or unresolved X
-6. Flag high-fanout nets needing buffering strategy
-7. Verify all clock definitions synthesise correctly
+### 领域规则
+1. 在目标频率和 typical corner 下运行综合
+2. 检查 unmapped cell
+3. 找出 critical path；若 WNS < −0.5 ns，报告给 architect
+4. 面积与 microarch 估算比较，<120% 视为可接受
+5. 检查 multi-driven net 和 unresolved X
+6. 标记需要 buffering strategy 的 high-fanout net
+7. 验证所有 clock definition 都能正确综合
 
-### QoR Metrics to Evaluate
-- WNS at target frequency: > −0.5 ns acceptable at this stage (sign-off target: `design_state.constraints.timing.wns_ns_target`, default: 0)
-- Area: < 120% of microarch estimate
-- No unmapped cells
-- No multi-driven nets
+### QoR 指标
+- 目标频率下 WNS：> −0.5 ns 在本阶段可接受；最终 sign-off 目标由 `design_state.constraints.timing.wns_ns_target` 决定，默认 0
+- Area：< microarch estimate 的 120%
+- Unmapped cell：0
+- Multi-driven net：0
 
-### Output Required
+### 必须输出
 - Synthesis area report
-- Timing report (critical paths)
-- Recommendations for RTL fixes if needed
+- Timing report（critical path）
+- 必要时给出 RTL 修复建议
 
 ---
 
 ## Stage: rtl_signoff
 
 ### Sign-off Checklist
-- [ ] All modules from planning implemented
-- [ ] Lint: 0 errors, all warnings reviewed
-- [ ] CDC: 0 unwaived violations
-- [ ] RDC: 0 unwaived violations
-- [ ] Synthesis check: WNS within acceptable range
-- [ ] All ports connected in integration
-- [ ] SVA assertions in place for key properties
-- [ ] Code review completed
-- [ ] File list and compile order documented
-- [ ] ICG cells inserted for all high/moderate gating opportunity domains
-- [ ] Always-on domains annotated with `/* always-on: <reason> */`
-- [ ] `clock_gating_coverage` ≥ `design_state.constraints.power.gating_coverage_pct_min`% for high-opportunity domains (default: 60%); reported in sign-off record
+- [ ] planning 中的全部 module 已实现
+- [ ] Lint：0 error，全部 warning 已评审
+- [ ] CDC：0 unwaived violation
+- [ ] RDC：0 unwaived violation
+- [ ] Synthesis check：WNS 在可接受范围内
+- [ ] 集成时所有 port 均已连接
+- [ ] 关键 property 已有 SVA assertion
+- [ ] Code review 已完成
+- [ ] File list 与 compile order 已记录
+- [ ] 所有 high/moderate gating opportunity domain 已插入 ICG
+- [ ] Always-on domain 已使用 `/* always-on: <reason> */` 注释
+- [ ] High-opportunity domain 的 `clock_gating_coverage` ≥ `design_state.constraints.power.gating_coverage_pct_min`%（默认 60%），并写入 sign-off record
 
-### Output Required
-- RTL file package (all .sv files)
-- File list (filelist.f)
-- Compile order document
-- Assertion library (.sva files)
+### 必须输出
+- RTL file package（全部 .sv）
+- File list（filelist.f）
+- Compile order 文档
+- Assertion library（.sva）
 - RTL sign-off record
 
 ---
 
 ## Constraint Validation
 
-See `plugins/meta/skills/pipeline-orchestration/SKILL.md` §Constraints Schema for the authoritative schema and stage-entry validation rule.
+权威 schema 和 stage-entry validation 规则见
+`plugins/meta/skills/pipeline-orchestration/SKILL.md` 的 Constraints Schema。
 
-**Required at entry (`module_planning`) — hard-fail if missing:**
-- `constraints.clock.clk_mhz` — target frequency for synth_check timing evaluation
+**进入 `module_planning` 时必填，缺失直接 hard-fail：**
+- `constraints.clock.clk_mhz` —— synth_check 的目标频率
 
-**Optional (schema defaults apply when absent):**
-- `constraints.timing.fanout_max` (default: 32) — high-fanout threshold
-- `constraints.timing.wns_ns_target` (default: 0) — WNS sign-off target
-- `constraints.power.gating_coverage_pct_min` (default: 60%) — ICG coverage target
-- `constraints.power.activity_factors` (defaults: `{default: 0.15, high: 0.40}`) — domain classification
+**可选约束（缺失时采用默认值）：**
+- `constraints.timing.fanout_max`（默认 32）—— high-fanout threshold
+- `constraints.timing.wns_ns_target`（默认 0）—— WNS sign-off target
+- `constraints.power.gating_coverage_pct_min`（默认 60%）—— ICG coverage target
+- `constraints.power.activity_factors`（默认 `{default: 0.15, high: 0.40}`）—— domain 分类
 
 ---
 
 ## Memory
 
-### Write on stage completion
-After each stage completes (regardless of whether an orchestrator session is active),
-write or overwrite one JSON record in `memory/rtl-design/experiences.jsonl` keyed by
-`run_id`. This ensures data is persisted even if the flow is interrupted or called
-without full orchestrator context.
+### 每个 stage 完成后写入
 
-Use `run_id` = `rtl-design_<YYYYMMDD>_<HHMMSS>` (set once at flow start; reuse on each
-stage update). Set `signoff_achieved: false` until the final sign-off stage completes.
-### Run state (write before first stage, update after each stage)
-Write `memory/rtl-design/run_state.md` as the **first action** before launching any tool:
+每个 stage 完成后，无论当前是否处于完整 Orchestrator 会话，都以 `run_id` 为键，
+在 `memory/rtl-design/experiences.jsonl` 中写入或覆盖一条 JSON 记录。
+这样即使流程中断或单独调用 stage，也能持久化结果。
+
+`run_id` 使用 `rtl-design_<YYYYMMDD>_<HHMMSS>`，流程开始时只生成一次，后续 stage 复用。
+最终 sign-off 完成前，`signoff_achieved` 必须保持 false。
+
+### Run state
+
+在启动任何工具之前，第一件事写入 `memory/rtl-design/run_state.md`：
+
 ```markdown
 run_id:      rtl-design_<YYYYMMDD>_<HHMMSS>
 design_name: <design>
@@ -286,11 +273,12 @@ tool:        <primary tool>
 start_time:  <ISO-8601>
 last_stage:  null
 ```
-Update `last_stage` to the completed stage name only after each stage finishes successfully. This file lets wakeup-loop prompts
-and resumed sessions identify the correct run without relying on in-memory state.
-Create the file and parent directories if they do not exist.
 
-### Optional: claude-mem index
-If `mcp__plugin_ecc_memory__add_observations` is available in this session, emit each
-applied fix as an observation to entity `chip-design-rtl-design-fixes` after writing to
-`experiences.jsonl`. Skip silently if the tool is absent — JSONL is the canonical record.
+只有某 stage 成功完成后，才把 `last_stage` 更新为该 stage 名。
+该文件用于 wakeup-loop 与恢复会话，不依赖模型内存。
+
+### 可选：claude-mem index
+
+如果当前会话提供 `mcp__plugin_ecc_memory__add_observations`，在写入
+`experiences.jsonl` 后，将每项已应用 fix 作为 observation 写入
+`chip-design-rtl-design-fixes`。若工具不存在则静默跳过；JSONL 是权威记录。
