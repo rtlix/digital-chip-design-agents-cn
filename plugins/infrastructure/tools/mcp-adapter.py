@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """
-mcp-adapter.py — Generic MCP stdio server wrapping an EDA tool wrapper script.
+mcp-adapter.py —— 用于封装 EDA 工具 wrapper script 的通用 MCP stdio Server。
 
-Implements MCP protocol version 2024-11-05 over stdio (JSON-RPC 2.0, newline-delimited).
+通过 stdio 实现 MCP protocol 2024-11-05（JSON-RPC 2.0，每行一个消息）。
 
-Usage:
+用法：
     python3 mcp-adapter.py --wrapper /path/to/wrap-TOOL.sh --tool TOOL \\
         [--description "Short description"] [--version 1.0.0]
 
-Environment:
-    TOOL_TIMEOUT_S   Kill timeout in seconds for the wrapper process (default: 300)
+环境变量：
+    TOOL_TIMEOUT_S   wrapper 进程的超时秒数（默认：300）
 
-Each tool/call invocation runs the wrapper script with the provided arguments and
-returns its compact JSON output as the MCP tool result.  All debug/status output
-goes to stderr so it does not corrupt the MCP protocol stream on stdout.
+每次 tools/call 都使用传入参数运行 wrapper script，并把 wrapper 的紧凑 JSON 输出
+作为 MCP tool result 返回。所有 debug/status 信息写到 stderr，避免污染 stdout 上的 MCP protocol stream。
 """
 
 import sys
@@ -24,7 +23,7 @@ import os
 import tempfile
 import atexit
 
-# Temp files created for inline Tcl scripts — cleaned up on exit
+# inline Tcl script 创建的临时文件——进程退出时统一清理
 _temp_files: list[str] = []
 
 
@@ -39,11 +38,11 @@ def _cleanup_temp_files() -> None:
 atexit.register(_cleanup_temp_files)
 
 # ---------------------------------------------------------------------------
-# MCP protocol helpers
+# MCP protocol 辅助函数
 # ---------------------------------------------------------------------------
 
 def _send(msg: dict) -> None:
-    """Serialise msg as a single JSON line on stdout and flush."""
+    """把 msg 序列化为 stdout 上的一行 JSON，并立即 flush。"""
     sys.stdout.write(json.dumps(msg, separators=(',', ':')) + '\n')
     sys.stdout.flush()
 
@@ -57,71 +56,71 @@ def _err(req_id, code: int, message: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Per-tool input schema and argument builder
+# 各工具的 input schema 与参数构造
 # ---------------------------------------------------------------------------
 
 _EXTRA_PROPERTIES: dict[str, dict] = {
     "yosys": {
         "script": {
             "type": "string",
-            "description": "Inline Yosys commands passed via -p (alternative to args)"
+            "description": "通过 -p 传给 Yosys 的 inline command（可替代 args）"
         },
         "script_file": {
             "type": "string",
-            "description": "Path to a .ys script file"
+            "description": "`.ys` script 文件路径"
         },
     },
     "openroad": {
         "tcl_script": {
             "type": "string",
-            "description": "Inline Tcl script written to a temp file and passed to OpenROAD"
+            "description": "写入临时文件后传给 OpenROAD 的 inline Tcl script"
         },
     },
     "opensta": {
         "tcl_script": {
             "type": "string",
-            "description": "Inline Tcl script written to a temp file and passed to OpenSTA"
+            "description": "写入临时文件后传给 OpenSTA 的 inline Tcl script"
         },
     },
     "verilator": {
         "mode": {
             "type": "string",
             "enum": ["lint", "sim"],
-            "description": "lint: verilator --lint-only; sim: run a pre-compiled sim binary"
+            "description": "lint：verilator --lint-only；sim：运行预编译 simulation binary"
         },
         "sim_binary": {
             "type": "string",
-            "description": "Path to compiled Verilator simulation binary (required for sim mode)"
+            "description": "已编译 Verilator simulation binary 的路径（sim mode 必填）"
         },
     },
     "bambu": {
         "c_file": {
             "type": "string",
-            "description": "Path to the C/C++ source file to synthesise"
+            "description": "要综合的 C/C++ source file 路径"
         },
         "top_function": {
             "type": "string",
-            "description": "Name of the top-level function to synthesise"
+            "description": "要综合的 top-level function 名称"
         },
     },
     "gem5": {
         "config_script": {
             "type": "string",
-            "description": "Path to the gem5 Python configuration script"
+            "description": "gem5 Python configuration script 路径"
         },
         "binary": {
             "type": "string",
-            "description": "Workload binary to simulate (appended after config_script)"
+            "description": "要仿真的 workload binary（追加在 config_script 后）"
         },
     },
     "symbiflow": {
         "sby_file": {
             "type": "string",
-            "description": "Path to the SymbiYosys .sby configuration file"
+            "description": "SymbiYosys `.sby` configuration file 路径"
         },
         "task": {
             "type": "string",
-            "description": "Optional task name within the .sby file"
+            "description": "`.sby` 文件中的可选 task 名称"
         },
     },
 }
@@ -132,7 +131,7 @@ def _input_schema(tool: str) -> dict:
         "args": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "Raw CLI arguments passed directly to the wrapper script",
+            "description": "直接传给 wrapper script 的原始 CLI 参数",
             "default": [],
         }
     }
@@ -202,16 +201,14 @@ def _build_cli_args(tool: str, inputs: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Wrapper execution
+# Wrapper 执行
 # ---------------------------------------------------------------------------
 
 VALID_STATUSES = ("PASS", "WARN", "FAIL")
 
 def _run_wrapper(wrapper_path: str, tool: str, inputs: dict, timeout: int) -> dict:
     """
-    Execute the wrapper script and return its parsed JSON output.
-    Always returns a dict conforming to the wrapper JSON schema so the
-    caller never has to guard against unexpected shapes.
+    执行 wrapper script 并返回解析后的 JSON。始终返回符合 wrapper JSON schema 的 dict，调用方无需处理意外数据形状。
     """
     cli_args = _build_cli_args(tool, inputs)
     cmd = [wrapper_path] + cli_args
@@ -287,19 +284,19 @@ def _run_wrapper(wrapper_path: str, tool: str, inputs: dict, timeout: int) -> di
 
 
 # ---------------------------------------------------------------------------
-# Main server loop
+# 主 Server 循环
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generic MCP stdio adapter for EDA tool wrapper scripts"
+        description="用于 EDA tool wrapper script 的通用 MCP stdio adapter"
     )
-    parser.add_argument("--wrapper", required=True, help="Absolute path to the wrapper script")
-    parser.add_argument("--tool", required=True, help="Tool name (yosys, openroad, ...)")
+    parser.add_argument("--wrapper", required=True, help="wrapper script 的绝对路径")
+    parser.add_argument("--tool", required=True, help="工具名（yosys、openroad 等）")
     parser.add_argument(
         "--description",
         default="",
-        help="One-line description shown in tools/list",
+        help="显示在 tools/list 中的一行说明",
     )
     parser.add_argument("--version", default="1.0.0")
     args = parser.parse_args()
@@ -316,7 +313,7 @@ def main() -> None:
     tool_name = args.tool
     wrapper_path = args.wrapper
     description = args.description or (
-        f"Run {tool_name} via output-filtering wrapper; returns compact JSON summary"
+        f"通过 output-filtering wrapper 运行 {tool_name}；返回紧凑 JSON summary"
     )
 
     print(
