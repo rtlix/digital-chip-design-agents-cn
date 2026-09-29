@@ -1,314 +1,271 @@
 ---
 name: memory-ip-design
 description: >
-  Embedded memory IP design — SRAM/register-file/ROM requirements capture, memory
-  compiler and macro selection, array architecture (banking, ports, ECC wrapper),
-  redundancy and repair allocation, view generation and QA, and integration handoff
-  to DFT, PD, and STA. Use when specifying or selecting memory macros, architecting
-  a memory subsystem, sizing spare rows/columns for repair, or qualifying a memory
-  view set for a chip.
+  嵌入式 Memory IP（SRAM / Register File / ROM）设计——从需求捕获、macro 选择、
+  array/bank/ECC 架构、冗余修复、view 生成到集成交付。
+  适用于选择或生成 memory macro、设计 banking/ECC wrapper、规划 spare row/column，
+  或生成可交付 DFT/PD/STA 的完整 memory view package。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: Memory IP Design (SRAM / Register File / ROM)
+# Skill: Memory IP Design（Memory IP 设计）
 
 ## Invocation
-
-When this skill is loaded and a user presents a memory IP design task, **do not
-execute stages directly**. Immediately spawn the
-`digital-chip-design-agents:memory-ip-orchestrator` agent and pass the full
-user request and any available context to it. The orchestrator enforces the stage
-sequence, loop-back rules, and sign-off criteria defined below.
-
-Use the domain rules in this file only when the orchestrator reads this skill
-mid-flow for stage-specific guidance, or when the user asks a targeted reference
-question rather than requesting a full flow execution.
+用户提出 Memory IP 任务时，立即启动
+`digital-chip-design-agents:memory-ip-orchestrator` 并传入完整请求和上下文；
+不要直接执行 stage。被 Orchestrator 中途调用时，本文件只作为只读规则库使用。
 
 ## Pre-run Context
-
-Before executing or advising on **any** stage, read the following files if they exist:
-
-1. `memory/memory-ip/knowledge.md` — known failure patterns, successful tool flags, PDK/tool quirks.
-   Incorporate its guidance into every stage decision. If absent, proceed without it.
-2. `memory/memory-ip/run_state.md` — current run identity (`run_id`, `design_name`, `tool`,
-   `last_stage`). Use this to resume correctly after interruption. If absent, a new run
-   is starting; the orchestrator will create this file before the first stage.
-
-This pre-run read applies whether this skill is loaded by a user or called by the
-orchestrator mid-flow. It ensures the fix database is consulted before any diagnosis step.
+任何 stage 前，如存在则读取：
+1. `memory/memory-ip/knowledge.md`
+2. `memory/memory-ip/run_state.md`
+利用历史 failure pattern、tool flag、PDK/compiler quirks 与当前 run state。
 
 ## Purpose
-Guide embedded memory IP development from requirements capture through macro
-selection, array architecture, repair allocation, and view qualification. Produces
-a signed-off memory IP package: an instance inventory, a selected macro per
-instance, a QA-clean view set across all PVT corners, a repair architecture, and
-placement/timing constraints for downstream handoff.
+把 memory 当作独立产品进行设计和 qualification：从 architecture/RTL 中提取需求，
+选择或生成 macro，确定 banking/port/ECC、repair/yield 策略，生成各 PVT view，
+并给 DFT、PD、STA、verification、SoC 提供完整 handoff。
 
-### Scope boundary — what this domain does NOT do
-This domain treats the memory as the *product*. It stops at the handoff and does
-not duplicate work owned elsewhere:
-
-| Not owned here | Owner |
+### Scope boundary
+本域**不**负责：
+| 不属于本域 | Owner |
 |---|---|
-| MBIST controller insertion, March pattern generation, MBIST fault coverage, ATPG | `chip-design-dft` (`bist_insertion` stage) |
-| Floorplanning, actual macro placement, power grid over macros | `chip-design-pd` (`floorplan` stage) |
-| Timing sign-off, multi-corner STA runs, ECO closure | `chip-design-sta` |
-| Address/memory map assignment, bus fabric attachment | `chip-design-soc` |
-| Cache hierarchy and DDR controller architecture | `chip-design-architecture` |
+| MBIST controller、March pattern、MBIST coverage、ATPG | `chip-design-dft` |
+| Floorplan、实际 macro placement、power grid | `chip-design-pd` |
+| Timing sign-off / multi-corner STA / ECO closure | `chip-design-sta` |
+| Address map / bus fabric attachment | `chip-design-soc` |
+| Cache hierarchy / DDR controller architecture | `chip-design-architecture` |
 
-This domain **produces the inputs** those domains consume: memory inventory and
-repair-register map for DFT, placement constraints for PD, `.lib` set and derates
-for STA, behavioural models for verification.
+本域生产下游需要的 memory inventory、repair-register map、placement constraint、
+Liberty view、behavioral model 等。
 
 ---
 
 ## Supported EDA Tools
-
 ### Open-Source
-- **OpenRAM** (`openram`) — open-source memory compiler; generates GDS, LEF, Liberty, and Verilog for SRAM
-- **CACTI** (`cacti`) — early access-time, area, and power estimation before a compiler run
-- **sky130 / gf180mcu SRAM macros** — PDK-provided pre-hardened macro sets with fixed configurations
-- **Magic** (`magic`) — DRC and LVS on generated macro layout
-- **KLayout** (`klayout`) — GDS QA, layer/obstruction inspection, boundary checks
-- **OpenSTA** (`sta`) — `.lib` load sanity check and macro timing arc inspection
+- **OpenRAM** (`openram`) — SRAM compiler，生成 GDS/LEF/Liberty/Verilog
+- **CACTI** (`cacti`) — early access-time/area/power estimate
+- **sky130 / gf180mcu SRAM macro** — PDK hardened macro
+- **Magic** (`magic`) — macro DRC/LVS
+- **KLayout** (`klayout`) — GDS/view QA
+- **OpenSTA** (`sta`) — `.lib` load/timing arc sanity check
 
 ### Proprietary
-- **ARM Artisan memory compilers** (`artisan`) — production SRAM/register-file/ROM compilers
-- **Synopsys memory compilers + SiliconSmart** (`siliconsmart`) — compilation and Liberty characterisation
-- **Cadence Liberate** (`liberate`) — Liberty characterisation across PVT corners
-- **Siemens Tessent MBIST/BISR** (`tessent`) — repair-register and BISR architecture reference (insertion owned by DFT)
+- ARM Artisan memory compiler
+- Synopsys memory compiler + SiliconSmart
+- Cadence Liberate
+- Siemens Tessent MBIST/BISR（只作为 repair/BISR 架构参考，插入属于 DFT）
 
 ---
 
 ## Stage: memory_requirements
 
 ### Domain Rules
-1. Capture depth × width × port count for every memory instance in the design; source from `design_state.architecture` and `design_state.rtl` where available
-2. Establish memory type and port requirements by this precedence, and record which source supplied each instance:
-   1. **`design_state.rtl`** — the implementation is authoritative for port count, widths, and depth, because that is what must actually be instantiated
-   2. **`design_state.architecture`** — authoritative for type intent and sizing where RTL is silent (typically pre-RTL runs)
-   3. **Inference** — only when both are silent. Infer from the whole picture, not depth alone: port count and concurrency (multi-port and bypass-heavy structures are register files regardless of depth), access-latency budget, and what the target PDK actually offers. Depth is a weak tiebreaker (~256 words) that misclassifies both shallow SRAMs and deep register files, so record any inferred type as an assumption to confirm, not a fact
-
-   **On conflict, do not silently pick a winner.** If `rtl` and `architecture` disagree on type, port arrangement, depth, or width for the same instance, halt with a `constraint_gap` escalation naming the instance and both values. A mismatch here selects the wrong macro interface and is not recoverable after `view_generation`
-3. Compute required read/write bandwidth per instance and check it against the target `constraints.clock.clk_mhz` — bandwidth shortfalls must be resolved here, not by over-selecting macros later
-4. Decide the ECC scheme per instance with this deterministic policy, so two runs on the same inputs resolve identically. Compute `budgeted_FIT = fit_target_fit_per_mb × instance_Mb` (`constraints.memory_ip.fit_target_fit_per_mb`, default 100) and `raw_FIT` from the PDK's SER rate for the chosen bitcell:
-
-   | Condition | Resolved scheme |
-   |---|---|
-   | `ecc_required: true` | **SECDED** — the forced floor is correction, not merely "a scheme". Parity only if the spec explicitly permits detect-only, recorded with rationale |
-   | `raw_FIT ≤ budgeted_FIT` | `none` |
-   | `raw_FIT > budgeted_FIT`, detect-and-retry available at system level | `parity` |
-   | `raw_FIT > budgeted_FIT`, no system-level retry | **SECDED** |
-   | `raw_FIT > budgeted_FIT` even with SECDED + scrubbing | escalate — ECC alone cannot meet the budget; revisit bitcell or partitioning |
-
-   Record `raw_FIT`, `budgeted_FIT`, the PDK SER source, and the resolved scheme per instance into `memory_ip.ecc`. An unaudited ECC choice is not reproducible on a re-spin
-5. Enumerate required power modes per instance — active, light sleep (periphery off, array retained), deep sleep (retained at reduced voltage), shutdown (contents lost) — and resolve retention with an explicit precedence: **a per-instance retention requirement from the spec/architecture always wins**; `constraints.memory_ip.retention_required` is the *default* applied only to instances that state nothing. The global flag never overrides an explicit per-instance value in either direction — forcing retention onto an instance declared non-retained over-constrains macro selection and costs area, while dropping it from one declared retained is a functional bug. Where the global is `true` and an instance is explicitly non-retained, record the resolved value and the rationale rather than silently reconciling. Write the resolved per-instance value into `memory_ip.power_modes`
-6. Record the dual-rail requirement: whether array and periphery supplies are separate, since this constrains both the macro choice and the UPF power intent
-7. Flag any instance needing multi-port behaviour and whether it can be met by banking instead of a true multi-port bitcell (much larger)
+1. 对每个 memory instance 收集 depth × width × port count，优先级：
+   1. `design_state.rtl`：实现事实，port/width/depth 权威
+   2. `design_state.architecture`：RTL 未给出时的 intent/sizing
+   3. inference：两者都缺失时才允许，且记录为待确认 assumption
+2. RTL 与 architecture 对同一 instance 的 type/port/depth/width 冲突时，**不得静默选一个**；
+   立即以 `constraint_gap` 升级并同时列出两个值。
+3. 按 `constraints.clock.clk_mhz` 计算 read/write bandwidth，bandwidth shortage 在本 stage 解决。
+4. ECC 使用确定性策略：
+   - `ecc_required:true` → 至少 SECDED；只有 spec 明确允许 detect-only 才可 parity
+   - `raw_FIT ≤ budgeted_FIT` → none
+   - 超 budget 且系统可 detect-and-retry → parity
+   - 超 budget 且无系统 retry → SECDED
+   - SECDED + scrubbing 仍超 budget → escalate
+   其中 `budgeted_FIT = fit_target_fit_per_mb × instance_Mb`。
+   记录 raw_FIT、budgeted_FIT、PDK SER source 与最终 scheme。
+5. 每 instance 解析 active/light sleep/deep sleep/shutdown。
+   Per-instance retention 要求优先于全局 `retention_required`；全局仅是未明确 instance 的默认值。
+6. 记录 array/periphery 是否需要 dual rail。
+7. Multi-port 需求优先评估 banking，避免直接使用面积更大的 true multi-port bitcell。
 
 ### QoR Metrics to Evaluate
-- Total memory bit count and instance count
-- Aggregate bandwidth required (GB/s) vs. available at target frequency
-- Fraction of total die area budget provisionally allocated to memory
+- 总 memory bit / instance count
+- Aggregate bandwidth 与 target frequency 可提供 bandwidth
+- Memory 预估占 die area budget 的比例
 
 ### Output Required
-- Memory instance inventory (name, type, depth, width, ports, retention requirement)
-- Bandwidth and ECC decision table with rationale
-- Power-mode requirement per instance
+- Memory inventory
+- Bandwidth/ECC decision table
+- Per-instance power mode/retention requirement
 
 ---
 
 ## Stage: macro_selection
 
 ### Domain Rules
-1. Confirm compiler family and macro availability in the target PDK before evaluating options; a configuration the compiler cannot generate is not a candidate
-2. Column mux factor (4/8/16) trades aspect ratio against access time: higher mux gives a squarer, shorter macro but a longer bitline-to-sense path. Sweep it rather than accepting the default
-3. Evaluate bank count against single-array access time — splitting a deep array into banks shortens bitlines and improves access time at the cost of periphery area duplication
-4. Compare every candidate on access-time margin at the **slow corner** (not typical), area, and leakage. A candidate with no slow-corner margin is a fail regardless of typical-corner numbers
-5. Prefer fewer, larger instances to amortise periphery (decoders, sense amps, control) overhead — bounded by `constraints.memory_ip.max_aspect_ratio` (default 4.0), beyond which placement and routing become impractical
-6. Verify the bitcell type against the Vmin requirement: 6T is denser, 8T gives better read stability and lower Vmin for low-voltage or dual-rail operation
-7. Record why each rejected candidate lost — this is the single most reusable artefact for later re-spins and belongs in `knowledge.md`
+1. 先确认目标 PDK/compiler family 真正支持哪些 configuration。
+2. Sweep column mux（4/8/16），平衡 aspect ratio 与 access time。
+3. Sweep bank count，权衡 bitline length、access time 与 duplicated periphery area。
+4. 候选比较使用 **slow corner** access-time margin，不只看 typical。
+5. 在 `max_aspect_ratio` 限制内，优先更少、更大的 macro 以摊薄 periphery overhead。
+6. 根据 Vmin 选择 bitcell：6T 密度高，8T read stability/Vmin 更好。
+7. 每个淘汰 candidate 记录失败理由，供 re-spin/knowledge 复用。
 
 ### QoR Metrics to Evaluate
-- Access-time margin at slow corner (ns) per instance — must be > 0
-- Area per instance and total (µm²)
-- Leakage (µW) and active power (mW) per instance
-- Aspect ratio per instance vs. `constraints.memory_ip.max_aspect_ratio`
+- 每 instance slow-corner access-time margin > 0
+- Area、leakage、active power
+- Aspect ratio ≤ `constraints.memory_ip.max_aspect_ratio`
 
 ### Output Required
-- Selected macro/compiler configuration per instance
-- Candidate comparison table with the rejection rationale for each loser
-- Slow-corner access-time margin report
+- Per-instance selected macro/compiler config
+- Candidate comparison + rejection rationale
+- Slow-corner timing margin report
 
 ---
 
 ## Stage: array_architecture
 
 ### Domain Rules
-1. Choose banking for bandwidth before reaching for a true multi-port bitcell — independent banks with address interleaving serve most concurrent-access needs at far lower area cost
-2. Fix the port arrangement per instance (1RW, 1R1W, 2RW) and define the write-during-read collision policy explicitly: read-old-data, read-new-data, or X/undefined. This policy must match the behavioural model written in `view_generation`
-3. Define wrapper responsibilities: byte-enable decode, output pipelining/registering, and clock gating of the macro enable. Keep the wrapper thin — logic that belongs in the consuming RTL should not migrate into the memory wrapper
-4. Place the ECC wrapper on the correct side of the pipeline boundary and account for its latency: SECDED check-bit count is the smallest `c` satisfying `2^c ≥ data_bits + c + 1` (8 data bits → 5, 32 → 7, 64 → 8). Record encode and decode latency separately — decode is on the critical read path
-5. Define the scrubbing policy where ECC is used: background scrub interval must be short enough that the probability of a second bit flip accumulating in one word stays below the FIT-rate target
-6. Determine Vmin and assist-circuit requirements per bitcell type — read assist (wordline underdrive, negative bitline) and write assist (boosted wordline, collapsed cell supply) are what make low-Vmin operation viable, and they cost area and complexity
-7. Verify the resulting architecture still meets the bandwidth figure computed at `memory_requirements`; loop back rather than compensating downstream
+1. 为 bandwidth 优先 banking，而不是 true multi-port bitcell。
+2. 固化 port arrangement（1RW / 1R1W / 2RW）及 write-during-read policy：
+   read-old / read-new / X；behavioral model 必须一致。
+3. Wrapper 只承担 byte enable、output pipeline/register、clock gating 等必要职责。
+4. ECC wrapper 必须计入 pipeline boundary 和 latency。SECDED check bits 取满足
+   `2^c ≥ data_bits + c + 1` 的最小 c。
+5. ECC 使用时定义 scrub interval，保证同一 word 累积第二个 bit flip 的概率满足 FIT target。
+6. 定义 Vmin 与 read/write assist requirement。
+7. 最终 architecture 重新核对 memory_requirements 阶段 bandwidth。
 
 ### QoR Metrics to Evaluate
-- Bandwidth achieved (GB/s) vs. target
-- Total memory area (µm²) vs. budget — fail above 120%
-- ECC decode latency added to the read path (ns or cycles)
-- Vmin margin (mV) vs. `constraints.memory_ip.vmin_margin_mv` (default 50)
+- Bandwidth achieved vs target
+- Total memory area vs budget，>120% FAIL
+- ECC decode latency
+- Vmin margin ≥ `constraints.memory_ip.vmin_margin_mv`
 
 ### Output Required
-- Bank/port architecture diagram per instance
-- Wrapper specification (byte enable, pipelining, clock gating, collision policy)
-- ECC scheme with data/check bit widths, latency, and scrubbing policy
+- Bank/port architecture diagram
+- Wrapper specification
+- ECC data/check width、latency、scrub policy
 
 ---
 
 ## Stage: redundancy_repair
 
 ### Domain Rules
-1. Size spare rows and columns from defect density × array bit count — not from a fixed rule of thumb. A small array may need no redundancy at all; provisioning it wastes area and repair-register bits
-2. Choose the repair scheme against the projected-yield target: column-only repair addresses bitline and sense-amp defects, row-only addresses wordline and decoder defects, both is needed when either class dominates
-3. Size the repair register: bits ≈ (spare rows × log2(rows)) + (spare cols × log2(cols)) per repairable unit, plus enable bits. This width is a hard handoff number for DFT's BISR chain
-4. Decide soft repair (BISR reloads the repair map at every power-on) vs. hard repair (efuse/OTP blown once at test). Soft repair needs a non-volatile source and boot-time sequencing; hard repair needs an efuse programming path and is irreversible
-5. Build the efuse/OTP map with the address allocation per instance; leave documented spare capacity for post-silicon re-repair
-6. **ECC and redundancy are not substitutes.** Redundancy replaces hard, permanent defects found at test; ECC corrects soft, transient errors in the field. A design needing both must have both — do not trade one for the other in the yield calculation
-7. Recompute projected post-repair yield and compare against `constraints.memory_ip.repair_yield_pct_min` (default 99). Loop back to `array_architecture` if the target is unreachable — more spare elements cannot fix an array that is simply too large for the defect density
+1. Spare row/column 必须从 defect density × array size 推导，不能固定拍数。
+2. Row/column/both repair scheme 根据 projected-yield target 和 defect 类型选择。
+3. Repair-register width ≈ spare-row × log2(rows) + spare-col × log2(cols) + enable bits，
+   这是 DFT BISR chain 的硬 handoff 数据。
+4. 明确 soft repair 与 hard repair（efuse/OTP）的 boot/programming 约束。
+5. 建立 efuse/OTP map，并预留 post-silicon re-repair capacity。
+6. ECC 与 redundancy 不能互相替代：前者处理 field soft error，后者处理制造 hard defect。
+7. Recompute projected yield；低于 `repair_yield_pct_min` 时 loop back。
 
 ### QoR Metrics to Evaluate
-- Projected post-repair yield (%) vs. `constraints.memory_ip.repair_yield_pct_min`
-- Spare row/column count and the area overhead they add (%)
-- Repair-register width (bits) — handoff figure for DFT
-- Efuse/OTP bits consumed vs. available
+- Projected post-repair yield
+- Spare row/column 与 area overhead
+- Repair-register width
+- Efuse/OTP bits consumed
 
 ### Output Required
-- Repair scheme per instance (row/column/both/none) with spare counts
-- Repair-register map and bit-width
-- Efuse/OTP address allocation
-- Projected yield calculation showing defect-density assumptions
+- Per-instance repair scheme
+- Repair-register map/width
+- Efuse/OTP allocation
+- Yield calculation/defect-density assumptions
 
 ---
 
 ## Stage: view_generation
 
 ### Domain Rules
-1. Generate the full required view set per instance: `.lib` (every PVT corner in `constraints.pvt_corners`), `.lef`, `.db`, `.v` behavioural model, `.gds`, and `.cdl` netlist. A missing view blocks a downstream domain, so treat any gap as a hard fail
-2. QA pin-name consistency across `.lib`, `.lef`, and `.v` — a mismatch here is the single most common cause of late integration failures and is silent until PD or LEC runs
-3. Verify every port has complete timing arcs in the `.lib`: setup/hold on all inputs, clock-to-Q on all outputs. Missing arcs cause STA to under-report violations rather than error out
-4. Check corner count matches the required PVT list exactly; a `.lib` set characterised at only typical is not sign-off usable
-5. Verify `.lef` obstruction layers are complete — missing obstructions let the router place wires over the array and produce DRC or noise failures found only at PD
-6. Confirm the behavioural model matches the timing model: it must enforce the same setup/hold via timing checks and must propagate X on the write-during-read collision policy fixed at `array_architecture`. A permissive behavioural model hides bugs until silicon
-7. Run macro-level DRC/LVS on the generated layout where the flow produces layout (OpenRAM, custom); skip for vendor pre-hardened macros where these are pre-signed-off
+1. 每 instance 生成完整 view：全部 required PVT 的 `.lib`、`.lef`、`.db`、`.v`、`.gds`、`.cdl`。
+2. QA `.lib/.lef/.v` pin-name consistency。
+3. 所有 port 的 setup/hold、clock-to-Q timing arc 必须完整。
+4. Corner 数量必须与 required PVT list 一致；只有 typical 不可 sign-off。
+5. LEF obstruction layer 必须完整。
+6. Behavioral model timing check 与 collision policy 必须和 timing model/array_architecture 一致。
+7. 对实际生成 layout 的 flow 运行 macro DRC/LVS；vendor pre-hardened macro 可跳过。
 
 ### QoR Metrics to Evaluate
-- View QA error count — must be 0 for sign-off
-- Corners characterised vs. corners required
-- Macro DRC/LVS violation count (where layout is generated)
-- Pin-consistency mismatches across `.lib`/`.lef`/`.v`
+- View QA error = 0
+- Characterized corner 数 = required corner 数
+- Macro DRC/LVS clean
+- Pin consistency mismatch = 0
 
 ### Output Required
-- Complete view set per instance, with file paths
-- View QA report enumerating every check and its result
-- DRC/LVS report where layout was generated
+- Complete view set + path
+- View QA report
+- DRC/LVS report（适用时）
 
 ---
 
 ## Stage: integration_prep
 
 ### Domain Rules
-1. Emit placement constraints for PD, do not place: orientation so that pins face the intended routing channel, halo width, inter-bank channel width sized for the expected wire count, and bank grouping so related instances stay together
-2. Emit the memory instance inventory and repair-register map for DFT's `bist_insertion` — group instances by width/depth class, since DFT allocates one MBIST controller per group
-3. Confirm BIST ports are exposed on every instance wrapper and reachable; DFT owns connecting them, this domain owns their existence
-4. Emit the `.lib` set and any memory-specific timing derates for STA; note explicitly where derates differ from standard-cell derates
-5. Emit the behavioural model path for verification, together with the collision policy so the testbench can predict X-propagation correctly
-6. Confirm `set_dont_touch` is applied to every memory macro for synthesis, and that macros are excluded from scan insertion
-7. Cross-check the memory map assignment from `chip-design-soc` against the actual instance depths — a mismatch between the architectural map and the delivered macro sizes must be caught here, not at chip assembly
+1. 给 PD 输出 placement constraint，不负责实际 placement：orientation、halo、channel width、bank grouping。
+2. 给 DFT 输出 memory inventory + repair map，按 width/depth class 分组。
+3. 每 instance 必须暴露可达 BIST port；连接由 DFT 负责。
+4. 给 STA 输出 `.lib` set 与 memory-specific derate note。
+5. 给 verification 输出 behavioral model path + collision policy。
+6. 对 memory macro 确认 `set_dont_touch` 并从 scan insertion 中排除。
+7. 对照 SoC memory map 与实际 macro depth；冲突必须在这里发现。
 
 ### QoR Metrics to Evaluate
-- Instances with complete placement constraints vs. total
-- Instances with exposed and reachable BIST ports vs. total
-- Memory-map conflicts detected (must be 0)
+- Placement constraint complete ratio
+- BIST port exposure complete ratio
+- Memory-map conflict = 0
 
 ### Output Required
-- Placement constraint file for PD
-- Memory inventory + repair-register map for DFT
-- `.lib` set and derate notes for STA
-- Behavioural model paths and collision policy for verification
+- PD placement constraint
+- DFT memory/repair handoff
+- STA Liberty/derate handoff
+- Verification model/collision handoff
 
 ---
 
 ## Stage: memory_signoff
 
 ### Sign-off Checklist
-- [ ] Every instance in the inventory has a selected macro with positive slow-corner access-time margin
-- [ ] Total memory area within budget
-- [ ] Bandwidth target met at `constraints.clock.clk_mhz`
-- [ ] ECC scheme implemented where required, with latency accounted for on the read path
-- [ ] Vmin margin meets `constraints.memory_ip.vmin_margin_mv`
-- [ ] Redundancy allocated and projected yield ≥ `constraints.memory_ip.repair_yield_pct_min`
-- [ ] Repair-register map complete and handed to DFT
-- [ ] View set complete for every instance, all corners, view QA errors = 0
-- [ ] Behavioural model collision policy matches the timing model
-- [ ] Placement constraints emitted for PD
-- [ ] BIST ports exposed on every instance
-- [ ] `set_dont_touch` confirmed for synthesis
+- [ ] 所有 instance 有 selected macro 且 slow-corner timing margin >0
+- [ ] Total memory area 在 budget 内
+- [ ] `constraints.clock.clk_mhz` 下 bandwidth 达标
+- [ ] 必需 ECC 已实现，latency 已计入 read path
+- [ ] Vmin margin 达标
+- [ ] Repair yield ≥ target
+- [ ] Repair-register map 已交付 DFT
+- [ ] 每 instance 全 corner view 完整且 QA error=0
+- [ ] Behavioral model collision policy 一致
+- [ ] PD placement constraint 已输出
+- [ ] 每 instance BIST port 已暴露
+- [ ] Synthesis `set_dont_touch` 已确认
 
 ### Output Required
-- Signed-off memory IP package (inventory, macros, views, repair architecture, constraints)
-- Sign-off report with every checklist item and its evidence
-- `design_state.json` `memory_ip` block populated with `signoff: true`
+- Signed-off Memory IP package
+- 带 evidence 的 sign-off report
+- `design_state.json.memory_ip.signoff=true`
 
 ---
 
 ## Constraint Validation
-
-See `plugins/meta/skills/pipeline-orchestration/SKILL.md` §Constraints Schema for the authoritative schema and stage-entry validation rule.
-
-**Required at entry (`memory_requirements`) — hard-fail if missing:**
-- `constraints.clock.clk_mhz` — target frequency, sets the access-time budget for macro selection
-
-**Optional (schema defaults apply when absent):**
-- `constraints.memory_ip.vmin_margin_mv` (default: 50) — minimum Vmin margin
-- `constraints.memory_ip.repair_yield_pct_min` (default: 99) — projected post-repair yield floor
-- `constraints.memory_ip.ecc_required` (default: false) — when `true`, forces **SECDED** as the floor regardless of the FIT calculation (see the `memory_requirements` ECC policy table)
-- `constraints.memory_ip.fit_target_fit_per_mb` (default: 100) — soft-error budget in FIT per Mb; the audited input to the ECC decision at `memory_requirements`
-- `constraints.memory_ip.max_aspect_ratio` (default: 4.0) — macro aspect-ratio ceiling
-- `constraints.memory_ip.retention_required` (default: true) — the **default** applied only to instances with no explicit per-instance retention requirement; an explicit per-instance value always wins in both directions. When the constraint is absent the default is assumed and must be stated in the stage `reason`
-- `constraints.pvt_corners` — corner list that `view_generation` must fully characterise. **Not defaultable:** if absent, or if no entry has non-null `voltage_v` and `temp_c`, escalate as a `constraint_gap` at `view_generation` entry rather than characterising at typical only
-- `constraints.dft.mbist_coverage_pct` — **owned by `chip-design-dft`**; read only, never redefined here
+进入 `memory_requirements` 必须有 `constraints.clock.clk_mhz`。
+Optional：
+- `memory_ip.vmin_margin_mv` 默认 50
+- `repair_yield_pct_min` 默认 99
+- `ecc_required` 默认 false；true 强制至少 SECDED
+- `fit_target_fit_per_mb` 默认 100
+- `max_aspect_ratio` 默认 4.0
+- `retention_required` 默认 true，但仅作用于无 per-instance requirement 的 instance
+- `pvt_corners` 不可用 typical 代替；无有效 V/T corner 时在 view_generation 以 `constraint_gap` 升级
+- `dft.mbist_coverage_pct` 只读，由 DFT 拥有
 
 ---
 
 ## Memory
 
 ### Write on stage completion
-After each stage completes (regardless of whether an orchestrator session is active),
-write or overwrite one JSON record in `memory/memory-ip/experiences.jsonl` keyed by
-`run_id`. This ensures data is persisted even if the flow is interrupted or called
-without full orchestrator context.
+每 stage 后按 `run_id` upsert `memory/memory-ip/experiences.jsonl`。
+`run_id = memory-ip_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。
+最终 sign-off 前 `signoff_achieved:false`。
 
-Use `run_id` = `memory-ip_<YYYYMMDD>_<HHMMSS>` (set once at flow start; reuse on each
-stage update). Set `signoff_achieved: false` until the final sign-off stage completes.
-
-### Run state (write before first stage, update after each stage)
-Write `memory/memory-ip/run_state.md` as the **first action** before launching any tool:
-```markdown
-run_id:      memory-ip_<YYYYMMDD>_<HHMMSS>
-design_name: <design>
-tool:        <primary tool>
-start_time:  <ISO-8601>
-last_stage:  null
-```
-Update `last_stage` to the completed stage name only after each stage finishes successfully. This file lets wakeup-loop prompts
-and resumed sessions identify the correct run without relying on in-memory state.
-Create the file and parent directories if they do not exist.
+### Run state
+工具前第一步写 `memory/memory-ip/run_state.md`；成功完成 stage 后才更新 `last_stage`。
 
 ### Optional: claude-mem index
-If `mcp__plugin_ecc_memory__add_observations` is available in this session, emit each
-applied fix as an observation to entity `chip-design-memory-ip-fixes` after writing to
-`experiences.jsonl`. Skip silently if the tool is absent — JSONL is the canonical record.
+如 `mcp__plugin_ecc_memory__add_observations` 可用，把 applied fix 写入
+`chip-design-memory-ip-fixes`；否则跳过，JSONL 为 canonical record。
