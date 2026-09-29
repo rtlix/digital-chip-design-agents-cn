@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wrap-symbiflow.sh — run SymbiYosys (sby) and emit a compact JSON summary
+# wrap-symbiflow.sh —— 运行 SymbiYosys (sby)，并输出紧凑 JSON summary
 set -euo pipefail
 
 TOOL="sby"
@@ -34,7 +34,7 @@ proved_props  = re.findall(r'PROVED\s+(\S+)', text, re.I)
 failed_props  = re.findall(r'FAILED\s+(\S+)', text, re.I)
 unknown_props = re.findall(r'UNKNOWN\s+(\S+)', text, re.I)
 
-# Counterexample info: look for trace file references
+# Counterexample 信息：查找 trace 文件引用
 counterexample_m = re.search(r'Counterexample\s+written\s+to\s+(\S+)', text, re.I)
 
 summary = {
@@ -50,7 +50,7 @@ if counterexample_m:
 summary["error_count"]   = len(errors)
 summary["warning_count"] = len(warnings)
 
-# PASS needs a property result found in the output; exit 0 alone is not one.
+# PASS 必须有工具输出中的 property result；仅 exit 0 不能作为 PASS 依据。
 evidence = bool(proved_props or failed_props or unknown_props)
 
 if errors or failed_props or exit_code != 0:
