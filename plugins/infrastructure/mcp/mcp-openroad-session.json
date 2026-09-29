@@ -1,5 +1,5 @@
 {
-  "_comment": "OpenROAD interactive session MCP server — keeps a persistent openroad process alive between calls. Exposes load_design, query_timing, query_drc, get_design_area, get_power, run_tcl, close_design. Preferred over mcp-openroad.json for ECO iteration loops where the design is queried repeatedly. Replace /absolute/path/to with the actual repo root path.",
+  "_comment": "OpenROAD 交互式 session MCP Server —— 在多次调用之间保持同一个 openroad 进程常驻。暴露 load_design、query_timing、query_drc、get_design_area、get_power、run_tcl、close_design。对于需要反复查询同一 design 的 ECO 迭代，优先于 mcp-openroad.json。请把 /absolute/path/to 替换为本仓库实际绝对路径。",
   "mcpServers": {
     "openroad-session": {
       "type": "stdio",
