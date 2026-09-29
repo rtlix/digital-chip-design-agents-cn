@@ -1,14 +1,14 @@
-# Contributing to digital-chip-design-agents
+# 为 digital-chip-design-agents 贡献代码
 
-## Skill File Standards
+## Skill 文件规范
 
-Every `SKILL.md` must have these sections in order:
+每个 `SKILL.md` 都必须按以下顺序包含这些章节：
 
 ```markdown
----                          ← YAML frontmatter (required)
+---                          ← YAML frontmatter（必需）
 name: domain-name
 description: >
-  One-sentence description for Claude Code's skill discovery.
+  用于 Claude Code Skill 自动发现的一句话描述。
 version: x.y.z
 author: chuanseng-ng
 license: MIT
@@ -18,28 +18,30 @@ allowed-tools: Read, Write, Bash
 # Skill: Domain Name
 
 ## Purpose
-One paragraph — what this skill enables Claude to do.
+用一个段落说明该 Skill 能让 Claude 完成什么工作。
 
-## Stage: stage_name          ← Repeat per stage
+## Stage: stage_name          ← 每个 stage 重复一组
 
 ### Domain Rules
-Numbered rules. Be specific — vague rules are not useful.
+使用编号规则。必须具体，模糊规则没有实际价值。
 
 ### QoR Metrics to Evaluate
-Measurable pass/fail criteria with units (ns, %, count).
+可测量的 pass/fail 判据，并注明单位（ns、%、count）。
 
 ### Common Issues & Fixes
-Table: Issue | Fix
+表格：Issue | Fix
 
 ### Output Required
-Bullet list of files/artifacts the stage must produce.
+列出该 stage 必须生成的文件或 artifact。
 ```
 
-## Adding a New Skill
+## 添加新的 Skill
 
-1. Create `plugins/<new-domain>/skills/<new-domain>/SKILL.md` following the standard above.
+1. 按上述规范创建
+   `plugins/<new-domain>/skills/<new-domain>/SKILL.md`。
 
-2. Add an entry to `.claude-plugin/marketplace.json`:
+2. 在 `.claude-plugin/marketplace.json` 中添加条目：
+
 ```json
 {
   "name": "chip-design-<new-domain>",
@@ -50,12 +52,15 @@ Bullet list of files/artifacts the stage must produce.
 }
 ```
 
-3. Create `plugins/<new-domain>/agents/<new-domain>-orchestrator.md` with this minimum structure:
+3. 创建
+   `plugins/<new-domain>/agents/<new-domain>-orchestrator.md`，
+   最低结构如下：
+
 ```markdown
 ---
 name: <new-domain>-orchestrator
 description: >
-  When to invoke this orchestrator.
+  说明何时调用该 Orchestrator。
 model: sonnet
 effort: high
 maxTurns: 50
@@ -76,19 +81,27 @@ stage_1 → stage_2 → stage_3
 1. ...
 ```
 
-4. Add the shared sections. Every orchestrator carries a set of guards word for word
-   (stage gating and escalation, and an execution note where the domain has no MCP server).
-   They are not written by hand:
-```bash
-python3 tools/sync_agent_sections.py          # writes the shared blocks into each agent
-python3 tools/sync_agent_sections.py --list   # shows which block goes where
-```
-   The text lives once in `tools/agent_shared_sections.md` and is inserted after
-   `## Behaviour Rules`, between `BEGIN SHARED` / `END SHARED` marker comments. To change a
-   shared rule, edit that file and re-run the script — never edit between the markers. To
-   exclude a new agent from a block, add it to the block's `except:` list.
+4. 添加共享章节。每个 Orchestrator 都需要携带一组完全一致的 guard
+   （stage gating、escalation，以及当该领域没有 MCP server 时的 execution note）。
+   这些内容**不要手工复制**：
 
-5. Run validation locally:
+```bash
+python3 tools/sync_agent_sections.py          # 将共享区块写入各 Agent
+python3 tools/sync_agent_sections.py --list   # 显示每个区块会同步到哪里
+```
+
+共享文本只维护在
+`tools/agent_shared_sections.md`，
+脚本会把内容插入到 `## Behaviour Rules` 之后，
+并放在 `BEGIN SHARED` / `END SHARED` 标记之间。
+
+如果要修改共享规则，只修改
+`tools/agent_shared_sections.md` 后重新运行同步脚本；
+**不要直接编辑标记之间的内容**。
+若新 Agent 不应包含某个共享区块，把它加入该区块的 `except:` 列表。
+
+5. 本地运行校验：
+
 ```bash
 python3 -c "
 import glob
@@ -103,37 +116,38 @@ python3 tools/sync_agent_sections.py --check
 python3 -m pytest tests/ -q
 ```
 
-6. Open a Pull Request — the CI `validate.yml` must pass before merge.
+6. 创建 Pull Request。合并前 CI 中的 `validate.yml` 必须通过。
 
-## Improving Existing Skills
+## 改进已有 Skill
 
-- **Domain Rules**: Be more specific, add new tool-specific commands, update metrics
-- **QoR Metrics**: Add units; tighten targets based on real project experience
-- **Loop-back rules in orchestrators**: Add new transitions or tighten max iterations
+- **Domain Rules**：写得更具体，增加工具相关命令，更新指标
+- **QoR Metrics**：补充单位，并根据真实项目经验收紧目标
+- **Orchestrator 中的 loop-back rules**：增加新的状态转换，或降低最大迭代次数
 
-## Pull Request Checklist
+## Pull Request 检查清单
 
-- [ ] SKILL.md has YAML frontmatter with `name`, `description`, `version`
-- [ ] SKILL.md has all four required sections
-- [ ] marketplace.json updated if new domain added
-- [ ] Orchestrator .md has frontmatter with `model`, `effort`, `maxTurns`, `skills`
-- [ ] Orchestrator .md has `## Stage Sequence`, `## Loop-Back Rules`, `## Sign-off Criteria`, `## Behaviour Rules`
-- [ ] Shared sections are in sync: `python3 tools/sync_agent_sections.py --check`
-- [ ] Local validation passes (see above)
-- [ ] Count remains consistent: agents = marketplace entries, and skills ≥ agents (a plugin may register more than one skill)
+- [ ] `SKILL.md` 的 YAML frontmatter 包含 `name`、`description`、`version`
+- [ ] `SKILL.md` 包含全部四个必需章节
+- [ ] 新增 domain 时已经更新 `marketplace.json`
+- [ ] Orchestrator `.md` 的 frontmatter 包含 `model`、`effort`、`maxTurns`、`skills`
+- [ ] Orchestrator `.md` 包含 `## Stage Sequence`、`## Loop-Back Rules`、`## Sign-off Criteria`、`## Behaviour Rules`
+- [ ] 共享章节保持同步：`python3 tools/sync_agent_sections.py --check`
+- [ ] 本地校验通过（见上文）
+- [ ] 数量保持一致：agents 数量 = marketplace entries 数量，且 skills ≥ agents（一个 plugin 可以注册多个 Skill）
 
-## Versioning
+## 版本规则
 
-- `PATCH` (x.x.1) — fixes or clarifications within existing skills
-- `MINOR` (x.1.0) — new skill or orchestrator domain added
-- `MAJOR` (2.0.0) — breaking change to frontmatter schema or stage interface
+- `PATCH`（x.x.1）—— 修复问题，或澄清已有 Skill
+- `MINOR`（x.1.0）—— 增加新的 Skill 或 Orchestrator domain
+- `MAJOR`（2.0.0）—— 对 frontmatter schema 或 stage interface 做不兼容变更
 
-## Shared metadata in plugin.json
+## plugin.json 中的共享元数据
 
-Each `plugins/<domain>/.claude-plugin/plugin.json` repeats the same `author`,
-`homepage`, `repository`, and `license` fields. These are intentional — the
-plugin installer reads each manifest in isolation and requires these fields to
-be present. The canonical values are:
+每个 `plugins/<domain>/.claude-plugin/plugin.json` 都重复包含相同的
+`author`、`homepage`、`repository` 和 `license` 字段。
+这是有意设计的，因为插件安装器会独立读取每个 manifest，并要求这些字段存在。
+
+权威值如下：
 
 ```json
 "author":     { "name": "chuanseng-ng", "url": "https://github.com/chuanseng-ng" },
@@ -142,5 +156,5 @@ be present. The canonical values are:
 "license":    "MIT"
 ```
 
-When updating these fields, change all 16 `plugin.json` files and
-`.claude-plugin/marketplace.json` together.
+更新这些字段时，必须同时修改全部 16 个 `plugin.json`
+以及 `.claude-plugin/marketplace.json`。
