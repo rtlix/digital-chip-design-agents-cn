@@ -1,4 +1,4 @@
-"""Tests for the EDA wrapper scripts in plugins/infrastructure/tools/.
+"""plugins/infrastructure/tools/ 中 EDA wrapper script 的测试。
 
 A wrapper must not report PASS unless it found a result in the tool's output.
 Each test puts a fake tool on PATH that prints a chosen log and exits with a
@@ -36,8 +36,8 @@ UNVERIFIED = "no recognisable result in tool output"
 WARNING_LINE = "[WARN] WARNING: check this\n"
 NOISE = "Reading design...\nDone.\n"
 
-# wrapper name -> executable the wrapper looks for, a log that contains a
-# result the wrapper parses, and the arguments to call the wrapper with.
+# wrapper 名 → wrapper 查找的 executable、包含可解析结果的 log
+# 以及调用 wrapper 时使用的参数。
 WRAPPERS = {
     "yosys": ("yosys", "Number of cells:      42\n", ["-p", "stat"]),
     "openroad": ("openroad", "wns 0.10\ntns 0.00\n", ["flow.tcl"]),
@@ -69,7 +69,7 @@ def run_wrapper(tmp_path: Path, name: str, log: str, rc: int = 0):
     env["FAKE_TOOL_RC"] = str(rc)
 
     wrapper = (TOOLS_DIR / f"wrap-{name}.sh").as_posix()
-    # verilator-sim takes the simulation binary as its first argument.
+    # verilator-sim 把 simulation binary 作为第一个参数。
     call_args = [fake.as_posix()] if tool is None else args
     proc = subprocess.run(
         [BASH, wrapper, *call_args],
@@ -128,8 +128,8 @@ def test_error_line_with_exit_0_fails(tmp_path, name):
 
 
 def test_verilator_error_line_with_pass_marker_is_a_warn(tmp_path):
-    """Simulation logs print lines such as 'Error count: 0'; an ERROR line alone
-    must not fail a run that printed TEST PASSED, but it must not pass silently."""
+    """Simulation log 可能包含 'Error count: 0'；只有 ERROR 字样本身
+    不能让已经打印 TEST PASSED 的运行判 FAIL，但也不能静默判 PASS。"""
     _, out = run_wrapper(tmp_path, "verilator-sim", "TEST PASSED\nERROR count: 0\n")
     assert out["status"] == "WARN"
     assert out["verified"] is True
