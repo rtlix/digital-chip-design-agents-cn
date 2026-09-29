@@ -1,11 +1,18 @@
 {
   "name": "chip-design-rtl",
   "version": "1.2.0",
-  "description": "SystemVerilog RTL design — module planning, coding standards, lint, CDC, synthesis check",
-  "author": { "name": "chuanseng-ng", "url": "https://github.com/chuanseng-ng" },
+  "description": "SystemVerilog RTL 设计——模块规划、编码规范、lint、CDC 与综合检查",
+  "author": {
+    "name": "chuanseng-ng",
+    "url": "https://github.com/chuanseng-ng"
+  },
   "homepage": "https://github.com/chuanseng-ng/digital-chip-design-agents",
   "repository": "https://github.com/chuanseng-ng/digital-chip-design-agents",
   "license": "MIT",
-  "skills": ["./skills/rtl-design"],
-  "agents": ["./agents/rtl-design-orchestrator.md"]
+  "skills": [
+    "./skills/rtl-design"
+  ],
+  "agents": [
+    "./agents/rtl-design-orchestrator.md"
+  ]
 }
