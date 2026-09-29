@@ -1,6 +1,6 @@
-# install.ps1 - installs digital-chip-design-agents plugins
+# install.ps1 - 安装 digital-chip-design-agents 插件
 #
-# Usage:
+# 用法：
 #   .\install.ps1                           # auto-detect installed agents + confirm
 #   .\install.ps1 -Yes                      # auto-detect, no confirmation prompt
 #   .\install.ps1 -IDE claude               # Claude Code (explicit)
@@ -13,9 +13,9 @@
 #   .\install.ps1 -IDE codex -Global        # OpenAI Codex CLI global (~\.codex\instructions.md)
 #   .\install.ps1 -IDE all                  # Claude Code + all four other IDEs (copilot, gemini, opencode, codex)
 #
-# With no -IDE the script detects which of the five supported agents
-# (claude, codex, opencode, gemini, copilot) are present and installs to them
-# after a confirmation prompt. Passing -IDE bypasses detection.
+# 不指定 -IDE 时，脚本会检测五种受支持的 Agent
+#（claude、codex、opencode、gemini、copilot），确认后安装到检测到的目标。
+# 显式指定 -IDE 会跳过自动检测。
 #
 #Requires -Version 5.1
 [CmdletBinding()]
@@ -37,7 +37,7 @@ $Python = "python3"
 
 # ── Shared sanity checks ──────────────────────────────────────────────────────
 if (-not (Test-Path (Join-Path $RepoDir ".claude-plugin\marketplace.json"))) {
-    Write-Error "Cannot locate repo root. Ensure install.ps1 is inside the cloned repo."
+    Write-Error "找不到仓库根目录。请确认 install.ps1 位于已克隆的仓库内。"
     exit 1
 }
 
@@ -80,7 +80,7 @@ function Invoke-PythonScript {
     try {
         $ScriptContent | Set-Content $tmp -Encoding UTF8
         & $Python $tmp @Args
-        if ($LASTEXITCODE -ne 0) { throw "Python script failed (exit $LASTEXITCODE)" }
+        if ($LASTEXITCODE -ne 0) { throw "Python 脚本执行失败（退出码 $LASTEXITCODE）" }
     } finally {
         if (Test-Path $tmp) { Remove-Item $tmp -Force }
     }
@@ -125,7 +125,7 @@ function Get-AgentDestination {
     switch ($Id) {
         "claude" {
             $cdir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE ".claude" }
-            return "$cdir (global plugin cache)"
+            return "$cdir（全局插件缓存）"
         }
         "codex"    { if ($Global) { return (Join-Path $env:USERPROFILE ".codex\instructions.md") } else { return (Join-Path (Get-Location).Path "AGENTS.md") } }
         "opencode" { if ($Global) { return (Join-Path $env:USERPROFILE ".config\opencode\config.json") } else { return (Join-Path (Get-Location).Path "opencode.json") } }
@@ -140,27 +140,27 @@ $AllTargets = @("claude","codex","opencode","gemini","copilot")
 $Sel = @{}
 
 if ([string]::IsNullOrEmpty($IDE) -or $IDE -eq "auto") {
-    Write-Host "Detecting installed AI coding agents..."
+    Write-Host "正在检测已安装的 AI 编码 Agent..."
     Write-Host ""
     $detected = @()
     foreach ($t in $AllTargets) {
-        if (Test-AgentInstalled $t) { $detected += $t; Write-Host "  [found] $t -> $(Get-AgentDestination $t)" }
+        if (Test-AgentInstalled $t) { $detected += $t; Write-Host "  [找到] $t -> $(Get-AgentDestination $t)" }
         else { Write-Host "  [  -  ] $t" }
     }
     if ($detected.Count -eq 0) {
         Write-Host ""
-        Write-Host "No supported agents detected. Install one explicitly with:"
+        Write-Host "未检测到受支持的 Agent。可以显式指定一个目标安装："
         Write-Host "  .\install.ps1 -IDE claude   (or copilot|gemini|opencode|codex|all)"
         exit 0
     }
     $doPrompt = (-not $Yes) -and (-not [Console]::IsInputRedirected)
     if ($doPrompt) {
         Write-Host ""
-        $ans = (Read-Host 'Install to all detected targets? [Y/n] (or list a subset, e.g. "claude,codex")').Trim().ToLower()
+        $ans = (Read-Host '安装到所有已检测到的目标吗？[Y/n]（也可以输入子集，例如 "claude,codex"）').Trim().ToLower()
         if ($ans -eq "" -or $ans -eq "y" -or $ans -eq "yes") {
             foreach ($t in $detected) { $Sel[$t] = $true }
         } elseif ($ans -eq "n" -or $ans -eq "no") {
-            Write-Host "Aborted."; exit 0
+            Write-Host "已取消。"; exit 0
         } else {
             foreach ($p in ($ans -split ",")) {
                 $p = $p.Trim()
@@ -170,7 +170,7 @@ if ([string]::IsNullOrEmpty($IDE) -or $IDE -eq "auto") {
     } else {
         foreach ($t in $detected) { $Sel[$t] = $true }
         Write-Host ""
-        Write-Host "Installing to all detected targets."
+        Write-Host "将安装到所有检测到的目标。"
     }
 } elseif ($IDE -eq "all") {
     foreach ($t in $AllTargets) { $Sel[$t] = $true }
@@ -178,7 +178,7 @@ if ([string]::IsNullOrEmpty($IDE) -or $IDE -eq "auto") {
     $Sel[$IDE] = $true
 }
 
-if ($Sel.Count -eq 0) { Write-Host "Nothing selected. Aborted."; exit 0 }
+if ($Sel.Count -eq 0) { Write-Host "未选择任何目标，已取消。"; exit 0 }
 
 # ── python3 is required for every target in the shell installer ───────────────
 # (Even the Claude block reads plugin versions and merges settings.json via
@@ -187,7 +187,7 @@ if (-not (Get-Command python3 -ErrorAction SilentlyContinue)) {
     if (Get-Command python -ErrorAction SilentlyContinue) {
         $Python = "python"
     } else {
-        Write-Error "python3 (or python) is required by install.ps1 but was not found in PATH. For a Python-free install, use: npx digital-chip-design-agents"
+        Write-Error "install.ps1 需要 python3（或 python），但 PATH 中未找到。如需无需 Python 的安装方式，请使用：npx digital-chip-design-agents"
         exit 1
     }
 }
@@ -203,22 +203,22 @@ if ($Sel.ContainsKey("claude")) {
     $CacheDir  = Join-Path $ClaudeDir "plugins\cache\$Marketplace"
     $Settings  = Join-Path $ClaudeDir "settings.json"
 
-    Write-Host "Claude config : $ClaudeDir"
-    Write-Host "Plugin cache  : $CacheDir"
+    Write-Host "Claude 配置目录 : $ClaudeDir"
+    Write-Host "插件缓存目录   : $CacheDir"
     Write-Host ""
 
     if (-not (Test-Path $ClaudeDir)) {
-        Write-Error "Claude config directory not found at '$ClaudeDir'.`nMake sure Claude Code is installed and has been run at least once."
+        Write-Error "在 '$ClaudeDir' 找不到 Claude 配置目录。`n请确认已安装 Claude Code，并且至少运行过一次。"
         exit 1
     }
 
-    Write-Host "Installing Claude Code plugin cache..."
+    Write-Host "正在安装 Claude Code 插件缓存..."
     foreach ($Plugin in $Plugins) {
         $Subdir = $PluginDirs[$Plugin]
         $Src    = Join-Path $RepoDir "plugins\$Subdir"
         $PluginJson = Join-Path $Src ".claude-plugin\plugin.json"
         $Version = & $Python -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" $PluginJson
-        if ($LASTEXITCODE -ne 0) { throw "Failed to read version from $PluginJson" }
+        if ($LASTEXITCODE -ne 0) { throw "无法从 $PluginJson 读取版本号" }
         $Dest   = Join-Path $CacheDir "$Plugin\$Version"
 
         if (Test-Path $Dest) { Remove-Item $Dest -Recurse -Force }
@@ -237,7 +237,7 @@ if ($Sel.ContainsKey("claude")) {
     }
 
     Write-Host ""
-    Write-Host "Updating $Settings ..."
+    Write-Host "正在更新 $Settings ..."
 
     $SettingsPy = @'
 import json, sys, os
@@ -272,12 +272,12 @@ with open(settings_path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
 
-print(f"  [OK] {len(plugins)} plugins enabled in settings.json")
+print(f"  [OK] settings.json 中已启用 {len(plugins)} 个插件")
 '@
     Invoke-PythonScript -ScriptContent $SettingsPy -Args @($Settings, $Marketplace, $RepoDir)
 
     Write-Host ""
-    Write-Host "Done! Restart Claude Code to activate all 16 plugins."
+    Write-Host "完成！请重启 Claude Code，以激活全部 16 个插件。"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -286,7 +286,7 @@ print(f"  [OK] {len(plugins)} plugins enabled in settings.json")
 if ($Sel.ContainsKey("copilot")) {
 
     Write-Host ""
-    Write-Host "Installing GitHub Copilot instructions..."
+    Write-Host "正在安装 GitHub Copilot 指令文件..."
 
     $TargetDir = (Get-Location).Path
 
@@ -319,8 +319,8 @@ for skill_path in skill_files:
         f.write('---\napplyTo: "' + applyto + '"\n---\n\n' + body + '\n')
     print('  [OK] .github/instructions/' + domain + '.instructions.md')
 
-print('\nCopilot: ' + str(len(skill_files)) + ' instruction files installed.')
-print('Commit .github/ to share domain rules with your team.')
+print('\nCopilot：已安装 ' + str(len(skill_files)) + ' 个指令文件。')
+print('如需与团队共享这些领域规则，请提交 .github/ 目录。')
 '@
     Invoke-PythonScript -ScriptContent $CopilotPy -Args @($RepoDir, $TargetDir)
 }
@@ -331,7 +331,7 @@ print('Commit .github/ to share domain rules with your team.')
 if ($Sel.ContainsKey("gemini")) {
 
     Write-Host ""
-    Write-Host "Installing Gemini Code Assist context file..."
+    Write-Host "正在安装 Gemini Code Assist 上下文文件..."
 
     $GeminiTarget = if ($Global) {
         Join-Path $env:USERPROFILE "GEMINI.md"
@@ -348,13 +348,13 @@ out_path = sys.argv[2]
 header = open(os.path.join(repo_dir, 'ides', 'gemini', 'gemini-header.md'), encoding='utf-8').read().strip()
 
 lines = [
-    '# Digital Chip Design Agents --- Gemini Context',
-    '<!-- Generated by install.ps1 -IDE gemini -->',
+    '# 数字芯片设计 Agents --- Gemini 上下文',
+    '<!-- 由 install.ps1 -IDE gemini 生成 -->',
     '<!-- Source: ' + repo_dir + ' -->',
     '',
     header,
     '',
-    '## Domain Knowledge',
+    '## 领域知识',
     '',
 ]
 
@@ -389,7 +389,7 @@ print('  (' + str(len(skill_files)) + ' domains, ' + str(len(skill_files) + len(
 if ($Sel.ContainsKey("opencode")) {
 
     Write-Host ""
-    Write-Host "Installing OpenCode config..."
+    Write-Host "正在安装 OpenCode 配置..."
 
     $OpenCodeTarget = if ($Global) {
         Join-Path $env:USERPROFILE ".config\opencode\config.json"
@@ -407,20 +407,20 @@ target    = sys.argv[2]
 is_global = sys.argv[3] == 'true'
 
 mode_display = {
-    'architecture': ('chip-architecture', 'Chip Architecture Evaluation'),
-    'rtl-design':   ('chip-rtl',          'RTL Design (SystemVerilog)'),
-    'verification': ('chip-verification', 'Functional Verification (UVM)'),
-    'formal':       ('chip-formal',       'Formal Verification (FPV/LEC)'),
-    'synthesis':    ('chip-synthesis',    'Logic Synthesis'),
-    'dft':          ('chip-dft',          'Design for Test'),
-    'sta':          ('chip-sta',          'Static Timing Analysis'),
-    'hls':          ('chip-hls',          'High-Level Synthesis'),
-    'pd':           ('chip-pd',           'Physical Design'),
-    'soc':          ('chip-soc',          'SoC IP Integration'),
-    'memory-ip':    ('chip-memory-ip',    'Memory IP Design'),
-    'compiler':     ('chip-compiler',     'Compiler Toolchain'),
-    'firmware':     ('chip-firmware',     'Embedded Firmware'),
-    'fpga':         ('chip-fpga',         'FPGA Emulation'),
+    'architecture': ('chip-architecture', '芯片架构评估'),
+    'rtl-design':   ('chip-rtl',          'RTL 设计（SystemVerilog）'),
+    'verification': ('chip-verification', '功能验证（UVM）'),
+    'formal':       ('chip-formal',       '形式验证（FPV/LEC）'),
+    'synthesis':    ('chip-synthesis',    '逻辑综合'),
+    'dft':          ('chip-dft',          '可测性设计（DFT）'),
+    'sta':          ('chip-sta',          '静态时序分析（STA）'),
+    'hls':          ('chip-hls',          '高层综合（HLS）'),
+    'pd':           ('chip-pd',           '物理设计（PD）'),
+    'soc':          ('chip-soc',          'SoC IP 集成'),
+    'memory-ip':    ('chip-memory-ip',    'Memory IP 设计'),
+    'compiler':     ('chip-compiler',     '编译器工具链'),
+    'firmware':     ('chip-firmware',     '嵌入式固件'),
+    'fpga':         ('chip-fpga',         'FPGA 原型验证'),
 }
 
 base = json.load(open(os.path.join(repo_dir, 'ides', 'opencode', 'opencode-base.json')))
@@ -455,7 +455,7 @@ with open(target, 'w', encoding='utf-8') as f:
     f.write('\n')
 
 print('  [OK] ' + target + ' --- ' + str(len(modes)) + ' modes')
-print('  Use /mode chip-<domain> in OpenCode to activate a domain.')
+print('  在 OpenCode 中使用 /mode chip-<domain> 激活对应领域。')
 '@
     Invoke-PythonScript -ScriptContent $OpenCodePy -Args @($RepoDir, $OpenCodeTarget, $IsGlobalStr)
 }
@@ -466,7 +466,7 @@ print('  Use /mode chip-<domain> in OpenCode to activate a domain.')
 if ($Sel.ContainsKey("codex")) {
 
     Write-Host ""
-    Write-Host "Installing OpenAI Codex CLI context file..."
+    Write-Host "正在安装 OpenAI Codex CLI 上下文文件..."
 
     $CodexTarget = if ($Global) {
         Join-Path $env:USERPROFILE ".codex\instructions.md"
@@ -483,13 +483,13 @@ out_path = sys.argv[2]
 header = open(os.path.join(repo_dir, 'ides', 'codex', 'AGENTS.md'), encoding='utf-8').read().strip()
 
 lines = [
-    '# Digital Chip Design Agents --- Codex CLI Context',
-    '<!-- Generated by install.ps1 -IDE codex -->',
+    '# 数字芯片设计 Agents --- Codex CLI 上下文',
+    '<!-- 由 install.ps1 -IDE codex 生成 -->',
     '<!-- Source: ' + repo_dir + ' -->',
     '',
     header,
     '',
-    '## Domain Knowledge',
+    '## 领域知识',
     '',
 ]
 
@@ -515,7 +515,7 @@ with open(out_path, 'w', encoding='utf-8') as f:
     f.write('\n'.join(lines) + '\n')
 
 print('  [OK] ' + out_path)
-print('  (' + str(len(skill_files)) + ' domains inlined)')
+print('  （已内联 ' + str(len(skill_files)) + ' 个领域）')
 '@
     Invoke-PythonScript -ScriptContent $CodexPy -Args @($RepoDir, $CodexTarget)
 }
