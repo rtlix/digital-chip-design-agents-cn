@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wrap-bambu.sh — run Bambu HLS and emit a compact JSON summary
+# wrap-bambu.sh —— 运行 Bambu HLS，并输出紧凑 JSON summary
 set -euo pipefail
 
 TOOL="bambu-hls"
@@ -64,14 +64,14 @@ summary = {}
 if latency_m: summary["latency_cycles"] = float(latency_m.group(1))
 if dsp_m:     summary["dsp_count"]      = int(dsp_m.group(1))
 if bram_m:    summary["bram_count"]     = int(bram_m.group(1))
-# Merge XML-derived values for any metrics not already captured by regex
+# 对 regex 尚未捕获的 metric，补充使用 XML 中解析出的数值
 if "latency_cycles" not in summary and "latency_cycles" in summary_from_xml:
     summary["latency_cycles"] = float(summary_from_xml["latency_cycles"])
 if "dsp_count" not in summary and "dsp_count" in summary_from_xml:
     summary["dsp_count"] = int(summary_from_xml["dsp_count"])
 if "bram_count" not in summary and "bram_count" in summary_from_xml:
     summary["bram_count"] = int(summary_from_xml["bram_count"])
-# PASS needs a result found in the log or the report; exit 0 alone is not one.
+# PASS 必须在 log 或 report 中找到可识别结果；仅 exit 0 不能作为 PASS 依据。
 evidence = bool(summary)
 summary["error_count"]   = len(errors)
 summary["warning_count"] = len(warnings)
