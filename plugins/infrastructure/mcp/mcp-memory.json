@@ -1,5 +1,5 @@
 {
-  "_comment": "Experience semantic/keyword search MCP server — paste the mcpServers block into your .claude/settings.json. Replace /absolute/path/to with the actual repo root path. Optionally pass --memory-root to pin a memory location; default auto-detects via memory_root.py ($CHIP_DESIGN_MEMORY_ROOT > central XDG > in-repo seed).",
+  "_comment": "经验语义/关键词搜索 MCP Server —— 将 mcpServers 配置块粘贴到 .claude/settings.json。请把 /absolute/path/to 替换为本仓库实际绝对路径。可选传入 --memory-root 固定 Memory 位置；默认通过 memory_root.py 自动解析（$CHIP_DESIGN_MEMORY_ROOT > 中央 XDG 路径 > 仓库内 seed）。",
   "mcpServers": {
     "chip-design-memory": {
       "type": "stdio",
