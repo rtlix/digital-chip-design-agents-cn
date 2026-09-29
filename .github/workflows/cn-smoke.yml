@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/cn-smoke.yml"
+      - "bin/install.mjs"
+      - "install.sh"
+      - "install.ps1"
+      - "plugins/infrastructure/skills/memory-keeper/*.py"
+      - "tools/experience_search.py"
+      - "tools/qor_trends.py"
   workflow_dispatch:
 
 jobs:
