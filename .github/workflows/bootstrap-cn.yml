@@ -1,0 +1,45 @@
+name: Bootstrap Chinese Mirror
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bootstrap-cn.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone upstream
+        run: |
+          git clone --depth 1 https://github.com/rtlix/digital-chip-design-agents.git "$RUNNER_TEMP/upstream"
+
+      - name: Mirror files
+        run: |
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.github/workflows/' \
+            "$RUNNER_TEMP/upstream/" ./
+          mkdir -p .github/workflows
+          git checkout HEAD -- .github/workflows/bootstrap-cn.yml
+
+      - name: Commit mirrored tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "chore: mirror upstream repository"
+            git push origin main
+          fi
