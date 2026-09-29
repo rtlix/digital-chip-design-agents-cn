@@ -1,39 +1,22 @@
-# SoC Integration Domain Knowledge
+# SoC Integration Domain Knowledge（SoC 集成领域知识）
 
 ## Known Failure Patterns
 
-- **AXI4 memory map conflicts → chip_level_sim failure**: AXI4 memory map conflicts are the #1
-  cause of `chip_level_sim` failures. Before `top_integration`, generate a full memory map from
-  all IP block configurations and verify no address ranges overlap. FuseSoC address map exports
-  can be validated with `fusesoc gen --target sim <core>` before integration.
-- **FuseSoC IP version pinning**: FuseSoC core dependency resolution fails silently when IP
-  versions are unpinned and the registry has newer incompatible versions. Always pin IP versions
-  in `<design>.core` using `=` (exact) version constraints, not `^` (compatible) — compatible
-  constraints have caused breakage when upstream IPs changed interfaces.
-- **Bus fabric address decoder verification**: Address decoder errors in `bus_fabric_setup` are
-  not caught by RTL lint. Validate the decoder with a directed simulation test that walks all
-  address boundaries (base, base+1, top-1, top) before `top_integration`.
+- **AXI4 memory-map conflict → chip_level_sim failure**：这是最常见的 SoC 集成问题。进入 `top_integration` 前汇总全部 IP address range，确认无 overlap。FuseSoC 可用 `fusesoc gen --target sim <core>` 辅助验证。
+- **FuseSoC IP version pinning**：未 pin 版本时，registry 中新增不兼容版本可能导致 dependency resolution 静默变化。在 `<design>.core` 中使用 `=` 精确 pin，不要用 `^` compatible range。
+- **Bus fabric address decoder**：lint 无法发现 decoder 边界错误。在 `top_integration` 前用 directed simulation 遍历 base、base+1、top-1、top。
 
 ## Successful Tool Flags
 
-- `fusesoc --cores-root <path> run --target sim <core>` — `--cores-root` overrides the default
-  registry; use to point at local IP copies during integration before publishing to registry.
-- `verilator --sc --exe --build -Wno-UNOPTFLAT <files>` — `--sc` enables SystemC output needed
-  for cocotb/TLM integration; `-Wno-UNOPTFLAT` suppresses expected warnings from AXI bus
-  combinational loops.
-- `edalize build --tool <tool>` — Edalize abstracts tool-specific project file generation;
-  prefer over hand-written Makefiles for simulator portability.
+- `fusesoc --cores-root <path> run --target sim <core>`：integration 阶段指向本地 IP copy。
+- `verilator --sc --exe --build -Wno-UNOPTFLAT <files>`：`--sc` 生成 SystemC output；`-Wno-UNOPTFLAT` 抑制 AXI combinational-loop 类预期 warning。
+- `edalize build --tool <tool>`：优先于手写 Makefile，提高 simulator portability。
 
 ## PDK / Tool Quirks
 
-- **Verilator AXI4 burst simulation**: Verilator does not model AXI4 burst interleaving by
-  default — cocotb or a VIP is required for protocol-level bus verification. Verilator alone
-  is sufficient only for functional correctness, not protocol compliance.
-- **FuseSoC .core file VLNV**: VLNV (Vendor:Library:Name:Version) must be unique across all
-  cores in the registry. Duplicate VLNVs cause FuseSoC to silently use the first match found,
-  which may be the wrong version.
+- **Verilator AXI4 burst**：Verilator 本身不等于 protocol VIP；需要 cocotb/VIP 做 protocol-level interleaving/compliance 验证。单用 Verilator 更适合 functional correctness。
+- **FuseSoC VLNV**：Vendor:Library:Name:Version 必须全 registry 唯一；重复 VLNV 会静默使用第一个匹配项，可能拿错版本。
 
 ## Notes
 
-- `unqualified_ips: 0` is a hard sign-off gate. Never proceed to synthesis with unqualified IP —
-  IP qualification failures discovered post-synthesis require full re-integration.
+- `unqualified_ips:0` 是 hard sign-off gate。不要带未 qualification IP 进入 synthesis，否则后续发现问题会迫使整套 integration 重跑。
