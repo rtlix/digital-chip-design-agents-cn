@@ -1,4 +1,4 @@
-"""Unit tests for the memory-keeper distill.py helper."""
+"""memory-keeper 的 distill.py helper 单元测试。"""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ DISTILL = Path(__file__).resolve().parents[1] / \
 
 
 def test_every_valid_domain_has_metric_fields(distill):
-    # The 14 design domains + infrastructure must each be registered.
+    # 14 个 design domain 加 infrastructure 都必须完成注册。
     assert len(distill.VALID_DOMAINS) == 15
     for dom in distill.VALID_DOMAINS:
         assert dom in distill.METRIC_FIELDS, f"{dom} missing from METRIC_FIELDS"
