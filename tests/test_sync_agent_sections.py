@@ -1,4 +1,4 @@
-"""Tests for tools/sync_agent_sections.py.
+"""tools/sync_agent_sections.py 的测试。
 
 Each test builds a miniature repo under ``tmp_path`` and drives the script
 through ``run()``, which returns ``(exit_code, messages)`` without printing.
@@ -35,7 +35,7 @@ a → b
 Read things.
 """
 
-# Behaviour Rules is followed by Design State, not Memory.
+# Behaviour Rules 后面是 Design State，而不是 Memory。
 AGENT_INFRA_SHAPE = """\
 ## Stage Sequence
 a → b
@@ -90,7 +90,7 @@ Use direct execution.
 <!-- END BLOCK direct -->
 """
 
-# Names no specific agent, for repos that hold a single arbitrary one.
+# 不指定具体 Agent 名，适用于只包含一个任意 Agent 的仓库。
 CANONICAL_ANY_AGENT = """\
 <!-- BLOCK gating
 targets: agents
@@ -144,7 +144,7 @@ def standard_repo(root: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Canonical file parsing
+# Canonical 文件解析
 # ---------------------------------------------------------------------------
 
 def test_parse_preserves_order_and_attributes(sync):
@@ -176,7 +176,7 @@ def test_malformed_canonical_is_a_config_error(sync, tmp_path, canonical):
 
 
 # ---------------------------------------------------------------------------
-# Write mode
+# 写入模式
 # ---------------------------------------------------------------------------
 
 def test_insert_leaves_text_outside_blocks_unchanged(sync, tmp_path):
@@ -277,7 +277,7 @@ def test_canonical_order_is_restored(sync, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Anchors
+# 锚点
 # ---------------------------------------------------------------------------
 
 def test_anchor_uses_next_heading_whatever_it_is(sync, tmp_path):
@@ -320,7 +320,7 @@ def test_heading_inside_code_fence_is_not_an_anchor_boundary(sync, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Encoding and line endings
+# 编码与换行符
 # ---------------------------------------------------------------------------
 
 def test_crlf_file_stays_crlf(sync, tmp_path):
@@ -359,7 +359,7 @@ def test_non_ascii_is_preserved(sync, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Check mode
+# 检查模式
 # ---------------------------------------------------------------------------
 
 def test_check_reports_unsynced_repo_without_writing(sync, tmp_path):
@@ -397,7 +397,7 @@ def test_orphan_marker_is_rejected(sync, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# File targets (IDE headers)
+# 文件目标（IDE header）
 # ---------------------------------------------------------------------------
 
 def test_file_targets(sync, tmp_path):
@@ -426,7 +426,7 @@ def test_file_targets(sync, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# The real repository
+# 真实仓库
 # ---------------------------------------------------------------------------
 
 def test_repo_is_in_sync(sync):
