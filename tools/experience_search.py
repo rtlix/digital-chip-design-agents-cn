@@ -509,46 +509,46 @@ def _print_table(result: dict) -> None:
     if result["filters_applied"]:
         print(f"# filters: {result['filters_applied']}")
     if not result["results"]:
-        print("# no matching records")
+        print("# 没有匹配的记录")
         return
     for i, r in enumerate(result["results"], 1):
         print(f"\n[{i}] score={r['score']}  {r.get('design_name')}"
               f"  pdk={r.get('pdk')}  tool={r.get('tool_used')}"
               f"  ({r.get('timestamp')})")
         if r["matched_terms"]:
-            print(f"    matched: {', '.join(r['matched_terms'])}")
+            print(f"    匹配词：{', '.join(r['matched_terms'])}")
         for fix in r["fixes_applied"]:
-            print(f"    fix: {fix}")
+            print(f"    修复：{fix}")
         if r.get("notes"):
-            print(f"    notes: {r['notes']}")
+            print(f"    备注：{r['notes']}")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Semantic / keyword search over experience records")
+        description="对历史 experience record 进行语义 / 关键词检索")
     parser.add_argument("--domain", required=True, choices=VALID_DOMAINS,
-                        help="Domain to search")
+                        help="要检索的领域")
     parser.add_argument("--query", default=None,
-                        help="Natural-language query (required unless --reindex)")
-    parser.add_argument("--design", default=None, help="Filter by design_name")
-    parser.add_argument("--pdk", default=None, help="Filter by pdk")
-    parser.add_argument("--tool", default=None, help="Filter by tool_used")
-    parser.add_argument("--limit", type=int, default=5, help="Max results")
+                        help="自然语言查询（除 --reindex 外必填）")
+    parser.add_argument("--design", default=None, help="按 design_name 过滤")
+    parser.add_argument("--pdk", default=None, help="按 pdk 过滤")
+    parser.add_argument("--tool", default=None, help="按 tool_used 过滤")
+    parser.add_argument("--limit", type=int, default=5, help="最多返回多少条结果")
     parser.add_argument("--min-records", type=int, default=50,
-                        help="Embedding threshold (default: 50)")
+                        help="启用 embedding 的记录数阈值（默认：50）")
     parser.add_argument("--backend", choices=["auto", "keyword", "embedding"],
-                        default="auto", help="Backend selection")
+                        default="auto", help="检索后端选择")
     parser.add_argument("--memory-root", default=None,
-                        help="Path to the memory/ directory")
+                        help="Memory 根目录路径")
     parser.add_argument("--reindex", action="store_true",
-                        help="Rebuild the embedding cache, then exit")
+                        help="重建当前领域的 embedding 缓存后退出")
     parser.add_argument("--json", action="store_true",
-                        help="Emit machine-readable JSON")
+                        help="输出机器可读 JSON")
     args = parser.parse_args(argv)
 
     # Bad explicit memory root → exit 2 (mirrors qor_trends.py).
     if args.memory_root and not Path(args.memory_root).expanduser().is_dir():
-        print(f"error: memory root not found: {args.memory_root}", file=sys.stderr)
+        print(f"错误：找不到 Memory root：{args.memory_root}", file=sys.stderr)
         return 2
 
     try:
@@ -558,7 +558,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if not args.query:
-            print("error: --query is required (or use --reindex)", file=sys.stderr)
+            print("错误：必须指定 --query（或使用 --reindex）", file=sys.stderr)
             return 2
 
         filters = {
@@ -573,7 +573,7 @@ def main(argv: list[str] | None = None) -> int:
             memory_root=args.memory_root, backend=args.backend,
         )
     except Exception as exc:  # noqa: BLE001 — surface as exit-2 per CLI contract
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"错误：{exc}", file=sys.stderr)
         return 2
 
     if args.json:
