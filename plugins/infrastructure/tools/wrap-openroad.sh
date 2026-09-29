@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wrap-openroad.sh — run OpenROAD and emit a compact JSON summary
+# wrap-openroad.sh —— 运行 OpenROAD，并输出紧凑 JSON summary
 set -euo pipefail
 
 TOOL="openroad"
@@ -44,7 +44,7 @@ summary["progress_messages"] = progress[-5:] if progress else []
 summary["error_count"]   = len(errors)
 summary["warning_count"] = len(warnings)
 
-# PASS needs a result found in the output; exit 0 alone is not one.
+# PASS 必须有工具输出中的可识别结果；仅 exit 0 不能作为 PASS 依据。
 evidence = bool(wns_m or tns_m or drc_m or progress)
 
 if exit_code != 0 or errors:
