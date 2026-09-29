@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sync shared sections into the orchestrator agent files and IDE headers.
+"""把共享章节同步到 Orchestrator Agent 文件和 IDE header。
 
 The orchestrators under ``plugins/*/agents/`` are self-contained prompts, so a
 rule that applies to all of them has to be present in each file. This script
@@ -55,11 +55,11 @@ HEADER_KEYS = {"targets", "only", "except", "files", "after"}
 
 
 class ConfigError(Exception):
-    """The canonical file or a target cannot be processed as written."""
+    """Canonical 文件或目标文件无法按当前内容处理。"""
 
 
 class Block:
-    """One shared section and where it goes."""
+    """表示一个共享章节及其目标位置。"""
 
     def __init__(
         self,
@@ -86,11 +86,11 @@ class Block:
 
 
 # ---------------------------------------------------------------------------
-# Text helpers
+# 文本辅助函数
 # ---------------------------------------------------------------------------
 
 def _decode(data: bytes) -> tuple[str, str]:
-    """Return (text with LF newlines, the newline style the file used)."""
+    """返回（统一为 LF 的文本，原文件使用的换行风格）。"""
     text = data.decode("utf-8")
     eol = "\r\n" if "\r\n" in text else "\n"
     return text.replace("\r\n", "\n"), eol
@@ -116,7 +116,7 @@ def _csv(value: str) -> list[str]:
 
 
 def _outside_fences(lines: list[str]):
-    """Yield (index, line) for lines that are not inside a fenced code block."""
+    """遍历不位于 fenced code block 中的 (index, line)。"""
     fenced = False
     for i, line in enumerate(lines):
         if FENCE.match(line):
@@ -127,7 +127,7 @@ def _outside_fences(lines: list[str]):
 
 
 # ---------------------------------------------------------------------------
-# Canonical file
+# Canonical 文件
 # ---------------------------------------------------------------------------
 
 def parse_canonical(text: str) -> list[Block]:
@@ -213,7 +213,7 @@ def _build_block(block_id: str, header: dict[str, str], body: list[str], line: i
 
 
 # ---------------------------------------------------------------------------
-# Targets
+# 目标文件
 # ---------------------------------------------------------------------------
 
 def discover_agents(root: Path) -> dict[str, Path]:
@@ -227,7 +227,7 @@ def discover_agents(root: Path) -> dict[str, Path]:
 
 
 def plan(root: Path, blocks: list[Block]) -> dict[Path, list[Block]]:
-    """Map every target file to the blocks it should carry, in canonical order.
+    """按 canonical 顺序，把每个目标文件映射到其应携带的共享 block。
 
     Every agent is a target even when no block applies to it, so that a block
     left behind in an agent that has since been excluded is still removed.
@@ -255,7 +255,7 @@ def plan(root: Path, blocks: list[Block]) -> dict[Path, list[Block]]:
 
 
 # ---------------------------------------------------------------------------
-# Rendering
+# 渲染
 # ---------------------------------------------------------------------------
 
 def _strip(lines: list[str], name: str) -> list[str]:
@@ -280,7 +280,7 @@ def _strip(lines: list[str], name: str) -> list[str]:
         if MARK_END.match(lines[i]).group(1) != block_id:
             raise ConfigError(f"{name}:{i + 1}: END marker does not match '{block_id}'")
         i += 1
-        # Collapse the blank lines that surrounded the block to a single one.
+        # 把 block 周围的多余空行压缩为一个。
         while out and not out[-1].strip():
             out.pop()
         while i < len(lines) and not lines[i].strip():
@@ -291,7 +291,7 @@ def _strip(lines: list[str], name: str) -> list[str]:
 
 
 def strip_blocks(text: str, name: str = "<text>") -> str:
-    """Return ``text`` with every synced block removed."""
+    """返回移除了所有已同步 block 的 ``text``。"""
     normalised, eol = _decode(text.encode("utf-8"))
     return _join(_strip(_split(normalised), name)).replace("\n", eol)
 
@@ -319,7 +319,7 @@ def _marker_begin(block: Block) -> str:
 
 
 def render(text: str, blocks: list[Block], name: str) -> str:
-    """Return ``text`` (LF newlines) carrying exactly ``blocks``."""
+    """返回仅包含指定 ``blocks`` 的 LF 换行 ``text``。"""
     lines = _strip(_split(text), name)
 
     for block in blocks:
@@ -353,7 +353,7 @@ def render(text: str, blocks: list[Block], name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Entry points
+# 入口函数
 # ---------------------------------------------------------------------------
 
 def _rel(root: Path, path: Path) -> str:
@@ -368,7 +368,7 @@ def _load(root: Path) -> dict[Path, list[Block]]:
 
 
 def run(root: Path, check: bool) -> tuple[int, list[str]]:
-    """Sync or check every target under ``root``. Returns (exit code, messages)."""
+    """同步或检查 ``root`` 下的全部目标；返回 (exit code, messages)。"""
     root = Path(root).resolve()
     messages: list[str] = []
     try:
@@ -423,17 +423,17 @@ def list_matrix(root: Path) -> tuple[int, list[str]]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Sync shared sections into orchestrator agent files and IDE headers."
+        description="把共享章节同步到 Orchestrator Agent 文件和 IDE header。"
     )
     parser.add_argument(
         "--root",
         type=Path,
         default=Path(__file__).resolve().parents[1],
-        help="repository root (default: the repo containing this script)",
+        help="仓库根目录（默认：包含本脚本的仓库）",
     )
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--check", action="store_true", help="report drift; write nothing")
-    mode.add_argument("--list", action="store_true", help="print which blocks go where")
+    mode.add_argument("--check", action="store_true", help="报告 drift；不写入任何文件")
+    mode.add_argument("--list", action="store_true", help="打印每个 block 会同步到哪些位置")
     args = parser.parse_args(argv)
 
     code, messages = list_matrix(args.root) if args.list else run(args.root, args.check)
