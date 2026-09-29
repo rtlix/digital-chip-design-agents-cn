@@ -1,154 +1,151 @@
 ---
 name: compiler-toolchain
 description: >
-  Compiler toolchain development for custom processor ISAs — LLVM/GCC backend,
-  assembler, linker scripts, runtime libraries, and regression validation.
-  Use when building a compiler for a custom RISC-V extension, proprietary ISA,
-  or any processor where no existing toolchain targets it correctly.
+  面向自定义处理器 ISA 的编译器工具链开发——包括 LLVM/GCC backend、assembler、
+  linker script、runtime library 和 regression validation。适用于自定义 RISC-V
+  扩展、私有 ISA，或现有 toolchain 无法正确支持的处理器。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: Compiler Toolchain Development
+# Skill: Compiler Toolchain Development（编译器工具链开发）
 
 ## Invocation
 
-When this skill is loaded and a user presents a compiler or ISA task, **do not
-execute stages directly**. Immediately spawn the
-`digital-chip-design-agents:compiler-orchestrator` agent and pass the full user
-request and any available context to it. The orchestrator enforces the stage
-sequence, loop-back rules, and sign-off criteria defined below.
+当本 Skill 被加载且用户提出 compiler/ISA 任务时，**不要直接执行 stage**。
+立即启动 `digital-chip-design-agents:compiler-orchestrator`，并传入完整用户请求及所有可用上下文。
+Orchestrator 负责强制执行下文定义的 stage sequence、loop-back 和 sign-off criteria。
 
-Use the domain rules in this file only when the orchestrator reads this skill
-mid-flow for stage-specific guidance, or when the user asks a targeted reference
-question rather than requesting a full flow execution.
+只有当 Orchestrator 在流程中读取本 Skill 获取阶段规则，或用户只是询问局部参考问题时，
+才直接使用本文件的 domain rule。
 
 ## Pre-run Context
 
-Before executing or advising on **any** stage, read the following files if they exist:
+执行或建议**任何** stage 前，如存在则先读取：
 
-1. `memory/compiler/knowledge.md` — known failure patterns, successful tool flags, PDK/tool quirks.
-   Incorporate its guidance into every stage decision. If absent, proceed without it.
-2. `memory/compiler/run_state.md` — current run identity (`run_id`, `design_name`, `tool`,
-   `last_stage`). Use this to resume correctly after interruption. If absent, a new run
-   is starting; the orchestrator will create this file before the first stage.
+1. `memory/compiler/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
+2. `memory/compiler/run_state.md` —— 当前 `run_id`、`design_name`、`tool`、`last_stage`，用于中断后恢复。
 
-This pre-run read applies whether this skill is loaded by a user or called by the
-orchestrator mid-flow. It ensures the fix database is consulted before any diagnosis step.
+无论由用户还是 Orchestrator 加载，都要先读取这些文件。
 
 ## Purpose
-Build and validate a complete compiler toolchain (LLVM or GCC based) for a
-custom processor ISA. Bridges hardware and software — without a working
-toolchain no software can run on the designed chip.
+
+为自定义处理器 ISA 构建并验证完整 compiler toolchain（LLVM 或 GCC）。
+它连接硬件与软件；没有正确的工具链，软件就无法在所设计芯片上运行。
 
 ---
 
 ## Supported EDA Tools
 
 ### Open-Source
-- **LLVM/Clang** (`clang`, `llc`, `llvm-mc`, `llvm-objdump`) — primary toolchain for new ISA backends
-- **GCC and GNU Binutils** (`gcc`, `as`, `ld`, `objdump`) — alternative backend; well-tested for RISC-V extensions
-- **QEMU** (`qemu-system-*`) — instruction-accurate ISA emulation for toolchain validation without hardware
+- **LLVM/Clang**（`clang`、`llc`、`llvm-mc`、`llvm-objdump`）—— 新 ISA backend 的主要工具链
+- **GCC + GNU Binutils**（`gcc`、`as`、`ld`、`objdump`）—— 另一种 backend，RISC-V extension 生态成熟
+- **QEMU**（`qemu-system-*`）—— 无硬件时用于 toolchain validation 的 instruction-accurate ISA emulation
 
 ### Proprietary
-- **Green Hills MULTI** — safety-critical compiler and debugger IDE
-- **IAR Embedded Workbench** — certified compiler for ARM/RISC-V
-- **Arm Compiler 6** (`armcc`) — LLVM-based compiler for Arm targets
+- **Green Hills MULTI** —— 面向安全关键应用的 compiler/debugger IDE
+- **IAR Embedded Workbench** —— ARM/RISC-V 认证编译器
+- **Arm Compiler 6**（`armcc`）—— 基于 LLVM 的 Arm compiler
 
 ---
 
 ## Stage: isa_analysis
 
 ### ISA Feature → Toolchain Component Mapping
-| ISA Feature | Toolchain Component |
-|-------------|-------------------|
-| Instruction encoding | Assembler, disassembler |
-| Register file | Register allocator, ABI |
-| Calling convention | ABI, function call lowering |
-| Branch/jump | Control flow, delay slot handling |
-| Load/store addressing | Memory access patterns |
-| SIMD/vector | Auto-vectorisation, intrinsics |
-| Atomics | Memory model, concurrency |
-| Multiply/divide | Integer arithmetic lowering |
-| FPU presence | FP ABI (hard-float vs soft-float) |
-| Custom instructions | Intrinsics, builtin functions |
 
-### ABI Requirements (define before any backend code)
-1. Argument passing: which registers, stack spill rules
-2. Return value registers
-3. Callee-saved vs caller-saved register classification
-4. Stack alignment (8 or 16 byte)
-5. Data type sizes and alignments
-6. Struct layout (padding, packing rules)
-7. Thread-local storage model (if RTOS target)
+| ISA Feature | Toolchain Component |
+|---|---|
+| Instruction encoding | Assembler、disassembler |
+| Register file | Register allocator、ABI |
+| Calling convention | ABI、function-call lowering |
+| Branch/jump | Control flow、delay-slot handling |
+| Load/store addressing | Memory access pattern |
+| SIMD/vector | Auto-vectorisation、intrinsics |
+| Atomics | Memory model、concurrency |
+| Multiply/divide | Integer arithmetic lowering |
+| FPU presence | FP ABI（hard-float / soft-float） |
+| Custom instruction | Intrinsic、builtin function |
+
+### ABI Requirements
+
+任何 backend code 开始前，必须先定义：
+
+1. Argument passing：使用哪些 register，stack spill 规则
+2. Return-value register
+3. Callee-saved / caller-saved register 分类
+4. Stack alignment（8 或 16 byte）
+5. Data type size/alignment
+6. Struct layout（padding/packing）
+7. Thread-local storage model（若目标包含 RTOS）
 
 ### Output Required
-- ISA-to-toolchain mapping table
-- ABI specification document
-- List of LLVM/GCC backend files to create/modify
-- Target triple: `<arch>-<vendor>-<os>`
+- ISA → toolchain mapping table
+- ABI specification
+- 需要新建/修改的 LLVM/GCC backend file list
+- Target triple：`<arch>-<vendor>-<os>`
 
 ---
 
 ## Stage: backend_dev
 
-### LLVM Backend — Implement in This Order
-1. `RegisterInfo.td`: register classes, aliases, reserved registers
-2. `InstrInfo.td`: all instruction definitions with encoding
-3. `CallingConv.td`: argument and return value register rules
-4. `SchedModel.td`: latency and throughput per instruction class
-5. `TargetMachine.cpp`: entry point, subtarget selection
-6. `ISelDAGToDAG.cpp`: selection DAG → machine instruction lowering
-7. `FrameLowering.cpp`: stack frame, prologue/epilogue
-8. `AsmPrinter.cpp`: assembly text emission
+### LLVM Backend — 实现顺序
+
+1. `RegisterInfo.td`：register class、alias、reserved register
+2. `InstrInfo.td`：全部 instruction definition 与 encoding
+3. `CallingConv.td`：argument/return register 规则
+4. `SchedModel.td`：各 instruction class latency/throughput
+5. `TargetMachine.cpp`：entry point、subtarget selection
+6. `ISelDAGToDAG.cpp`：SelectionDAG → machine instruction lowering
+7. `FrameLowering.cpp`：stack frame、prologue/epilogue
+8. `AsmPrinter.cpp`：assembly text emission
 
 ### Testing per Component
-- TableGen: `llvm-tblgen` compiles .td without errors
-- Codegen: `llc` compiles C snippets; verify .s output manually
-- MC layer: `llvm-mc --show-encoding` verifies instruction encoding
+- TableGen：`llvm-tblgen` 编译 .td 必须 0 error
+- Codegen：`llc` 编译 C snippet，并人工检查 .s
+- MC layer：`llvm-mc --show-encoding` 验证 instruction encoding
 
 ### QoR Metrics to Evaluate
-- All ISA instruction classes: lowerable from LLVM IR
-- Calling convention: function call round-trip test passes
-- No illegal instructions in generated assembly
-- Basic integer test program: compiles, links, executes on ISS
+- 所有 ISA instruction class 均可从 LLVM IR lower
+- Calling convention function-call round trip 通过
+- Generated assembly 中无 illegal instruction
+- 基础 integer test program 可 compile/link，并在 ISS 正确执行
 
 ### Common Issues & Fixes
 | Issue | Fix |
-|-------|-----|
-| TableGen pattern not matching | Add explicit `Pat<>` with matching operand types |
-| Stack corrupt | Verify prologue saves all callee-saved regs |
-| Calling convention mismatch | Cross-check CCAssignToReg vs ABI spec |
+|---|---|
+| TableGen pattern 不匹配 | 添加 operand type 匹配的显式 `Pat<>` |
+| Stack corruption | 检查 prologue 是否保存全部 callee-saved register |
+| Calling convention mismatch | 对照 ABI spec 检查 CCAssignToReg |
 
 ### Output Required
-- Complete LLVM backend source tree
-- Regression test files (llc lit tests)
-- Build instructions (CMake)
+- 完整 LLVM backend source tree
+- Regression test（llc lit test）
+- Build instruction（CMake）
 
 ---
 
 ## Stage: assembler_dev
 
 ### Domain Rules
-1. LLVM MC layer provides assembler via .td instruction definitions
-2. For every instruction: encode-decode round-trip test
-3. Define all ELF relocation types: `R_<ARCH>_*`
-4. Directives: `.section`, `.global`, `.type`, `.size`, `.align` all working
-5. DWARF: verify `.debug_info` emitted for a C function (needed for GDB)
-6. Branch offsets: verify PC-relative encoding for forward and backward branches
-7. Immediate ranges: verify truncation and sign-extension at instruction boundaries
+1. LLVM MC layer 通过 .td instruction definition 提供 assembler。
+2. 每条 instruction 都做 encode/decode round-trip test。
+3. 定义所有 ELF relocation type：`R_<ARCH>_*`。
+4. `.section`、`.global`、`.type`、`.size`、`.align` 等 directive 必须可用。
+5. 验证 C function 能生成 `.debug_info`，确保 GDB 所需 DWARF 存在。
+6. 验证 forward/backward branch 的 PC-relative encoding。
+7. 在 instruction 边界验证 immediate range、truncation、sign extension。
 
 ### QoR Metrics to Evaluate
-- All instructions: encode-decode round-trip passes
-- All relocation types: defined and tested
-- ELF output: readable by `readelf -a`
-- DWARF: basic debug info emitted
+- 所有 instruction encode/decode round-trip PASS
+- 所有 relocation type 已定义并测试
+- ELF 可被 `readelf -a` 正常读取
+- 基础 DWARF debug info 正确生成
 
 ### Output Required
-- Assembler integrated in LLVM MC layer
-- Encoding test suite (one test per instruction format)
+- 集成到 LLVM MC 的 assembler
+- 每种 instruction format 的 encoding test
 - Relocation definition table
 
 ---
@@ -156,6 +153,7 @@ toolchain no software can run on the designed chip.
 ## Stage: linker_config
 
 ### Linker Script Template
+
 ```ld
 MEMORY {
   FLASH (rx)  : ORIGIN = 0x00000000, LENGTH = 512K
@@ -171,51 +169,51 @@ SECTIONS {
 ```
 
 ### Domain Rules
-1. Memory regions must match chip memory map exactly
-2. Startup code (`crt0.S`): copy `.data` LMA→VMA; zero `.bss`; call `main()`
-3. Stack defined via linker symbol `__stack_top`; size configurable at link time
-4. All relocation types from assembler stage must be handled
-5. Verify: bare-metal binary links, loads, executes from reset vector
+1. Memory region 必须与芯片 memory map 完全一致。
+2. Startup code（`crt0.S`）：复制 `.data` LMA→VMA、清零 `.bss`、调用 `main()`。
+3. Stack 通过 linker symbol `__stack_top` 定义，size 可在 link 时配置。
+4. Assembler stage 定义的所有 relocation type 都必须被支持。
+5. Bare-metal binary 必须可 link、load，并从 reset vector 执行。
 
 ### QoR Metrics to Evaluate
-- Binary links without undefined symbols
-- `.data` initialised correctly at runtime
-- `.bss` zeroed at startup
-- Stack pointer: correct value at entry
+- Link 时无 undefined symbol
+- Runtime 下 `.data` 初始化正确
+- Startup 时 `.bss` 清零
+- Entry 时 stack pointer 正确
 
 ### Output Required
-- Linker scripts per memory configuration
-- Startup code (crt0.S)
-- Linker configuration documentation
+- 每种 memory configuration 的 linker script
+- Startup code（crt0.S）
+- Linker configuration 文档
 
 ---
 
 ## Stage: runtime_libs
 
 ### Required Libraries
-| Library | Contents | Source |
-|---------|----------|--------|
-| compiler-rt | Integer multiply/divide, soft-float | LLVM |
-| newlib/picolibc | C standard library (bare-metal) | Port |
+| Library | 内容 | 来源 |
+|---|---|---|
+| compiler-rt | Integer multiply/divide、soft-float | LLVM |
+| newlib/picolibc | Bare-metal C standard library | Port |
 | libstdc++/libc++ | C++ standard library | LLVM/GCC |
 | libm | Math library | newlib |
 
 ### Porting newlib
-1. Implement syscall stubs: `_write`, `_read`, `_sbrk`, `_exit`, `_close`
-2. `_sbrk`: heap using `__heap_start`/`__heap_end` linker symbols
-3. `_write`: route to UART or semihosting for debug output
-4. C++ global constructors: add `.init_array` section to linker script
+1. 实现 syscall stub：`_write`、`_read`、`_sbrk`、`_exit`、`_close`
+2. `_sbrk`：基于 `__heap_start` / `__heap_end` linker symbol 管理 heap
+3. `_write`：调试时输出到 UART 或 semihosting
+4. C++ global constructor：在 linker script 加 `.init_array`
 
 ### QoR Metrics to Evaluate
-- `printf`, `malloc`, `memcpy`, `strlen`: all functional
-- Soft-float: bit-exact results vs IEEE 754 (if no HW FPU)
-- Heap: no corruption under stress allocation/free test
-- C++ constructors: called before `main()`
+- `printf`、`malloc`、`memcpy`、`strlen` 正常
+- 无 HW FPU 时，soft-float 与 IEEE 754 bit-exact
+- Stress allocation/free 下 heap 无 corruption
+- C++ constructor 在 `main()` 前调用
 
 ### Output Required
-- Ported and compiled runtime libraries
-- Syscall stub implementations
-- Library test results
+- 已移植并编译的 runtime library
+- Syscall stub
+- Library test result
 
 ---
 
@@ -223,44 +221,44 @@ SECTIONS {
 
 ### Validation Tiers
 | Tier | Pass Criteria |
-|------|--------------|
-| Smoke (hello world) | 100% |
-| Unit (per-instruction asm tests) | 100% |
-| Compiler (C feature tests) | ≥ 99% |
-| Runtime (C library tests) | ≥ 99% |
-| Application (representative workloads) | Correct output |
-| Performance | Within 10% of target |
+|---|---|
+| Smoke（hello world） | 100% |
+| Unit（逐 instruction asm test） | 100% |
+| Compiler（C feature test） | ≥99% |
+| Runtime（C library test） | ≥99% |
+| Application（代表性 workload） | 输出正确 |
+| Performance | 与 target 相差 ≤10% |
 
 ### QoR Metrics to Evaluate
-- Compiler regression: ≥ 99% pass
-- Runtime tests: ≥ 99% pass
-- Application workloads: correct output vs golden
-- No miscompilation (wrong output = P0 blocker)
+- Compiler regression ≥99%
+- Runtime test ≥99%
+- Application workload 与 golden output 一致
+- Miscompilation 数量为 0；wrong output 属于 P0 blocker
 
 ### Output Required
-- Regression report (per tier, pass/fail counts)
-- Miscompilation root cause (if any)
-- Performance comparison vs target
+- 按 tier 的 regression pass/fail report
+- 任一 miscompilation 的 root cause
+- 与 target 的 performance comparison
 
 ---
 
 ## Stage: toolchain_signoff
 
 ### Sign-off Checklist
-- [ ] Compiler: generates correct code for custom ISA
-- [ ] Assembler: encodes all instructions correctly
-- [ ] Linker: correct scripts for all memory configurations
-- [ ] Runtime: libgcc/compiler-rt, newlib, libm all pass tests
-- [ ] Binutils: objdump, readelf, nm, objcopy work for target
-- [ ] Debugger: GDB or LLDB with target support functional
-- [ ] ISS: instruction-set simulator available
-- [ ] All regression tiers: PASS
-- [ ] Documentation: ABI spec, getting started guide, known issues
+- [ ] Compiler 可为 custom ISA 生成正确代码
+- [ ] Assembler 可正确 encode 所有 instruction
+- [ ] Linker 对全部 memory configuration 有正确 script
+- [ ] libgcc/compiler-rt、newlib、libm 全部通过
+- [ ] objdump、readelf、nm、objcopy 支持 target
+- [ ] GDB 或 LLDB target support 可用
+- [ ] 有可用 ISS
+- [ ] 全部 regression tier PASS
+- [ ] ABI spec、getting-started guide、known issues 文档齐全
 
 ### Output Required
 - Toolchain release package
 - Validation report
-- ABI specification (final)
+- 最终 ABI specification
 - Known issues list
 
 ---
@@ -268,17 +266,18 @@ SECTIONS {
 ## Memory
 
 ### Write on stage completion
-After each stage completes (regardless of whether an orchestrator session is active),
-write or overwrite one JSON record in `memory/compiler/experiences.jsonl` keyed by
-`run_id`. This ensures data is persisted even if the flow is interrupted or called
-without full orchestrator context.
+每个 stage 完成后，以 `run_id` 为键写入/覆盖
+`memory/compiler/experiences.jsonl` 中的一条 JSON record。
+即使流程中断或单独调用 stage，也能持久化。
 
-Use `run_id` = `compiler_<YYYYMMDD>_<HHMMSS>` (set once at flow start; reuse on each
-stage update). Every JSON record written must include a top-level `"run_id"` field
-whose value matches this key — this is what makes overwrites unambiguous. Set
-`signoff_achieved: false` until the final sign-off stage completes.
-### Run state (write before first stage, update after each stage)
-Write `memory/compiler/run_state.md` as the **first action** before launching any tool:
+`run_id = compiler_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。
+每条 JSON record 顶层都必须包含匹配的 `run_id`，最终 sign-off 前保持
+`signoff_achieved:false`。
+
+### Run state
+启动任何工具前第一步写
+`memory/compiler/run_state.md`：
+
 ```markdown
 run_id:      compiler_<YYYYMMDD>_<HHMMSS>
 design_name: <design>
@@ -286,11 +285,10 @@ tool:        <primary tool>
 start_time:  <ISO-8601>
 last_stage:  <first stage name>
 ```
-Update `last_stage` after each stage completes. This file lets wakeup-loop prompts
-and resumed sessions identify the correct run without relying on in-memory state.
-Create the file and parent directories if they do not exist.
+
+每个 stage 完成后更新 `last_stage`。文件或父目录不存在时创建。
 
 ### Optional: claude-mem index
-If `mcp__plugin_ecc_memory__add_observations` is available in this session, emit each
-applied fix as an observation to entity `chip-design-compiler-fixes` after writing to
-`experiences.jsonl`. Skip silently if the tool is absent — JSONL is the canonical record.
+如果当前 session 提供 `mcp__plugin_ecc_memory__add_observations`，
+在写 experiences 后把 applied fix 作为 observation 写入
+`chip-design-compiler-fixes`。工具不存在时静默跳过，JSONL 是 canonical record。
