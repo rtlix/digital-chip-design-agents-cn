@@ -1,22 +1,16 @@
 #!/usr/bin/env python3
 """
-mcp-memory.py — MCP stdio server exposing semantic/keyword experience search.
+mcp-memory.py —— 暴露语义/关键词 experience 搜索能力的 MCP stdio Server。
 
-Implements MCP protocol version 2024-11-05 over stdio (JSON-RPC 2.0,
-newline-delimited), mirroring the protocol scaffolding of ``mcp-adapter.py``.
-Unlike the tool adapter, this server does its work in-process by importing
-``tools/experience_search.py`` rather than spawning a shell wrapper.
+通过 stdio 实现 MCP protocol 2024-11-05（JSON-RPC 2.0，每行一个消息），协议骨架与 ``mcp-adapter.py`` 保持一致。
+与 tool adapter 不同，本 Server 直接在进程内导入 ``tools/experience_search.py`` 完成工作，不再启动 shell wrapper。
 
-Exposes a single tool, ``query_experiences``, that ranks past experience
-records in ``memory/<domain>/experiences.jsonl`` by relevance to a query and
-returns a compact JSON result (ranked records + score + matched terms + which
-backend ran + whether it fell back to keyword search).
+仅暴露一个 ``query_experiences`` 工具：按 query 相关性对 ``memory/<domain>/experiences.jsonl`` 中的历史 experience record 排序，并返回紧凑 JSON（排序后的记录、score、matched terms、实际 backend，以及是否回退到 keyword search）。
 
-Usage:
+用法：
     python3 mcp-memory.py [--memory-root PATH] [--version 1.0.0]
 
-All debug/status output goes to stderr so it never corrupts the MCP protocol
-stream on stdout.
+所有 debug/status 输出都写到 stderr，避免污染 stdout 上的 MCP protocol stream。
 """
 
 from __future__ import annotations
@@ -27,8 +21,8 @@ import json
 import sys
 from pathlib import Path
 
-# tools/experience_search.py is the source of truth for ranking + the memory
-# root resolver. plugins/infrastructure/tools/mcp-memory.py -> repo root is parents[3].
+# tools/experience_search.py 是 ranking 与 Memory-root resolver 的唯一可信实现。
+# plugins/infrastructure/tools/mcp-memory.py -> repo root 为 parents[3]。
 REPO_ROOT = Path(__file__).resolve().parents[3]
 _SEARCH_PATH = REPO_ROOT / "tools" / "experience_search.py"
 
@@ -38,7 +32,7 @@ _spec.loader.exec_module(experience_search)
 
 
 # ---------------------------------------------------------------------------
-# MCP protocol helpers (same shape as mcp-adapter.py)
+# MCP protocol 辅助函数（结构与 mcp-adapter.py 相同）
 # ---------------------------------------------------------------------------
 
 def _send(msg: dict) -> None:
@@ -64,15 +58,15 @@ def _input_schema() -> dict:
             "domain": {
                 "type": "string",
                 "enum": list(experience_search.VALID_DOMAINS),
-                "description": "Domain to search (e.g. synthesis, pd, sta)",
+                "description": "要搜索的 domain（例如 synthesis、pd、sta）",
             },
             "query": {
                 "type": "string",
-                "description": "Natural-language query, e.g. 'what fixed WNS on sky130'",
+                "description": "自然语言 query，例如“sky130 的 WNS 以前是怎么修好的”",
             },
             "filters": {
                 "type": "object",
-                "description": "Optional exact-match pre-filters",
+                "description": "可选的精确匹配预过滤条件",
                 "properties": {
                     "design_name": {"type": "string"},
                     "pdk": {"type": "string"},
@@ -80,10 +74,10 @@ def _input_schema() -> dict:
                 },
             },
             "limit": {"type": "integer", "default": 5,
-                      "description": "Max results to return"},
+                      "description": "最多返回多少条结果"},
             "min_records_threshold": {
                 "type": "integer", "default": 50,
-                "description": "Below this domain record count, embedding falls back to keyword",
+                "description": "该 domain 的 record 数低于此阈值时，embedding 回退到 keyword",
             },
             "backend": {
                 "type": "string",
@@ -119,20 +113,20 @@ def _handle_call(arguments: dict, memory_root: str | None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Main server loop
+# 主 Server 循环
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="MCP stdio server for experience semantic/keyword search")
+        description="用于 experience 语义/关键词搜索的 MCP stdio Server")
     parser.add_argument("--memory-root", default=None,
-                        help="Explicit memory root (default: auto-detect)")
+                        help="显式指定 Memory root（默认自动检测）")
     parser.add_argument("--version", default="1.0.0")
     args = parser.parse_args()
 
     description = (
-        "Search past chip-design experience records by similarity; returns "
-        "ranked prior fixes with scores, matched terms, and the backend used")
+        "按相似度搜索历史芯片设计 experience record；返回 "
+        "按相关性排序的历史修复、score、matched terms 以及实际使用的 backend")
 
     print(f"[mcp-memory] starting (memory_root={args.memory_root or 'auto'})",
           file=sys.stderr)
