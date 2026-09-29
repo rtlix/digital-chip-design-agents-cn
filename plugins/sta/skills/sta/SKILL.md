@@ -1,152 +1,137 @@
 ---
 name: sta
 description: >
-  Static timing analysis — multi-corner constraint validation, setup and hold
-  analysis, timing exception review, and ECO guidance for closure. Use when
-  running timing analysis on a design, reviewing timing violations, guiding
-  ECO fixes, or performing timing sign-off for tape-out.
+  静态时序分析——多 corner 约束验证、setup/hold 分析、timing exception 审查、
+  ECO closure 指导以及 tape-out timing sign-off。适用于运行 STA、分析 timing violation、
+  指导 ECO，或执行最终时序签核。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: Static Timing Analysis (STA)
+# Skill: Static Timing Analysis (STA)（静态时序分析）
 
 ## Invocation
-
-When this skill is loaded and a user presents a timing analysis task, **do not
-execute stages directly**. Immediately spawn the
-`digital-chip-design-agents:sta-orchestrator` agent and pass the full user
-request and any available context to it. The orchestrator enforces the stage
-sequence, loop-back rules, and sign-off criteria defined below.
-
-Use the domain rules in this file only when the orchestrator reads this skill
-mid-flow for stage-specific guidance, or when the user asks a targeted reference
-question rather than requesting a full flow execution.
+用户提出 timing analysis 任务时，**不要直接执行 stage**。立即启动
+`digital-chip-design-agents:sta-orchestrator`，传入完整请求和上下文。
+仅当 Orchestrator 中途读取本 Skill 获取 stage guidance，或用户只问局部参考问题时，
+才直接使用这里的规则。
 
 ## Pre-run Context
-
-Before executing or advising on **any** stage, read the following files if they exist:
-
-1. `memory/sta/knowledge.md` — known failure patterns, successful tool flags, PDK/tool quirks.
-   Incorporate its guidance into every stage decision. If absent, proceed without it.
-2. `memory/sta/run_state.md` — current run identity (`run_id`, `design_name`, `tool`,
-   `last_stage`). Use this to resume correctly after interruption. If absent, a new run
-   is starting; the orchestrator will create this file before the first stage.
-
-This pre-run read applies whether this skill is loaded by a user or called by the
-orchestrator mid-flow. It ensures the fix database is consulted before any diagnosis step.
+任何 stage 前，如存在则读取：
+1. `memory/sta/knowledge.md`
+2. `memory/sta/run_state.md`
+应用已知 failure pattern、有效 tool flag、PDK/tool quirk 与恢复信息。
 
 ## Purpose
-Multi-corner, multi-mode timing analysis, exception review, ECO-guided closure,
-and timing sign-off. WNS ≥ 0 and TNS = 0 at all corners required for tape-out.
+执行 multi-corner、multi-mode STA，审查 timing exception，指导 ECO closure，
+并完成 timing sign-off。Tape-out 要求全部 required corner 满足
+WNS ≥ target 且 TNS = target（通常 0）。
 
 ---
 
 ## Supported EDA Tools
 
 ### Open-Source
-- **OpenSTA** (`sta`) — standalone open-source STA; runs tcl scripts in batch mode (see sequential flow note below)
-- **OpenROAD STA subsystem** (`openroad -no_init`) — STA within the OpenROAD PD flow; runs sequentially via tcl script
+- **OpenSTA** (`sta`) —— standalone STA，batch TCL
+- **OpenROAD STA subsystem** (`openroad -no_init`) —— OpenROAD PD flow 内的 STA
 
 ### Proprietary
-- **Synopsys PrimeTime** (`pt_shell`) — gold-standard multi-corner STA and power analysis
-- **Cadence Tempus** (`tempus`) — concurrent multi-mode multi-corner STA with ECO guidance
+- **Synopsys PrimeTime** (`pt_shell`)
+- **Cadence Tempus** (`tempus`)
 
-### Sequential Flow Log Review (OpenSTA / OpenROAD STA)
+### Sequential Flow Log Review
+OpenSTA/OpenROAD STA 在 batch mode 按 TCL 命令顺序执行；没有可中途查询的交互 prompt。
+完成后必须解析 log：
 
-OpenSTA (`sta`) and the OpenROAD STA subsystem (`openroad -no_init`) execute tcl script
-commands sequentially. When run in batch mode the agent must parse the output log to
-extract timing results — there is no interactive prompt to query mid-run.
+- `report_timing` → WNS、critical path
+- `report_tns` → 各 corner TNS
+- `report_clock_skew` → clock skew / insertion delay
+- `check_timing` → missing constraint、unconstrained endpoint、loop
 
-**Key log patterns to parse after run completion:**
-- `report_timing` output → extract WNS (worst negative slack) and critical path
-- `report_tns` output → extract TNS (total negative slack) per corner
-- `report_clock_skew` output → global skew and insertion delay per clock group
-- `check_timing` → missing constraints, unconstrained endpoints, loops
-
-**Batch invocation:**
-```
+典型启动：
+```bash
 opensta -no_splash -exit timing_check.tcl > sta.log 2>&1
-# or via OpenROAD:
+# 或
 openroad -no_init -exit sta.tcl > sta.log 2>&1
 ```
 
-Parse `sta.log` after completion. Apply loop-back rules (ECO guidance stage) if
-setup/hold violations are found.
+完成后解析 `sta.log`。如果发现 setup/hold violation，按 loop-back 进入 ECO guidance。
 
 ---
 
 ## Stage: constraint_validation
 
-### Validation Checks
-1. All clocks defined with correct period and waveform
-2. All generated clocks: correct source and division/multiplication
-3. No unconstrained paths: verify with `report_timing -unconstrained`
-4. CDCs: correct false_path or max_delay applied
-5. Multicycle paths: both `–setup N` and `–hold 1` specified
-6. Input/output delays: match system-level timing budget
-7. Timing exceptions: not overly broad (masking real violations)
-8. Propagated vs ideal clocks: correct mode (ideal pre-CTS, propagated post-CTS)
+### Domain Rules
+1. 所有 primary clock 都必须定义正确 period/waveform。
+2. 所有 generated clock 的 source 与 divide/multiply 关系正确。
+3. 不允许 unconstrained path，使用 `report_timing -unconstrained` 验证。
+4. CDC path 使用正确的 false_path 或 max_delay。
+5. Multicycle path 同时设置 `-setup N` 与 `-hold 1`。
+6. Input/output delay 与系统级 timing budget 一致。
+7. Timing exception 不得过宽，不能掩盖真实 violation。
+8. Pre-CTS 使用 ideal clock，post-CTS 使用 propagated clock。
 
 ### Common Constraint Errors
-| Error | Consequence |
-|-------|------------|
-| MCP without hold correction | Hold violations introduced |
-| False path too broad | Real timing issues masked |
-| Generated clock missing | Path unconstrained |
-| Wrong clock period | Over/under-constraining |
+| 错误 | 后果 |
+|---|---|
+| MCP 没有 hold correction | 引入 hold violation |
+| False path 过宽 | 掩盖真实 timing issue |
+| Generated clock 缺失 | Path unconstrained |
+| Clock period 错误 | Over/under constraint |
 
 ### QoR Metrics to Evaluate
-- 0 unconstrained paths
-- 0 clock definition errors
-- All exceptions reviewed and documented
+- Unconstrained path = 0
+- Clock definition error = 0
+- 所有 exception 已审查并有文档
 
 ### Output Required
 - Constraint QA report
-- Clock summary (all clocks, sources, periods)
-- Exception list with justifications
+- Clock summary
+- Exception list + justification
 
 ---
 
 ## Stage: multi_corner_analysis
 
 ### Required Corner Matrix
-Corners are driven by `design_state.constraints.pvt_corners[]`. The table below shows the
-default corners used when `pvt_corners` is absent or contains no entries with non-null V/T:
+Corner 来自 `design_state.constraints.pvt_corners[]`。
+如果未提供有效 V/T，则下表只是文档化 fallback；但当前 Orchestrator 的 required constraint
+规则会在入口阻止缺少有效 PVT 的 sign-off flow。
 
 | Mode | Setup Corner | Hold Corner |
-|------|-------------|-------------|
-| Functional | SS/0.9V/125°C (default) | FF/1.1V/−40°C (default) |
-| Test (at-speed) | SS/0.9V/125°C (default) | FF/1.1V/25°C (default) |
-| Low Power | SS/0.9V/125°C (default) | FF/1.1V/25°C (default) |
+|---|---|---|
+| Functional | SS/0.9V/125°C（默认示例） | FF/1.1V/−40°C（默认示例） |
+| Test (at-speed) | SS/0.9V/125°C | FF/1.1V/25°C |
+| Low Power | SS/0.9V/125°C | FF/1.1V/25°C |
 
-When `pvt_corners` is populated, use every entry with `"checks": ["setup"]` for setup and
-every entry with `"checks": ["hold"]` for hold; the defaults above are the fallback.
+有 `pvt_corners` 时：
+- `checks:["setup"]` 的全部 entry 用于 setup
+- `checks:["hold"]` 的全部 entry 用于 hold
 
 ### POCV/AOCV Application
-1. AOCV: apply depth and location-based derating (pre-POCV designs)
-2. POCV: apply parametric variation (sigma-based, per foundry agreement)
-3. Clock uncertainty: pre-CTS ideal values → post-CTS propagated
+1. AOCV：按 logic depth 与 location derate。
+2. POCV：按 foundry agreement 使用 sigma-based variation。
+3. Clock uncertainty：pre-CTS ideal → post-CTS propagated。
 
 ### Path Analysis Priority
-1. WNS path per corner (most critical single path)
-2. TNS contribution (how many paths fail and by how much)
-3. CDC paths with max_delay constraints
-4. At-speed paths: launch/capture pair STA
+1. 每 corner 的 WNS path
+2. TNS contribution
+3. 带 max_delay 的 CDC path
+4. At-speed launch/capture pair
 
 ### QoR Metrics — Sign-off Targets
 | Metric | Target |
-|--------|--------|
-| Setup WNS | ≥ `design_state.constraints.timing.wns_ns_target` (default: 0) all corners |
-| Setup TNS | = `design_state.constraints.timing.tns_ns_target` (default: 0) all corners |
-| Hold WNS | ≥ `design_state.constraints.timing.wns_ns_target` (default: 0) all corners |
-| Hold TNS | = `design_state.constraints.timing.tns_ns_target` (default: 0) all corners |
+|---|---|
+| Setup WNS | ≥ `timing.wns_ns_target`，全部 corner |
+| Setup TNS | = `timing.tns_ns_target`，全部 corner |
+| Hold WNS | ≥ `timing.wns_ns_target`，全部 corner |
+| Hold TNS | = `timing.tns_ns_target`，全部 corner |
 
 ### Output Required
-- Timing report per corner (setup and hold)
-- WNS/TNS summary table across all corners
+- 每 corner setup/hold timing report
+- 全 corner WNS/TNS summary
 - Top 100 violating paths
 
 ---
@@ -154,47 +139,46 @@ every entry with `"checks": ["hold"]` for hold; the defaults above are the fallb
 ## Stage: path_analysis
 
 ### Domain Rules
-1. Group failing paths by root cause: long wire, weak driver, logic depth, high-Vt
-2. Separate setup violations from hold violations — different fix strategies
-3. At-speed violations: check launch/capture pair timing explicitly
-4. False paths: verify every exception is still valid after PD changes
-5. Reconvergent fanout: flag paths with reconvergence for careful ECO planning
+1. 按 root cause 分组：long wire、weak driver、logic depth、high-Vt。
+2. Setup 与 hold violation 分开处理。
+3. At-speed violation 显式检查 launch/capture pair。
+4. PD 改动后重新验证全部 false path。
+5. Reconvergent fanout path 要单独标记，避免 ECO 引入副作用。
 
 ### Output Required
-- Failing path analysis (root cause per path group)
-- Paths requiring ECO vs paths requiring SDC correction
+- Failing path root-cause report
+- 需要 ECO 的 path 与需要 SDC 修正的 path 分类
 
 ---
 
 ## Stage: exception_review
 
 ### Domain Rules
-1. Review every timing exception for correctness and scope:
-   - `set_false_path`: verify the path is truly non-functional (not just inconvenient)
-   - `set_multicycle_path`: verify both `-setup N` and `-hold 1` are set correctly
-   - `set_max_delay`: verify value matches system-level timing budget
-2. Overly broad exceptions: any exception matching > 1% of all paths requires architect approval
-3. Exceptions masking real violations: revoke immediately and re-run path analysis
-4. Every exception must have a documented justification (design intent, async crossing, test mode)
-5. Post-ECO exceptions: verify any new exceptions added after ECO are still valid
+1. 审查每个 exception 的正确性和 scope：
+   - `set_false_path`：确认路径确实非 functional
+   - `set_multicycle_path`：确认 setup/hold 配套正确
+   - `set_max_delay`：值与系统 timing budget 一致
+2. 匹配超过全部 path 1% 的 exception 需要 architect approval。
+3. 掩盖真实 violation 的 exception 立即撤销并重跑 path analysis。
+4. 每个 exception 都必须记录 design intent / async crossing / test mode 等理由。
+5. ECO 后新增 exception 也必须重新审查。
 
 ### Common Exception Errors
-
-| Error | Consequence |
-|-------|------------|
-| `set_false_path` on functional CDC | Real metastability risk hidden |
-| MCP without hold correction | Hold violations introduced silently |
-| Exception too broad (glob match) | Unintended paths unconstrained |
-| Expired exception (removed logic) | Stale SDC — may mask other issues |
+| 错误 | 后果 |
+|---|---|
+| Functional CDC 上 set_false_path | 掩盖 metastability 风险 |
+| MCP 缺 hold correction | 静默引入 hold violation |
+| Glob 过宽 | 非预期 path 被取消约束 |
+| 已失效 exception | stale SDC 可能掩盖其他问题 |
 
 ### QoR Metrics to Evaluate
-- 0 exceptions without documented justification
-- 0 overly broad exceptions (flagged for architect review)
-- Exception list reviewed and signed off before ECO guidance begins
+- 无缺 justification 的 exception
+- 无未经批准的 overly broad exception
+- ECO guidance 前 exception list 已 sign-off
 
 ### Output Required
-- Exception audit report (valid / revoked / needs-approval per exception)
-- Revised SDC with invalid exceptions removed
+- Exception audit report
+- Revised SDC
 - Exception sign-off record
 
 ---
@@ -204,34 +188,34 @@ every entry with `"checks": ["hold"]` for hold; the defaults above are the fallb
 ### ECO Decision Tree
 ```
 Setup violation:
-  Logic depth > target?       → Retime / add pipeline stage
-  Long wire (> 500μm)?        → Buffer insertion / reroute on upper metal
-  Weak driver?                → Upsize driver cell
-  High-Vt on critical path?   → Swap to SVT or LVT
-  Reconvergent fanout?        → Clone cell / split net
+  Logic depth 过大?        → Retime / add pipeline stage
+  Long wire (>500 μm)?     → Buffer / upper-metal reroute
+  Weak driver?             → Upsize cell
+  High-Vt critical path?   → Swap SVT/LVT
+  Reconvergent fanout?     → Clone cell / split net
 
 Hold violation:
-  Skew-induced (post-CTS)?    → Useful skew / targeted delay buffer
-  Short path (< 1 cycle)?     → Insert HVT delay buffer
-  New path from ECO?          → Targeted hold buffer at sink register
+  Skew-induced post-CTS?   → Useful skew / targeted delay buffer
+  Short path?              → HVT delay buffer
+  New path from ECO?       → Sink-side targeted hold buffer
 ```
 
 ### ECO Rules
-1. Minimum ECO footprint: fewest cell changes to fix the most violations
-2. Prefer resize over add new cell (less routing impact)
-3. ECO cells: place in pre-reserved ECO sites or free standard cell rows
-4. Re-run STA after every ECO batch — never accumulate blind
-5. LEC after every ECO: verify equivalence preserved
-6. Never introduce new hold violations while fixing setup (and vice versa)
+1. 以最少 cell change 修最多 violation。
+2. 优先 resize，减少 routing impact。
+3. ECO cell 使用 reserved ECO site/free row。
+4. 每批 ECO 后重新跑 STA，不能累积 blind ECO。
+5. 每批 ECO 后必须 LEC。
+6. Fix setup 时不能引入新 hold，反之亦然。
 
 ### QoR Metrics to Evaluate
-- ECO efficiency: violations fixed per change
-- ECO cell count: < 2% of total cells (flag if exceeded — upstream issue)
-- Post-ECO LEC: EQUIVALENT
+- ECO efficiency：每个 change 修复的 violation 数
+- ECO cell count < 总 cell 的 2%，超过则视为上游问题
+- Post-ECO LEC = EQUIVALENT
 
 ### Output Required
-- ECO change list (cell, action, justification)
-- Pre/post ECO timing comparison
+- ECO change list
+- Pre/post timing comparison
 - ECO LEC result
 
 ---
@@ -239,50 +223,44 @@ Hold violation:
 ## Stage: sta_signoff
 
 ### Sign-off Checklist
-- [ ] Setup WNS ≥ `design_state.constraints.timing.wns_ns_target` (default: 0) at all corners
-- [ ] Setup TNS = `design_state.constraints.timing.tns_ns_target` (default: 0) at all corners
-- [ ] Hold WNS ≥ `design_state.constraints.timing.wns_ns_target` (default: 0) at all corners
-- [ ] Hold TNS = `design_state.constraints.timing.tns_ns_target` (default: 0) at all corners
-- [ ] All exceptions valid and documented
-- [ ] POCV/AOCV applied per foundry spec
-- [ ] LEC clean post all ECOs
+- [ ] 所有 corner Setup WNS ≥ target
+- [ ] 所有 corner Setup TNS = target
+- [ ] 所有 corner Hold WNS ≥ target
+- [ ] 所有 corner Hold TNS = target
+- [ ] 所有 exception 合法且有文档
+- [ ] POCV/AOCV 按 foundry spec 应用
+- [ ] 所有 ECO 后 LEC clean
 
 ### Output Required
-- Sign-off timing report (all corners, all modes)
-- ECO change summary
+- All-corner/all-mode sign-off timing report
+- ECO summary
 - Timing sign-off record
 
 ---
 
 ## Constraint Validation
+进入 `constraint_validation` 时 required：
+- `constraints.clock.clk_mhz`
+- 至少一个 `voltage_v/temp_c` 非 null 的 `constraints.pvt_corners`
 
-See `plugins/meta/skills/pipeline-orchestration/SKILL.md` §Constraints Schema for the authoritative schema and stage-entry validation rule.
-
-**Required at entry (`constraint_validation`) — hard-fail if missing:**
-- `constraints.clock.clk_mhz` — clock frequency used to interpret timing results
-- `constraints.pvt_corners` — at least one entry with non-null `voltage_v` and `temp_c`; missing or invalid entries should hard-fail during `constraint_validation`
-
-**Optional (schema defaults apply when absent):**
-- `constraints.timing.wns_ns_target` (default: 0) — WNS sign-off threshold
-- `constraints.timing.tns_ns_target` (default: 0) — TNS sign-off threshold
-- `constraints.timing.skew_ps_max` (default: 100) — CTS skew limit
-- `constraints.timing.transition_ps_max` (default: 200) — max clock transition
-- `constraints.timing.insertion_delay_ps_max` (default: 500) — max insertion delay
+Optional：
+- `timing.wns_ns_target` 默认 0
+- `timing.tns_ns_target` 默认 0
+- `timing.skew_ps_max` 默认 100
+- `timing.transition_ps_max` 默认 200
+- `timing.insertion_delay_ps_max` 默认 500
 
 ---
 
 ## Memory
 
 ### Write on stage completion
-After each stage completes (regardless of whether an orchestrator session is active),
-write or overwrite one JSON record in `memory/sta/experiences.jsonl` keyed by
-`run_id`. This ensures data is persisted even if the flow is interrupted or called
-without full orchestrator context.
+每 stage 后按 `run_id` upsert `memory/sta/experiences.jsonl`。
+`run_id = sta_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用；
+最终 sign-off 前 `signoff_achieved:false`。
 
-Use `run_id` = `sta_<YYYYMMDD>_<HHMMSS>` (set once at flow start; reuse on each
-stage update). Set `signoff_achieved: false` until the final sign-off stage completes.
-### Run state (write before first stage, update after each stage)
-Write `memory/sta/run_state.md` as the **first action** before launching any tool:
+### Run state
+工具前第一步写 `memory/sta/run_state.md`：
 ```markdown
 run_id:      sta_<YYYYMMDD>_<HHMMSS>
 design_name: <design>
@@ -290,11 +268,7 @@ tool:        <primary tool>
 start_time:  <ISO-8601>
 last_stage:  <first stage name>
 ```
-Update `last_stage` after each stage completes. This file lets wakeup-loop prompts
-and resumed sessions identify the correct run without relying on in-memory state.
-Create the file and parent directories if they do not exist.
+每 stage 后更新 `last_stage`。
 
 ### Optional: claude-mem index
-If `mcp__plugin_ecc_memory__add_observations` is available in this session, emit each
-applied fix as an observation to entity `chip-design-sta-fixes` after writing to
-`experiences.jsonl`. Skip silently if the tool is absent — JSONL is the canonical record.
+若 observation 工具可用，将 applied fix 写入 `chip-design-sta-fixes`；否则跳过。
