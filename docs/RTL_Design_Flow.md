@@ -1,17 +1,17 @@
-# RTL Design Flow — Full Architecture Design
+# RTL 设计流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven RTL design flow in SystemVerilog. Covers module planning, RTL coding, linting, CDC/RDC analysis, and synthesis readiness sign-off. Takes the microarchitecture document as input and produces a synthesis-ready RTL package.
+> **目的**：AI 驱动的 SystemVerilog RTL 设计流程。覆盖 module planning、RTL coding、lint、CDC/RDC、synthesis-readiness sign-off。输入 microarchitecture 文档，输出可直接交付综合的 RTL package。
 
 ---
 
-## 1. Architecture Overview
+## 1. 架构总览
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                    RTL DESIGN ORCHESTRATOR                   │
-│  Input:  Microarch doc, interface specs, coding guidelines    │
-│  Output: Lint-clean, CDC-clean, synthesis-ready RTL          │
+│  输入：Microarch doc、interface spec、coding guideline        │
+│  输出：Lint-clean、CDC-clean、synthesis-ready RTL              │
 └────────────────────────┬─────────────────────────────────────┘
                          │
      ┌───────────────────┼───────────────────────┐
@@ -29,7 +29,7 @@
 
 ---
 
-## 2. Shared State Object
+## 2. 共享状态对象
 
 ```json
 {
@@ -59,7 +59,7 @@
 
 ---
 
-## 3. Stage Sequence & Loop-Back Logic
+## 3. Stage Sequence 与 Loop-Back
 
 ```
 [Module Planning] ──► [RTL Coding] ──► [Lint Check]
@@ -78,24 +78,24 @@
                                   │ pass
                               ▼
                        [RTL Sign-off]
-                              │ fail → back to RTL Coding
+                              │ fail → RTL Coding
                               ▼ pass
                     [Synthesis-Ready RTL Package]
 ```
 
 ### Loop-Back Rules
 
-| Failure Condition                     | Loop Back To   | Max Iterations |
-|---------------------------------------|----------------|----------------|
-| Lint errors > 0                       | RTL Coding     | 5              |
-| CDC violations (unwaived)             | RTL Coding     | 3              |
-| Synth: timing worse than -20% margin  | RTL Coding     | 2              |
-| Synth: area > 120% of estimate        | RTL Coding     | 2              |
-| Sign-off: missing coverage            | Module Planning| 1              |
+| 失败条件 | 回退到 | 最大次数 |
+|---|---|---:|
+| Lint error >0 | RTL Coding | 5 |
+| 未 waive 的 CDC violation | RTL Coding | 3 |
+| Synth timing 比 target margin 差 >20% | RTL Coding | 2 |
+| Synth area > estimate 120% | RTL Coding | 2 |
+| Sign-off 缺失模块/coverage | Module Planning | 1 |
 
 ---
 
-## 4. Skill File Specifications
+## 4. Skill 文件说明
 
 ### 4.1 `sv-rtl-planning/SKILL.md`
 
@@ -103,40 +103,41 @@
 # Skill: RTL — Module Planning
 
 ## Purpose
-Decompose the microarchitecture into a module hierarchy with
-clear interfaces before any RTL is written.
+写任何 RTL 前，先把 microarchitecture 拆成职责清晰、接口明确的 module hierarchy。
 
 ## Domain Rules
-1. Top-down decomposition: start with top-level, recurse to leaf cells
-2. Each module: single clear responsibility (SRP — single responsibility principle)
-3. Define all port lists before coding (port direction, width, type)
-4. Identify all clock domains per module; mark CDC crossings explicitly
-5. Identify all reset domains; mark synchronous vs asynchronous resets
-6. Parameterize widths and depths wherever possible
-7. No logic in top-level integration modules (wiring only)
-8. Separate datapath and control into distinct sub-modules
+1. Top-down decomposition
+2. 每 module 单一职责
+3. Coding 前冻结 port list：direction/width/type
+4. 标出每个 module 的 clock domain 和所有 CDC
+5. 标出 reset domain，同步/异步方式
+6. Width/depth 尽量参数化
+7. Top-level integration module 只 wiring，不放逻辑
+8. Datapath 与 control 尽量分模块
 
-## Module Descriptor Template (per module)
+## Module Descriptor Template
+```json
 {
   "module_name": "my_fifo",
   "purpose": "Async FIFO for CDC crossing",
   "clock_domain": ["clk_a", "clk_b"],
   "reset": "arst_n (async active-low)",
   "parameters": ["DEPTH", "WIDTH"],
-  "ports": [...],
+  "ports": [],
   "sub_modules": [],
   "complexity_estimate": "LOW | MEDIUM | HIGH"
 }
+```
 
 ## QoR Metrics
-- All microarch blocks mapped to at least one module
-- All interfaces matched to port lists
-- CDC crossings explicitly annotated
+- 所有 microarch block 至少映射一个 module
+- 所有 interface 映射 port
+- CDC crossing 显式标记
 
 ## Output Required
 - Module hierarchy tree
-- Module descriptor JSON for each module
-- Interface/port list document
+- Per-module descriptor JSON
+- Interface/port document
 ```
 
 ---
@@ -147,63 +148,58 @@ clear interfaces before any RTL is written.
 # Skill: RTL — SystemVerilog Coding Standards
 
 ## Purpose
-Enforce synthesizable, readable, and maintainable RTL coding practices.
+保证 RTL 可综合、可读、可维护。
 
 ## Domain Rules — General
-1. Always use `logic` type (not `wire`/`reg` distinction)
-2. All ports explicitly typed and directioned
-3. No implicit net declarations (`default_nettype none` at top)
-4. No latches: all combinational always_comb blocks must be complete
-5. No blocking assignments in always_ff blocks
-6. No non-blocking assignments in always_comb blocks
-7. One always block per register or register group
-8. Reset all registers explicitly (synchronous preferred for ASIC)
+1. 使用 logic，不依赖 wire/reg 旧式区分
+2. Port 全部显式 type/direction
+3. `default_nettype none`，禁止 implicit net
+4. always_comb 必须完整赋值，不推 latch
+5. always_ff 不用 blocking assignment
+6. always_comb 不用 non-blocking assignment
+7. 一个 register/register-group 对应一个 always block
+8. Register 必须有明确 reset 策略
 
-## Domain Rules — Naming Conventions
-- Clocks:          clk_[domain]
-- Resets:          rst_n_[domain] (active-low) or rst_[domain]
-- Active-low:      signal_n suffix
-- Registered:      signal_q suffix
-- Combinational:   signal_d (next-state) suffix
-- Parameters:      UPPER_SNAKE_CASE
-- Modules/Signals: lower_snake_case
+## Naming Conventions
+- Clock：clk_[domain]
+- Reset：rst_n_[domain] 或 rst_[domain]
+- Active-low：_n
+- Registered：_q
+- Next-state/combinational：_d
+- Parameter：UPPER_SNAKE_CASE
+- Module/signal：lower_snake_case
 
-## Domain Rules — Synthesis Constraints
-1. No delays (#) in RTL — simulation only
-2. No initial blocks (FPGA exception)
-3. Avoid casez/casex — use unique case with explicit don't-cares
-4. Limit fan-out per net: flag if > 32 without buffering intent
-5. Pipeline registers: clearly marked with _q suffix at each stage
-6. No combinational loops (will cause synthesis tool errors)
+## Synthesis Constraints
+1. RTL 中禁止 #delay
+2. ASIC RTL 不使用 initial block
+3. 避免 casez/casex，优先 unique case
+4. Fanout >32 时必须有 buffering intent
+5. Pipeline register 用 _q 标识
+6. 禁止 combinational loop
 
-## Domain Rules — CDC
-1. Use synchronizer modules (2-FF) for all single-bit CDC crossings
-2. Use async FIFO for multi-bit CDC data paths
-3. Use gray-coded counters for pointer crossings in async FIFOs
-4. Never sample asynchronous data directly in synchronous logic
+## CDC Rules
+1. Single-bit crossing：2-FF synchronizer
+2. Multi-bit data：async FIFO/handshake
+3. Async-FIFO pointer crossing：Gray code
+4. 禁止同步逻辑直接采样 asynchronous data
 
-## Domain Rules — Power Intent (Clock Gating)
-Read `clock_power_budget` from architecture hand-off if it exists; else use
-Verilator toggle coverage to estimate activity factors.
+## Power Intent — Clock Gating
+优先读取 architecture handoff 的 `clock_power_budget`；
+不存在时可用 toggle coverage 估计 activity。
 
-1. **High gating opportunity** (α < 0.15): insert ICG cell (`CLKGATETST_X*` or
-   technology equivalent) at the outermost clock enable boundary. Explicit ICG
-   insertion at RTL is required — do not rely on synthesis inference.
-2. **Moderate gating opportunity** (0.15 ≤ α < 0.40): insert ICG at sub-block
-   level for any register file or datapath wider than 32 bits.
-3. **Always-on** (α ≥ 0.40 or documented as always-on): no ICG required; add a
-   `/* always-on: <reason> */` comment at the clock port declaration.
-4. ICG enable signal must be registered (combinational enable is a lint error).
-5. Use only library-approved cells (`CLKGATETST_*`); no behavioral clock gating.
-6. Measure `clock_gating_coverage`:
-   `coverage = (register bits behind ICG / total register bits in domain) × 100%`
-   QoR gate: ≥ 60% for high-opportunity domains; report in sign-off record.
+1. High opportunity（α<0.15）：在最外层 enable boundary 插 library ICG，不能只依赖 synthesis inference
+2. Moderate（0.15≤α<0.40）：宽度 >32 bit 的 register file/datapath 建议 sub-block ICG
+3. Always-on（α≥0.40 或有架构理由）：不强制 ICG，但在 clock port 记录原因
+4. ICG enable 必须注册，combinational enable 是 lint error
+5. 只用 library-approved ICG cell，不写 behavioral clock-gating
+6. `clock_gating_coverage = ICG 后 register bits / domain total register bits ×100%`
+   High-opportunity domain QoR gate ≥60%
 
 ## Output Required
-- RTL source files (.sv) per module
-- Self-checking assertions (SVA) per module
-- Inline comments explaining non-obvious logic
-- `clock_gating_coverage` metric per domain (appended to sign-off record)
+- 每 module RTL .sv
+- Self-checking SVA
+- 非显然逻辑 inline comment
+- Per-domain clock_gating_coverage
 ```
 
 ---
@@ -214,35 +210,32 @@ Verilator toggle coverage to estimate activity factors.
 # Skill: RTL — Lint Checking
 
 ## Purpose
-Identify coding errors, style violations, and synthesis mismatches
-before simulation or synthesis is run.
+在 simulation/synthesis 前发现 coding error、style violation 和 synthesis mismatch。
 
 ## Lint Rule Categories
-1. ERRORS (must fix): Latches, incomplete sensitivity lists, X-propagation,
-   undriven outputs, multiply-driven signals
-2. WARNINGS (review): Unused ports, unused parameters, constant conditions,
-   truncated assignments, bit-width mismatches
-3. INFO (waivable): Naming convention violations, comment coverage
+1. ERROR：latch、incomplete assignment、X propagation、undriven output、multi-driver
+2. WARNING：unused port/parameter、constant condition、truncation、bit-width mismatch
+3. INFO：naming/comment coverage，可 waive
 
-## Recommended Lint Tools
+## Recommended Tools
 - Synopsys SpyGlass
 - Cadence HAL
-- Siemens (Mentor) 0-In
-- Verilator (open source, basic)
+- Siemens 0-In
+- Verilator
 
 ## Waiver Process
-- Waivers must include: signal name, rule ID, justification, approver
-- No ERROR-level waivers without architect approval
-- All waivers logged in lint_waivers.csv
+- Waiver 必须包含 signal、rule ID、justification、approver
+- ERROR-level waiver 需要 architect approval
+- 全部 waiver 写入 lint_waivers.csv
 
 ## QoR Metrics
-- ERROR count: must be 0
-- WARNING count: review all; waive with justification
-- Lint coverage: all RTL files checked (not just top-level)
+- ERROR =0
+- WARNING 全部 review/waive
+- 全部 RTL file 都必须检查
 
 ## Output Required
-- Lint report (per file, per rule)
-- Waiver file (if applicable)
+- Lint report
+- Waiver file
 - Clean lint summary
 ```
 
@@ -254,38 +247,31 @@ before simulation or synthesis is run.
 # Skill: RTL — CDC and RDC Analysis
 
 ## Purpose
-Verify all clock domain crossings (CDC) and reset domain crossings (RDC)
-are correctly handled before synthesis.
+综合前验证全部 CDC/RDC crossing 正确处理。
 
 ## CDC Rules
-1. Every CDC crossing must use an approved synchronizer primitive
-2. Single-bit control: 2-FF synchronizer minimum
-3. Multi-bit data: async FIFO or handshake protocol
-4. Pulse crossings: pulse stretcher + synchronizer
-5. CDC violations: metastability windows, missing synchronizers,
-   reconvergent fanout without reconvergence analysis
+1. 每个 crossing 使用 approved synchronizer
+2. Single-bit control 至少 2-FF
+3. Multi-bit data 使用 async FIFO/handshake
+4. Pulse crossing 使用 pulse stretcher + synchronizer
+5. 检查 metastability、missing synchronizer、reconvergent fanout
 
 ## RDC Rules
-1. All reset domains explicitly defined
-2. Reset de-assertion: synchronous to receiving clock domain
-3. No combinational logic between reset sources
-4. Isolation: powered-down domains must have isolation cells
-5. Retention registers: correct UPF annotation
-
-## Recommended Tools
-- Synopsys SpyGlass CDC
-- Cadence JasperGold CDC
-- Mentor CDC (Questa CDC)
+1. 明确定义全部 reset domain
+2. Reset deassertion 在 receiving clock domain 同步
+3. Reset source 间禁止组合逻辑
+4. Powered-down domain 需要 isolation
+5. Retention register 的 UPF annotation 正确
 
 ## QoR Metrics
-- CDC violations: 0 unwaived
-- RDC violations: 0 unwaived
-- All clock domains verified in tool constraints file
+- CDC unwaived =0
+- RDC unwaived =0
+- Tool constraint 中全部 clock domain 都覆盖
 
 ## Output Required
 - CDC/RDC report
 - Synchronizer instance list
-- Waiver file (if applicable)
+- Waiver file
 ```
 
 ---
@@ -296,28 +282,27 @@ are correctly handled before synthesis.
 # Skill: RTL — Synthesis Readiness Check
 
 ## Purpose
-Run an early synthesis pass to identify timing, area, and
-synthesis issues before handoff to the synthesis flow.
+在正式 synthesis handoff 前做早期综合，提前发现 timing/area/synthesis 问题。
 
 ## Domain Rules
-1. Run synthesis at target frequency with typical corner
-2. Check for unmapped cells (technology library gaps)
-3. Identify critical paths for architect review
-4. Check area: compare against microarch estimate (< 120% acceptable)
-5. Check for multi-driven nets or unresolved X
-6. Identify high-fanout nets that need buffering strategy
-7. Verify all clock definitions synthesize correctly
+1. Target frequency + typical corner 综合
+2. 检查 unmapped cell
+3. Critical path 给 architect review
+4. Area 与 microarch estimate 对比，<120% 可接受
+5. 检查 multi-driven net / unresolved X
+6. 找 high-fanout net
+7. Clock definition 全部能综合
 
 ## QoR Metrics
-- WNS at target frequency: > -0.5ns acceptable (synthesis not optimized)
-- Area: < 120% of microarch estimate
-- No unmapped cells
-- No multi-driven nets
+- WNS > -0.5ns 作为未充分优化早期综合的参考
+- Area < microarch estimate 120%
+- Unmapped cell =0
+- Multi-driven net =0
 
 ## Output Required
-- Synthesis area report
-- Timing report (critical paths)
-- Recommendations for RTL fixes (if any)
+- Area report
+- Timing critical-path report
+- RTL fix recommendation
 ```
 
 ---
@@ -328,29 +313,28 @@ synthesis issues before handoff to the synthesis flow.
 # Skill: RTL — Design Sign-off
 
 ## Purpose
-Confirm the RTL is complete, correct, and ready for simulation
-and synthesis handoff.
+确认 RTL 完整、正确，可以交付 simulation/synthesis。
 
 ## Sign-off Checklist
-- [ ] All modules from planning are implemented
-- [ ] Lint: 0 errors, all warnings reviewed
-- [ ] CDC: 0 unwaived violations
-- [ ] RDC: 0 unwaived violations
-- [ ] Synthesis check: timing within range
-- [ ] All ports connected in integration
-- [ ] SVA assertions in place for key properties
-- [ ] Code review completed
-- [ ] File list and compile order documented
-- [ ] ICG cells inserted for all high/moderate gating opportunity domains
-- [ ] Always-on domains annotated with `/* always-on: <reason> */`
-- [ ] `clock_gating_coverage` ≥ 60% for high-opportunity domains; reported in sign-off record
+- [ ] Planning 中全部 module 已实现
+- [ ] Lint 0 error，warning 全 review
+- [ ] CDC 0 unwaived
+- [ ] RDC 0 unwaived
+- [ ] Synth check timing 可接受
+- [ ] Integration port 全连接
+- [ ] 关键 property 有 SVA
+- [ ] Code review 完成
+- [ ] filelist/compile order 完整
+- [ ] High/moderate gating domain 已按策略插 ICG
+- [ ] Always-on domain 有原因说明
+- [ ] High-opportunity domain clock_gating_coverage ≥60%
 
 ## Output Required
-- RTL file package (all .sv files)
-- File list (filelist.f)
-- Compile order document
-- Assertion library (.sva files)
-- RTL design review sign-off record
+- RTL file package
+- filelist.f
+- Compile-order document
+- Assertion library
+- RTL sign-off record
 ```
 
 ---
@@ -377,3 +361,5 @@ LOOP-BACK RULES:
 
 Output: Synthesis-ready RTL package with sign-off report.
 ```
+
+> 固定 stage 名、枚举和机器接口保留英文。
