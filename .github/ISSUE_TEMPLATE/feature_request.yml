@@ -1,52 +1,52 @@
-name: "🚀 Feature Request"
-description: Suggest improvements to agents, workflows, or system capabilities
+name: "🚀 功能建议"
+description: 建议改进 Agent、workflow 或系统能力
 title: "[FEATURE] "
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Propose improvements to the digital chip design agent system.
+        请提出对数字芯片设计 Agent 系统的改进建议。
 
   - type: textarea
     id: problem
     attributes:
-      label: Problem Statement
-      description: What limitation or gap are you encountering?
+      label: 问题背景
+      description: 你遇到了什么限制或能力缺口？
     validations:
       required: true
 
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed Solution
-      description: Describe the feature or improvement
+      label: 建议方案
+      description: 请描述希望增加的功能或改进
 
   - type: textarea
     id: workflow
     attributes:
-      label: Affected Workflow
-      description: Which workflow or agent flow is impacted?
+      label: 受影响流程
+      description: 哪个 workflow 或 Agent flow 会受到影响？
 
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives Considered
+      label: 已考虑的替代方案
 
   - type: dropdown
     id: area
     attributes:
-      label: Area
+      label: 所属领域
       options:
-        - Agent behavior
-        - Workflow orchestration
-        - Code generation
-        - Tooling / scripts
-        - Documentation
-        - Other
+        - Agent 行为
+        - Workflow 编排
+        - 代码生成
+        - 工具 / 脚本
+        - 文档
+        - 其他
 
   - type: textarea
     id: benefit
     attributes:
-      label: Expected Benefit
-      description: Why is this valuable? (e.g., better automation, accuracy, usability)
+      label: 预期收益
+      description: 为什么这项改进有价值？例如自动化程度、准确性或易用性提升
