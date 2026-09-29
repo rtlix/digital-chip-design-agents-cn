@@ -26,17 +26,22 @@
         "module": "mac_unit",
         "signal": "acc_reg",
         "file": "rtl/mac_unit.sv",
-        "line_range": [45, 52]
+        "line_range": [
+          45,
+          52
+        ]
       },
-      "summary": "Accumulator overflows silently when inputs exceed 14-bit range",
-      "expected_behavior": "Saturate at MAX_VAL (0x3FFF) on overflow per spec §3.2",
-      "observed_behavior": "acc_reg wraps to 0 instead of saturating",
+      "summary": "输入超过 14-bit 范围时，Accumulator 溢出但没有被显式处理",
+      "expected_behavior": "按照规格 §3.2，发生溢出时应饱和到 MAX_VAL（0x3FFF）",
+      "observed_behavior": "acc_reg 发生回绕并变为 0，而不是饱和",
       "session_id": "ps_20250115_103000",
       "status": "fixed",
       "rtl_response": {
         "fixed_at": "2025-01-15T12:00:00Z",
-        "diff_summary": "Added saturation logic to mac_unit.sv lines 45–52: replaced arithmetic add with clamped add using overflow flag from adder carry-out.",
-        "files_changed": ["rtl/mac_unit.sv"],
+        "diff_summary": "在 mac_unit.sv 第 45–52 行加入饱和逻辑：使用加法器 carry-out 的 overflow flag，将普通算术加法替换为带上限钳位的加法。",
+        "files_changed": [
+          "rtl/mac_unit.sv"
+        ],
         "commit_ref": null
       },
       "history": [
@@ -45,21 +50,21 @@
           "agent": "verification-orchestrator",
           "from_status": null,
           "to_status": "open",
-          "note": "DUT bug found in directed_tests stage"
+          "note": "在 directed_tests 阶段发现 DUT bug"
         },
         {
           "timestamp": "2025-01-15T11:00:00Z",
           "agent": "rtl-design-orchestrator",
           "from_status": "open",
           "to_status": "claimed",
-          "note": "Claimed by pipeline-orchestrator dispatch #1"
+          "note": "由 pipeline-orchestrator 第 1 次 dispatch 后领取"
         },
         {
           "timestamp": "2025-01-15T12:00:00Z",
           "agent": "rtl-design-orchestrator",
           "from_status": "claimed",
           "to_status": "fixed",
-          "note": "Saturation fix applied"
+          "note": "已应用饱和逻辑修复"
         }
       ]
     }
@@ -74,7 +79,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "RTL signoff achieved",
+      "reason": "RTL sign-off 已完成",
       "constraint_ref": null
     },
     {
@@ -86,7 +91,7 @@
       "failure_class": "functional",
       "retry_strategy": "refine",
       "suggested_next_step": "escalate",
-      "reason": "DUT bug found — fix_request fr_20250115_103000_001 opened",
+      "reason": "发现 DUT bug——已创建 fix_request fr_20250115_103000_001",
       "constraint_ref": "fr_20250115_103000_001"
     },
     {
@@ -98,7 +103,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "Fix for fr_20250115_103000_001 applied",
+      "reason": "已应用 fr_20250115_103000_001 的修复",
       "constraint_ref": "fr_20250115_103000_001"
     },
     {
@@ -110,7 +115,7 @@
       "failure_class": "none",
       "retry_strategy": "none",
       "suggested_next_step": "proceed",
-      "reason": "All fix_requests resolved in 1 iteration",
+      "reason": "所有 fix_request 在 1 次迭代内完成闭环",
       "constraint_ref": "fr_20250115_103000_001"
     }
   ]
