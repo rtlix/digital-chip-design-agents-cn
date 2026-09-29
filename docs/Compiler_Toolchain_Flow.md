@@ -1,17 +1,17 @@
-# Compiler Toolchain Development Flow — Full Architecture Design
+# 编译器工具链开发流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven flow for developing and validating a compiler toolchain targeting a custom processor ISA or embedded SoC. Covers ISA specification, compiler backend development, assembler, linker, runtime libraries, and toolchain validation. This is the software layer that enables code to run on the designed chip.
+> **目的**：面向自定义处理器 ISA 或嵌入式 SoC 的 AI 驱动编译器工具链开发与验证流程。覆盖 ISA 分析、compiler backend、assembler、linker、runtime library 和 toolchain validation。这是让软件真正能够在目标芯片上运行的关键软件层。
 
 ---
 
-## 1. Architecture Overview
+## 1. 架构总览
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │              COMPILER TOOLCHAIN ORCHESTRATOR                 │
-│  Input:  ISA spec, processor microarch, ABI requirements     │
-│  Output: Validated compiler toolchain (GCC/LLVM-based)       │
+│  输入：ISA spec、processor microarch、ABI requirement         │
+│  输出：已验证的 compiler toolchain（GCC/LLVM）                 │
 └────────────────────────┬─────────────────────────────────────┘
                          │
      ┌───────────────────┼────────────────────────────┐
@@ -24,7 +24,7 @@
 
 ---
 
-## 2. Shared State Object
+## 2. 共享状态对象
 
 ```json
 {
@@ -60,7 +60,7 @@
 
 ---
 
-## 3. Stage Sequence
+## 3. Stage Sequence（阶段顺序）
 
 ```
 [ISA Analysis] ──► [Backend Dev] ──► [Assembler Dev] ──► [Linker Config]
@@ -78,17 +78,17 @@
 
 ### Loop-Back Rules
 
-| Failure                               | Loop Back To    | Max |
-|---------------------------------------|-----------------|-----|
-| Codegen produces wrong instructions   | Backend Dev     | 5   |
-| Assembler encoding error              | Assembler Dev   | 3   |
-| Linker: unresolved symbols            | Linker Config   | 3   |
-| Regression pass rate < 95%            | Backend Dev     | 3   |
-| Runtime lib crash                     | Runtime Libs    | 3   |
+| 失败条件 | 回退到 | 最大次数 |
+|---|---|---:|
+| Codegen 生成错误 instruction | Backend Dev | 5 |
+| Assembler encoding error | Assembler Dev | 3 |
+| Linker unresolved symbol | Linker Config | 3 |
+| Regression pass rate <95% | Backend Dev | 3 |
+| Runtime library crash | Runtime Libs | 3 |
 
 ---
 
-## 4. Skill File Specifications
+## 4. Skill 文件说明
 
 ### 4.1 `sv-compiler-isa/SKILL.md`
 
@@ -96,42 +96,41 @@
 # Skill: Compiler — ISA Analysis
 
 ## Purpose
-Analyze the processor ISA to identify all features that require
-compiler support, and map them to toolchain components.
+分析处理器 ISA，识别所有需要 compiler 支持的特性，并映射到具体 toolchain component。
 
 ## ISA Feature → Toolchain Component Mapping
-| ISA Feature              | Affects                              |
-|--------------------------|--------------------------------------|
-| Instruction encoding     | Assembler, disassembler              |
-| Register file            | Register allocator, ABI              |
-| Calling convention       | ABI, function call lowering          |
-| Branch/jump instructions | Control flow lowering, branch delay  |
-| Load/store addressing    | Memory access patterns               |
-| SIMD/vector instructions | Auto-vectorization, intrinsics       |
-| Atomic instructions      | Memory model, concurrency support    |
-| Multiply/divide          | Integer arithmetic lowering          |
-| FPU presence             | Floating-point ABI (hard vs soft)    |
-| Privileged instructions  | Runtime, OS support layer            |
-| Custom instructions      | Intrinsics, builtin functions        |
+| ISA Feature | 影响的组件 |
+|---|---|
+| Instruction encoding | Assembler、disassembler |
+| Register file | Register allocator、ABI |
+| Calling convention | ABI、function-call lowering |
+| Branch/jump instruction | Control-flow lowering、branch delay |
+| Load/store addressing | Memory access pattern |
+| SIMD/vector instruction | Auto-vectorization、intrinsics |
+| Atomic instruction | Memory model、concurrency support |
+| Multiply/divide | Integer arithmetic lowering |
+| FPU presence | Floating-point ABI（hard/soft） |
+| Privileged instruction | Runtime、OS support layer |
+| Custom instruction | Intrinsics、builtin function |
 
 ## ABI Requirements to Define
-1. Calling convention: argument passing (registers vs stack)
-2. Return value convention: which registers
-3. Callee-saved vs caller-saved registers
-4. Stack alignment: 8 or 16 byte
-5. Data type sizes and alignments (int, long, pointer)
-6. Struct layout rules (padding, packing)
+1. Calling convention：argument 通过 register 还是 stack
+2. Return value convention：返回值 register
+3. Callee-saved / caller-saved register
+4. Stack alignment：8 或 16 byte
+5. Data type size/alignment
+6. Struct layout：padding、packing
 7. Thread-local storage model
 
 ## QoR Metrics
-- All ISA instruction classes mapped to toolchain component
-- ABI fully specified (no ambiguities)
-- Custom instructions: intrinsic interface defined
+- 所有 ISA instruction class 都映射到 toolchain component
+- ABI 完整，无歧义
+- Custom instruction 定义 intrinsic interface
 
 ## Output Required
-- ISA-to-toolchain mapping table
-- ABI specification document
-- List of LLVM/GCC backend files to create/modify
+- ISA→toolchain mapping table
+- ABI specification
+- 需要创建/修改的 LLVM/GCC backend file list
 ```
 
 ---
@@ -142,53 +141,53 @@ compiler support, and map them to toolchain components.
 # Skill: Compiler — Backend Development (LLVM-based)
 
 ## Purpose
-Implement the machine code generation backend targeting the custom ISA.
+实现面向自定义 ISA 的 machine-code generation backend。
 
 ## LLVM Backend Components to Implement
-1. Target description (.td files):
-   - Register definitions (RegisterInfo.td)
-   - Instruction definitions (InstrInfo.td)
-   - Calling convention (CallingConv.td)
-   - Scheduling model (SchedModel.td)
+1. Target description（.td）：
+   - RegisterInfo.td
+   - InstrInfo.td
+   - CallingConv.td
+   - SchedModel.td
 
-2. C++ backend classes:
-   - TargetMachine (MyTargetMachine.cpp)
-   - RegisterInfo (MyRegisterInfo.cpp)
-   - InstrInfo (MyInstrInfo.cpp)
-   - ISelDAGToDAG (selection DAG → machine instrs)
-   - AsmPrinter (emit assembly text)
-   - FrameLowering (stack frame, prologue/epilogue)
+2. C++ backend class：
+   - TargetMachine
+   - RegisterInfo
+   - InstrInfo
+   - ISelDAGToDAG
+   - AsmPrinter
+   - FrameLowering
 
-3. Optimization hints:
-   - Instruction scheduling model (latencies, throughput)
-   - Cost model for inlining and unrolling decisions
+3. Optimization hint：
+   - Instruction scheduling model
+   - Inlining/unrolling cost model
    - Pipeline hazard recognizer
 
 ## Development Order (Recommended)
 1. Register file + calling convention
-2. Basic integer instructions (ALU, load/store, branch)
-3. Function call lowering (call/return)
-4. Selection patterns (DAG patterns in .td)
-5. FPU instructions (if present)
-6. SIMD/vector instructions
-7. Custom instructions (intrinsics)
+2. Basic integer instruction（ALU/load/store/branch）
+3. Function call lowering
+4. DAG selection pattern
+5. FPU instruction
+6. SIMD/vector instruction
+7. Custom instruction/intrinsic
 8. Scheduling model
 
 ## Testing per Component
-- TableGen: check .td files compile with llvm-tblgen
-- Codegen: use llc to compile C snippets; verify .s output
-- MC layer: verify encoding with llvm-mc --show-encoding
+- TableGen：`llvm-tblgen` 能编译 .td
+- Codegen：`llc` 编译 C snippet，检查 .s
+- MC layer：`llvm-mc --show-encoding` 验证 encoding
 
 ## QoR Metrics
-- All ISA instruction classes: code-gennable from LLVM IR
-- Calling convention test: function call round-trips correctly
-- No illegal instructions in generated code
-- Passes llvm test-suite basic subset
+- 所有 ISA instruction class 均可由 LLVM IR codegen
+- Calling convention round-trip 正确
+- 生成代码中无 illegal instruction
+- LLVM basic test-suite 通过
 
 ## Output Required
-- Complete LLVM backend source tree
-- Regression test files (llc tests)
-- Build instructions
+- 完整 LLVM backend source tree
+- Regression test file
+- Build instruction
 ```
 
 ---
@@ -199,35 +198,34 @@ Implement the machine code generation backend targeting the custom ISA.
 # Skill: Compiler — Assembler Development
 
 ## Purpose
-Implement or configure the assembler for the target ISA,
-enabling hand-written assembly and compiler-emitted assembly to be encoded.
+实现或配置目标 ISA 的 assembler，使手写 assembly 和 compiler 输出都能正确编码。
 
-## LLVM MC Layer (preferred for LLVM-based toolchains)
-1. MCInstrDesc: encoding information from .td files
-2. Fixups: relocations for branch targets, symbol references
-3. ELF object writer: produces .o files in ELF format
-4. Disassembler: decode binary → mnemonic (for debug)
+## LLVM MC Layer
+1. MCInstrDesc：来自 .td 的 encoding
+2. Fixup：branch target/symbol reference relocation
+3. ELF object writer：生成 .o
+4. Disassembler：binary → mnemonic
 
 ## Assembler Syntax Requirements
-1. AT&T vs Intel syntax decision (document in ABI)
-2. Directive support: .section, .global, .type, .size, .align
-3. Pseudo-instructions: NOP, CALL (expanded by assembler)
-4. Relocation types: define all ELF relocation types for ISA
-5. Debug info: DWARF emission support
+1. AT&T / Intel syntax 选择并写入 ABI
+2. 支持 .section、.global、.type、.size、.align
+3. Pseudo instruction：NOP、CALL
+4. 定义全部 ELF relocation
+5. 支持 DWARF debug info
 
 ## Encoding Validation
-1. For every instruction: write encode/decode round-trip test
-2. Verify immediate ranges: correct truncation and sign-extension
-3. Verify branch offsets: PC-relative encoding correctness
-4. Verify register numbers: match ISA register file numbering
+1. 每条 instruction 做 encode/decode round-trip
+2. 检查 immediate range、truncation、sign-extension
+3. 检查 PC-relative branch offset
+4. Register number 与 ISA register file 一致
 
 ## QoR Metrics
-- All instructions: encode/decode round-trip passes
-- Relocation types: all defined and tested
-- ELF output: verifiable with readelf
+- 全部 instruction round-trip PASS
+- 全部 relocation 已定义并测试
+- ELF 可由 readelf 正确读取
 
 ## Output Required
-- Assembler source (integrated in LLVM MC)
+- LLVM MC assembler source
 - Encoding test suite
 - Relocation definition table
 ```
@@ -240,15 +238,14 @@ enabling hand-written assembly and compiler-emitted assembly to be encoded.
 # Skill: Compiler — Linker Configuration
 
 ## Purpose
-Configure the linker (GNU ld or LLVM lld) for the target processor
-memory map and produce executable binaries.
+为目标 processor memory map 配置 GNU ld 或 LLVM lld，并生成可执行 binary。
 
 ## Linker Script Requirements
-1. Memory regions: FLASH (code), RAM (data/stack/heap) — from chip memory map
-2. Section placement: .text, .rodata, .data, .bss, .stack, .heap
-3. Entry point: define reset vector / entry symbol
-4. Startup code: copy .data from FLASH to RAM, zero .bss
-5. Stack/heap sizing: configurable via linker symbols
+1. Memory region：FLASH、RAM，来自芯片 memory map
+2. Section placement：.text/.rodata/.data/.bss/.stack/.heap
+3. Entry point：reset vector / entry symbol
+4. Startup code：复制 .data，清零 .bss
+5. Stack/heap size 可通过 linker symbol 配置
 
 ## Example Linker Script Structure
 ```ld
@@ -265,20 +262,20 @@ SECTIONS {
 ```
 
 ## Relocation Support
-1. All relocation types defined in assembler: handled in linker
-2. PLT/GOT: if shared libraries supported
-3. Weak symbols: correctly resolved
+1. Assembler 定义的 relocation 全部由 linker 处理
+2. 如支持 shared library，则实现 PLT/GOT
+3. Weak symbol 正确解析
 
 ## QoR Metrics
-- Simple "hello world" (or equivalent bare-metal) links and runs
-- .data initialized correctly at startup
-- .bss zeroed at startup
-- No undefined symbol errors on standard library
+- Bare-metal hello world 可 link/run
+- .data startup 初始化正确
+- .bss startup 清零
+- Standard library 无 undefined symbol
 
 ## Output Required
-- Linker script(s) (per memory configuration)
-- Startup code (crt0.S or equivalent)
-- Linker configuration documentation
+- 每种 memory configuration 的 linker script
+- Startup code
+- Linker configuration 文档
 ```
 
 ---
@@ -289,39 +286,38 @@ SECTIONS {
 # Skill: Compiler — Runtime Libraries
 
 ## Purpose
-Build or port the runtime libraries required for compiled code to
-execute on the target processor.
+构建/移植编译代码运行所需的 runtime library。
 
 ## Required Libraries
-| Library        | Contents                                  | Source         |
-|----------------|-------------------------------------------|----------------|
-| libgcc/compiler-rt | Integer multiply/divide, FP soft-float| GCC/LLVM       |
-| newlib/picolibc | C standard library (bare-metal)         | newlib port    |
-| libstdc++/libc++ | C++ standard library                  | GCC/LLVM       |
-| crt0.o         | C runtime startup (init, .data, .bss)    | Custom         |
-| libm            | Math library                             | newlib         |
+| Library | 内容 | 来源 |
+|---|---|---|
+| libgcc/compiler-rt | Integer multiply/divide、FP soft-float | GCC/LLVM |
+| newlib/picolibc | Bare-metal C standard library | newlib port |
+| libstdc++/libc++ | C++ standard library | GCC/LLVM |
+| crt0.o | C runtime startup | Custom |
+| libm | Math library | newlib |
 
 ## Porting Steps for newlib
-1. Implement syscall stubs (_write, _read, _sbrk, _exit, etc.)
-2. Implement _sbrk for heap management (increment program break)
-3. Wire _write to UART or semihosting for debug output
-4. Configure with correct word size and endianness
+1. 实现 _write/_read/_sbrk/_exit 等 syscall stub
+2. 实现 _sbrk 管理 heap
+3. _write 连接 UART 或 semihosting
+4. 使用正确 word size 和 endianness
 
-## Soft-Float Library (if no FPU)
-1. compiler-rt or libgcc provides: __addsf3, __mulsf3, __divdf3, etc.
-2. Verify with FP operation test suite
-3. Performance: profile key FP operations; optimize if bottleneck
+## Soft-Float Library
+1. compiler-rt/libgcc 提供 __addsf3、__mulsf3、__divdf3 等
+2. 用 FP test suite 验证
+3. 对性能瓶颈做 profile/optimization
 
 ## QoR Metrics
-- C standard library: passes newlib test suite
-- Soft-float (if used): bit-exact results vs reference
-- Heap/stack: no corruption under stress test
-- C++ constructors: called correctly at startup
+- C standard library 通过 test suite
+- Soft-float 与 reference bit-exact
+- Stress test 下 heap/stack 无 corruption
+- C++ constructor startup 正常调用
 
 ## Output Required
-- Ported and compiled runtime libraries
-- Syscall stub implementations
-- Library test results
+- Ported runtime library
+- Syscall stub
+- Library test result
 ```
 
 ---
@@ -332,43 +328,42 @@ execute on the target processor.
 # Skill: Compiler — Toolchain Validation
 
 ## Purpose
-Validate the complete toolchain through a regression suite
-that exercises compilation, assembly, linking, and execution.
+通过 regression suite 验证 compile、assemble、link、execution 的完整工具链。
 
 ## Validation Tier Structure
-| Tier          | Contents                                     | Pass Criteria   |
-|---------------|----------------------------------------------|-----------------|
-| Smoke         | Hello world, basic arithmetic                | 100%            |
-| Unit          | Per-instruction assembly tests               | 100%            |
-| Compiler      | C/C++ feature tests (GCC torture tests)      | ≥ 99%           |
-| Runtime       | C library function tests                     | ≥ 99%           |
-| Application   | Representative workloads (FFT, sort, etc.)   | Correct output  |
-| Performance   | Cycle count vs target spec                   | Within 10%      |
+| Tier | 内容 | Pass Criteria |
+|---|---|---|
+| Smoke | Hello world、basic arithmetic | 100% |
+| Unit | Per-instruction assembly test | 100% |
+| Compiler | C/C++ feature / GCC torture test | ≥99% |
+| Runtime | C library test | ≥99% |
+| Application | FFT/sort 等代表性 workload | 正确输出 |
+| Performance | Cycle count vs target | 差异 ≤10% |
 
 ## Execution Environment Options
-1. Instruction Set Simulator (ISS): cycle-accurate, fast for testing
-2. RTL simulation: slow but exact, use for final validation
-3. FPGA prototype: faster than RTL sim, near-cycle-accurate
-4. Silicon: final validation
+1. ISS：cycle-accurate，适合大量测试
+2. RTL simulation：慢但精确，用于最终验证
+3. FPGA prototype：比 RTL sim 快，接近 cycle-accurate
+4. Silicon：最终验证
 
 ## Key Test Categories
-- Integer arithmetic: all operations, edge cases (overflow, zero)
-- Branching: forward, backward, indirect, function calls
-- Load/store: all widths, alignment, endianness
-- FPU: IEEE 754 compliance (if HW FPU present)
-- ABI: function call convention, varargs, struct passing
-- Atomic: memory ordering (if SMP target)
+- Integer arithmetic / overflow / zero
+- Branch：forward/backward/indirect/function-call
+- Load/store：全部 width/alignment/endianness
+- FPU：IEEE 754
+- ABI：function call、varargs、struct passing
+- Atomic：memory ordering
 
 ## QoR Metrics
-- Compiler regression: ≥ 99% pass rate
-- Runtime tests: ≥ 99% pass rate
-- No miscompilation on application workloads
-- Performance within 10% of target
+- Compiler regression ≥99%
+- Runtime test ≥99%
+- Application 无 miscompilation
+- Performance 与 target 差异 ≤10%
 
 ## Output Required
-- Regression report (pass/fail counts per tier)
-- Miscompilation root cause analysis (if any)
-- Performance comparison vs target
+- Regression report
+- Miscompilation root-cause analysis
+- Performance comparison
 ```
 
 ---
@@ -396,20 +391,22 @@ Track test_results in state_object.test_results.
 Output: Release-ready toolchain package with validation report.
 ```
 
+> 固定 stage 名、状态值和机器接口保留英文，避免破坏自动化兼容性。
+
 ---
 
 ## 6. Toolchain Release Package Checklist
 
 ```markdown
 ## Toolchain Release Checklist
-- [ ] Compiler (clang/gcc) binary: targets custom ISA
-- [ ] Assembler (llvm-as / gas): encodes all ISA instructions
-- [ ] Linker (lld/ld): correct linker scripts for memory map
-- [ ] Runtime libraries: libgcc/compiler-rt, newlib, libm
-- [ ] Binutils: objdump, readelf, nm, objcopy for target
-- [ ] GDB / LLDB: debugger with target support
-- [ ] ISS: instruction-set simulator for offline testing
-- [ ] Documentation: ABI spec, getting started guide
-- [ ] Validation report: regression pass rates
-- [ ] Known issues: documented with workarounds
+- [ ] Compiler（clang/gcc）binary：支持 custom ISA
+- [ ] Assembler（llvm-as/gas）：能编码全部 ISA instruction
+- [ ] Linker（lld/ld）：memory map 对应 linker script 正确
+- [ ] Runtime library：libgcc/compiler-rt、newlib、libm
+- [ ] Binutils：objdump、readelf、nm、objcopy
+- [ ] GDB / LLDB：支持目标架构
+- [ ] ISS：用于离线测试
+- [ ] 文档：ABI spec、getting-started guide
+- [ ] Validation report：regression pass rate
+- [ ] Known issue：含 workaround
 ```
