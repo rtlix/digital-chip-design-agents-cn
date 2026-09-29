@@ -66,7 +66,7 @@ dft_architecture → scan_insertion → atpg → bist_insertion → jtag_setup �
 }
 ```
 
-## 行为规则
+## Behaviour Rules
 
 1. 每个 stage 执行前读取 dft Skill。
 2. 所有 ATPG iteration 之间持续跟踪 `fault_coverage`。
