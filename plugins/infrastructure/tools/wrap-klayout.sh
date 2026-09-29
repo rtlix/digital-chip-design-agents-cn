@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wrap-klayout.sh — run KLayout DRC and emit a compact JSON summary
+# wrap-klayout.sh —— 运行 KLayout DRC，并输出紧凑 JSON summary
 set -euo pipefail
 
 TOOL="klayout"
@@ -32,11 +32,11 @@ with open(log_path, encoding='utf-8', errors='replace') as f:
 errors   = [l.strip() for l in text.splitlines() if re.search(r'\bERROR\b', l, re.I)]
 warnings = [l.strip() for l in text.splitlines() if re.search(r'\bWARN(?:ING)?\b', l, re.I)]
 
-# Parse KLayout DRC report XML (*.lyrdb or *.xml) if present
+# 如果存在 KLayout DRC report XML（*.lyrdb 或 *.xml），则解析
 drc_categories = {}
 total_drc = 0
-# A report that parses with no categories is a clean run; no report and no count
-# in the log means the DRC result is unknown, which is not the same as zero.
+# Report 可解析且没有 category 时视为 clean run；如果没有 report 且 log 中也没有 count，
+# 则 DRC 结果是 unknown，不能当作 0。
 evidence = False
 
 for report_file in [f for f in glob.glob('*.lyrdb') + glob.glob('*drc*.xml')
@@ -57,7 +57,7 @@ for report_file in [f for f in glob.glob('*.lyrdb') + glob.glob('*drc*.xml')
     except Exception:
         pass
 
-# Fallback: parse text log for DRC count
+# Fallback：从文本 log 解析 DRC count
 if not drc_categories:
     drc_m = re.search(r'(\d+)\s+(?:DRC\s+)?(?:error|violation)', text, re.I)
     if drc_m:
