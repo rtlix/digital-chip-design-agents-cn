@@ -1,11 +1,11 @@
-# Static Timing Analysis (STA) Flow — Full Architecture Design
+# 静态时序分析（STA）流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven STA flow for multi-corner, multi-mode timing closure. Covers constraint validation, timing analysis, exception handling, and timing sign-off for both pre-silicon and ECO cycles.
+> **目的**：AI 驱动的 multi-corner、multi-mode timing closure 流程。覆盖 constraint validation、timing analysis、exception handling 和 pre-silicon/ECO cycle 的 timing sign-off。
 
 ---
 
-## 1. Shared State Object
+## 1. 共享状态对象
 
 ```json
 {
@@ -48,8 +48,8 @@
                                                               │ violations
                                                               ▼
                                                        [Exception Review]
-                                                              │ invalid exceptions found
-                                                              └──► back to Path Analysis
+                                                              │ invalid exceptions
+                                                              └──► Path Analysis
                                                               │ valid
                                                               ▼
                                                        [ECO Guidance]
@@ -62,7 +62,7 @@
 
 ---
 
-## 3. Skill File Specifications
+## 3. Skill 文件说明
 
 ### 3.1 `sv-sta-constraints/SKILL.md`
 
@@ -70,36 +70,35 @@
 # Skill: STA — Constraint Validation
 
 ## Purpose
-Validate all SDC constraints are complete, consistent,
-and correctly model the design intent before timing analysis.
+在 timing analysis 前验证全部 SDC constraint 完整、一致，并准确表达 design intent。
 
 ## Validation Checks
-1. All clocks defined with correct period and waveform
-2. All generated clocks: correct source and division/multiplication
-3. No unconstrained paths: verify with report_timing -unconstrained
-4. Clock domain crossings: correct false_path or max_delay applied
-5. Multicycle paths: both setup (-setup N) and hold (-hold 1) specified
-6. Input/output delays: match system-level timing budget
-7. Timing exceptions: not overly broad (masking real violations)
-8. Operating conditions: consistent with corner being analyzed
-9. Propagated vs ideal clocks: correct mode for pre-CTS vs post-CTS
+1. 所有 clock 定义正确 period/waveform
+2. Generated clock source/divide/multiply 正确
+3. report_timing -unconstrained：0 path
+4. CDC 使用正确 false_path/max_delay
+5. Multicycle path 同时有 setup 与 hold
+6. Input/output delay 与 system budget 一致
+7. Exception 不得过宽
+8. Operating condition 与 corner 一致
+9. Pre-CTS ideal / post-CTS propagated clock 模式正确
 
 ## Common Constraint Errors
-- Multicycle path without hold correction → hold violations
-- False path too broad → masks real timing issue
-- Generated clock missing → paths unconstrained
-- Wrong clock period → over/under-constraining
-- set_case_analysis for test mode missing → incorrect mode analysis
+- MCP 缺 hold correction
+- False path 过宽
+- Generated clock 缺失
+- Clock period 错误
+- Test-mode set_case_analysis 缺失
 
 ## QoR Metrics
-- 0 unconstrained paths
-- 0 clock definition errors
-- All exceptions: reviewed and documented
+- Unconstrained path =0
+- Clock-definition error =0
+- Exception 全部 review/document
 
 ## Output Required
 - Constraint QA report
-- Clock summary (all clocks, sources, periods)
-- Exception list with justifications
+- Clock summary
+- Exception list + justification
 ```
 
 ---
@@ -110,40 +109,39 @@ and correctly model the design intent before timing analysis.
 # Skill: STA — Multi-Corner Timing Analysis
 
 ## Purpose
-Run and interpret timing analysis at all required PVT corners
-for setup and hold closure.
+在全部 required PVT corner 运行 setup/hold analysis 并解释结果。
 
 ## Required Corner Matrix
-| Mode/Corner    | Setup Corner      | Hold Corner       |
-|----------------|-------------------|-------------------|
-| Functional     | SS/0.9V/125°C     | FF/1.1V/-40°C     |
-| Test (at-speed)| SS/0.9V/125°C     | FF/1.1V/25°C      |
-| Low Power      | SS/0.9V/125°C     | FF/1.1V/25°C      |
+| Mode | Setup Corner | Hold Corner |
+|---|---|---|
+| Functional | SS/0.9V/125°C | FF/1.1V/-40°C |
+| Test (at-speed) | SS/0.9V/125°C | FF/1.1V/25°C |
+| Low Power | SS/0.9V/125°C | FF/1.1V/25°C |
 
 ## POCV/AOCV Application
-1. AOCV: apply depth and location-based derating (pre-POCV designs)
-2. POCV: apply parametric variation (sigma-based, tool-specific)
-3. OCV guard-band: early design (flat derating), sign-off (POCV)
-4. Clock uncertainty: pre-CTS (ideal) vs post-CTS (propagated)
+1. AOCV：按 depth/location derate
+2. POCV：sigma-based variation
+3. Early flow 可 flat OCV，sign-off 用 POCV
+4. Pre-CTS ideal uncertainty 与 post-CTS propagated clock 分开
 
 ## Path Analysis Priority
-1. WNS path per corner (most critical single path)
-2. TNS contribution (how many paths fail, by how much)
-3. Clock domain crossings: CDC paths with max_delay
-4. At-speed paths: launch/capture pair STA
+1. 每 corner WNS path
+2. TNS contribution
+3. 带 max_delay 的 CDC path
+4. At-speed launch/capture path
 
-## QoR Metrics — Sign-off Targets
-| Metric    | Target           |
-|-----------|------------------|
-| Setup WNS | ≥ 0 all corners  |
-| Setup TNS | = 0 all corners  |
-| Hold WNS  | ≥ 0 all corners  |
-| Hold TNS  | = 0 all corners  |
+## QoR Metrics
+| Metric | Target |
+|---|---|
+| Setup WNS | ≥0，全部 corner |
+| Setup TNS | =0，全部 corner |
+| Hold WNS | ≥0，全部 corner |
+| Hold TNS | =0，全部 corner |
 
 ## Output Required
-- Timing report per corner (setup and hold)
-- WNS/TNS summary table (all corners)
-- Top 100 violating paths (for ECO guidance)
+- Per-corner setup/hold report
+- WNS/TNS summary
+- Top 100 violating path
 ```
 
 ---
@@ -154,40 +152,39 @@ for setup and hold closure.
 # Skill: STA — ECO Guidance
 
 ## Purpose
-Analyze timing violations and recommend specific ECO actions
-(resize, buffer, reroute, retime) to close timing.
+分析 timing violation，并给出具体 resize/buffer/reroute/retime ECO 建议。
 
 ## ECO Decision Tree
 ```
-Setup violation on path:
-  → Logic depth > target?     YES → Retime / pipeline stage
-  → Long wire?                YES → Buffer / reroute
-  → Weak driver?              YES → Upsize driver
-  → High-Vt cell on crit path?YES → Swap to SVT/LVT
-  → Reconvergent fanout?      YES → Clone cell / split net
+Setup violation:
+  Logic depth 大?       → Retime / pipeline
+  Long wire?            → Buffer / reroute
+  Weak driver?          → Upsize
+  High-Vt critical?     → Swap SVT/LVT
+  Reconvergent fanout?  → Clone / split net
 
-Hold violation on path:
-  → After CTS (skew-induced)? YES → Useful skew / delay buffer
-  → Short path?               YES → Insert delay buffer (HVT preferred)
-  → After ECO (new path)?     YES → Targeted hold buffer insertion
+Hold violation:
+  CTS skew-induced?     → Useful skew / delay buffer
+  Short path?           → HVT delay buffer
+  ECO 新路径?           → Targeted hold buffer
 ```
 
 ## ECO Rules
-1. Minimum ECO footprint: change fewest cells to fix most violations
-2. Prefer resizing over adding new cells (less routing impact)
-3. ECO cells: place in pre-reserved ECO sites (spare cells or free sites)
-4. Re-run STA after every ECO batch (don't accumulate blind)
-5. LEC after every ECO: verify equivalence preserved
-6. Don't introduce new hold violations while fixing setup (and vice versa)
+1. 用最小 ECO footprint 修最多 violation
+2. 优先 resize，减少 routing impact
+3. 使用 reserved ECO site/spare cell
+4. 每批 ECO 后重跑 STA
+5. 每批 ECO 后跑 LEC
+6. 修 setup 不得引入 hold，反之亦然
 
 ## QoR Metrics
-- ECO efficiency: violations fixed per ECO change
-- ECO cell count: < 2% of total cells (flag if exceeded)
-- Post-ECO LEC: EQUIVALENT
+- ECO efficiency
+- ECO cell <2% 总 cell
+- Post-ECO LEC EQUIVALENT
 
 ## Output Required
-- ECO change list (cell, action, justification)
-- Pre/post ECO timing comparison
+- ECO change list
+- Pre/post timing comparison
 - ECO LEC result
 ```
 
@@ -213,3 +210,5 @@ LOOP-BACK RULES:
 
 Sign-off requires: WNS ≥ 0 and TNS = 0 at all corners.
 ```
+
+> 固定 stage 名和状态文本保留英文。
