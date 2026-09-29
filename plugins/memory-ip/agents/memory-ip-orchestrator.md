@@ -24,7 +24,7 @@ OpenRAM、CACTI、sky130/gf180mcu SRAM、Magic、KLayout、OpenSTA。
 ARM Artisan、Synopsys memory compiler/SiliconSmart、Cadence Liberate、Siemens Tessent MBIST/BISR。
 
 ### MCP Preference
-1. 如启用 OpenROAD/OpenSTA MCP 优先使用。
+1. 如启用 OpenROAD/OpenSTA MCP，优先使用。
 2. 否则 `wrap-opensta.sh` / `wrap-klayout.sh`。
 3. 最后直接执行，compiler/characterization log 很大。
 
@@ -48,7 +48,7 @@ ARM Artisan、Synopsys memory compiler/SiliconSmart、Cadence Liberate、Siemens
 - placement_constraints_complete: true
 
 这些是 machine-checkable gate；Skill 的 memory_signoff checklist 中 area/bandwidth/ECC latency/
-repair-register/collision-policy/set_dont_touch 等人工 checklist 同样必须有 evidence 才能 signoff。
+repair-register/collision-policy/`set_dont_touch` 等人工 checklist 同样必须有 evidence。
 
 ## Stage Agent Output Format
 保持标准机器字段 `stage/status/confidence/failure_class/retry_strategy/qor/issues/suggested_next_step/output`。
@@ -64,7 +64,7 @@ repair-register/collision-policy/set_dont_touch 等人工 checklist 同样必须
 8. `memory_signoff` checkpoint：fix-request-servicing 模式跳过；需要审批时设置 checkpoint 并停止。
 9. `memory_requirements` 检查 required `clock.clk_mhz`。Optional 使用 schema default；
    `pvt_corners` 无有效 V/T 时在 view_generation 触发 constraint_gap；
-   retention_required 只作为 per-instance default；RTL/architecture memory definition 冲突时必须 constraint_gap，不能按读取顺序选值。
+   retention_required 只作为 per-instance default；RTL/architecture memory definition 冲突时必须 constraint_gap，不能静默选值。
 
 <!-- BEGIN SHARED:stage-gating (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Stage Gate 与升级
@@ -77,14 +77,15 @@ repair-register/collision-policy/set_dont_touch 等人工 checklist 同样必须
 <!-- END SHARED:reporting-contract -->
 
 ## Memory
-解析 `<MEM>` 后读取 `<MEM>/memory-ip/knowledge.md`；可选 `query_experiences domain="memory-ip"`。
-结束时按 run_id upsert experiences，key_metrics 包括 memory_instances、total_memory_area_um2、
-worst_access_time_ns、view_qa_errors、projected_repair_yield_pct。
+解析 `<MEM>` 后读取 `<MEM>/memory-ip/knowledge.md`；可选
+`query_experiences domain="memory-ip"`。
+结束时按 run_id upsert experiences，key_metrics 包括 memory_instances、
+total_memory_area_um2、worst_access_time_ns、view_qa_errors、projected_repair_yield_pct。
 
 ## Design State
 开始读取 `spec/interfaces/constraints/architecture/rtl/fix_requests/pipeline_config/approved_checkpoints`。
-可 claim 来自 DFT/STA/PD/SoC 的 open fix_request，并根据问题路由到 macro_selection/
-array_architecture/redundancy_repair。
+可 claim 来自 DFT/STA/PD/SoC 的 open fix_request，并根据问题路由到
+macro_selection / array_architecture / redundancy_repair。
 
 结束时原子 RMW，format_version ≤1.4 升 1.5；只更新本次 claim 的 fix_request；
 merge `memory_ip` domain fields（instances/views/repair/placement_constraints/ecc/power_modes/signoff）；
