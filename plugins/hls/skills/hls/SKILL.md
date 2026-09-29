@@ -1,140 +1,125 @@
 ---
 name: hls
 description: >
-  High-Level Synthesis — C/C++ algorithm analysis, HLS directive optimisation,
-  synthesis execution, and co-simulation verification. Use when converting C/C++
-  to synthesisable RTL, optimising for latency/throughput/area targets using
-  pragmas, or verifying that generated RTL matches the golden C model.
+  高层综合（HLS）——C/C++ 算法分析、HLS directive 优化、综合执行和协同仿真验证。
+  适用于把 C/C++ 转成可综合 RTL、利用 pragma 优化 latency/throughput/area，
+  或验证生成 RTL 与 golden C model 一致。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: High-Level Synthesis (HLS)
+# Skill: High-Level Synthesis (HLS)（高层综合）
 
 ## Invocation
-
-- **If invoked by a user** presenting an HLS task: immediately spawn the
-  `digital-chip-design-agents:hls-orchestrator` agent and pass the full user
-  request and any available context. Do not execute stages directly.
-- **If invoked by the `hls-orchestrator` mid-flow**: do not spawn a new agent.
-  Treat this file as read-only — return the requested stage rules, sign-off
-  criteria, or loop-back guidance to the calling orchestrator.
-
-Spawning the orchestrator from within an active orchestrator run causes recursive
-delegation and must never happen.
+- **用户直接调用**并提出 HLS 任务时：立即启动 `digital-chip-design-agents:hls-orchestrator`，
+  传入完整请求和上下文，不直接执行 stage。
+- **由 hls-orchestrator 中途调用**时：不要再次启动 Agent；本文件作为只读规则库返回 stage rule、
+  sign-off criteria 或 loop-back guidance。
 
 ## Pre-run Context
-
-Before executing or advising on **any** stage, read the following files if they exist:
-
-1. `memory/hls/knowledge.md` — known failure patterns, successful tool flags, PDK/tool quirks.
-   Incorporate its guidance into every stage decision. If absent, proceed without it.
-2. `memory/hls/run_state.md` — current run identity (`run_id`, `design_name`, `tool`,
-   `last_stage`). Use this to resume correctly after interruption. If absent, a new run
-   is starting; the orchestrator will create this file before the first stage.
-
-This pre-run read applies whether this skill is loaded by a user or called by the
-orchestrator mid-flow. It ensures the fix database is consulted before any diagnosis step.
+任何 stage 前，如存在则读取：
+1. `memory/hls/knowledge.md`
+2. `memory/hls/run_state.md`
+并利用其中历史 failure pattern、tool flag 和当前 run state。
 
 ## Purpose
-Convert C/C++/SystemC algorithmic descriptions to synthesisable RTL.
-Covers algorithm analysis for HLS compatibility, pragma/directive optimisation,
-and co-simulation to verify RTL matches the golden C model.
+将 C/C++/SystemC 算法描述转换成可综合 RTL，覆盖 HLS 兼容性分析、pragma/directive
+优化以及 co-simulation，保证 RTL 与 golden C model 一致。
 
 ---
 
 ## Supported EDA Tools
-
 ### Open-Source
-- **Bambu HLS** (`bambu`) — open-source HLS from Politecnico di Milano
-- **LegUp HLS** — FPGA-targeted HLS built on LLVM
-- **Calyx / Futil** — infrastructure for HLS compilers (academic)
-- **MLIR/CIRCT** (`circt-opt`) — compiler infrastructure for hardware design
+- **Bambu HLS**（`bambu`）
+- **LegUp HLS**
+- **Calyx / Futil**
+- **MLIR/CIRCT**（`circt-opt`）
 
 ### Proprietary
-- **Xilinx Vitis HLS** (`vitis_hls`) — C/C++ to RTL for AMD/Xilinx devices
-- **Cadence Stratus** (`stratus`) — SystemC/C++ HLS for ASIC and FPGA
-- **Siemens Catapult** (`catapult`) — algorithmic synthesis from C++/SystemC
+- **Xilinx Vitis HLS**（`vitis_hls`）
+- **Cadence Stratus**（`stratus`）
+- **Siemens Catapult**（`catapult`）
 
 ---
 
 ## Stage: algorithm_analysis
 
-### HLS-Hostile Patterns (must fix before synthesis)
-1. Dynamic memory (malloc/new) → replace with fixed-size static arrays
-2. Recursive functions → convert to iterative with explicit stack
-3. Pointer aliasing → use `restrict` keyword or restructure accesses
-4. System calls (printf, file I/O) → wrap in `#ifndef __SYNTHESIS__`
-5. Function pointers → replace with switch/case dispatch
-6. Data-dependent loop bounds → add maximum bound + early-exit flag
-7. Floating-point → evaluate fixed-point (`ap_fixed<W,I>` for Vitis HLS)
+### HLS-Hostile Patterns
+综合前必须处理：
+1. Dynamic memory（malloc/new）→ 固定大小 static array
+2. Recursive function → iterative + explicit stack
+3. Pointer aliasing → `restrict` 或重构访问
+4. System call（printf/file I/O）→ 用 `#ifndef __SYNTHESIS__` 包裹
+5. Function pointer → switch/case dispatch
+6. Data-dependent loop bound → 最大 bound + early-exit flag
+7. Floating point → 评估 fixed-point，例如 Vitis 的 `ap_fixed<W,I>`
 
 ### Analysis Steps
-1. Identify innermost critical loop — the performance bottleneck
-2. Analyse loop-carried dependencies — limit achievable II
-3. Classify memory access: sequential (burst-able) vs random (expensive)
-4. Calculate theoretical minimum latency: trip_count × body_latency
+1. 找到 innermost critical loop
+2. 分析 loop-carried dependency，确定可达到的 II 下限
+3. 将 memory access 分类为 sequential/burstable 或 random
+4. 计算 theoretical minimum latency：trip_count × body_latency
 
 ### QoR Metrics to Evaluate
-- All HLS-hostile patterns resolved
-- Critical loop identified with dependency graph
-- Theoretical II lower bound computed
+- HLS-hostile pattern 全部解决
+- Critical loop 已建立 dependency graph
+- 已计算 theoretical II lower bound
 
 ### Output Required
 - Algorithm analysis report
-- Fixed-point type recommendations (if applicable)
+- Fixed-point type 建议
 - Critical loop dependency graph
 
 ---
 
 ## Stage: directive_planning
 
-### Pipelining and Throughput
+### Pipelining / Throughput
 ```cpp
-#pragma HLS PIPELINE II=1          // Pipeline loop, target II=1
-#pragma HLS DATAFLOW                // Task-level pipelining
-#pragma HLS LOOP_FLATTEN            // Flatten nested loops
-#pragma HLS LOOP_MERGE              // Merge sequential loops
+#pragma HLS PIPELINE II=1
+#pragma HLS DATAFLOW
+#pragma HLS LOOP_FLATTEN
+#pragma HLS LOOP_MERGE
 ```
 
-### Latency and Unrolling
+### Latency / Unrolling
 ```cpp
-#pragma HLS UNROLL factor=4        // Partial unroll (4 parallel copies)
-#pragma HLS UNROLL                  // Full unroll (small trip counts only)
+#pragma HLS UNROLL factor=4
+#pragma HLS UNROLL
 ```
 
-### Memory and Interfaces
+### Memory / Interface
 ```cpp
 #pragma HLS ARRAY_PARTITION variable=buf cyclic factor=4
-#pragma HLS INTERFACE mode=axis port=data       // AXI4-Stream
-#pragma HLS INTERFACE mode=m_axi port=mem       // AXI4 master
-#pragma HLS INTERFACE mode=s_axilite port=ctrl  // AXI4-Lite registers
+#pragma HLS INTERFACE mode=axis port=data
+#pragma HLS INTERFACE mode=m_axi port=mem
+#pragma HLS INTERFACE mode=s_axilite port=ctrl
 ```
 
 ### Resource Binding
 ```cpp
-#pragma HLS BIND_OP op=mul impl=dsp      // Force multiply to DSP
-#pragma HLS ALLOCATION operation=mul limit=4   // Cap DSP count
+#pragma HLS BIND_OP op=mul impl=dsp
+#pragma HLS ALLOCATION operation=mul limit=4
 ```
 
 ### Strategy by Target
-| Target | Primary Directives |
-|--------|--------------------|
+| Target | 主要 Directive |
+|---|---|
 | Low latency | UNROLL + PIPELINE II=1 |
 | High throughput | PIPELINE + DATAFLOW + ARRAY_PARTITION |
-| Low area | ALLOCATION limits + no UNROLL |
-| Balanced | PIPELINE II=1 inner loop + ARRAY_PARTITION |
+| Low area | ALLOCATION limit + 不 UNROLL |
+| Balanced | Inner-loop PIPELINE II=1 + ARRAY_PARTITION |
 
 ### QoR Metrics to Evaluate
-- Achieved II: ≤ `design_state.constraints.hls.target_ii` (one of target_ii or target_latency_cycles must be set; prefer target_ii if both — see Constraint Validation section)
-- Latency: ≤ `design_state.constraints.hls.target_latency_cycles` cycles (one of target_ii or target_latency_cycles must be set)
-- Area: within budget
-- No directive synthesis errors
+- II ≤ `design_state.constraints.hls.target_ii`
+- Latency ≤ `design_state.constraints.hls.target_latency_cycles`
+- Area 在 budget 内
+- 0 directive synthesis error
 
 ### Output Required
-- Annotated source with all directives and justifications
+- 带 directive 和理由的 annotated source
 - Directive justification table
 
 ---
@@ -142,118 +127,107 @@ and co-simulation to verify RTL matches the golden C model.
 ## Stage: hls_synthesis
 
 ### Domain Rules
-1. Synthesise at target clock period
-2. Check HLS report: latency, II, resource usage
-3. Compare achieved vs target — loop back to directives if miss
-4. Flag any warnings: unresolved dependencies, failed II, inferred latches
-5. Verify interface protocols match system integration requirements
+1. 在目标 clock period 下综合。
+2. 检查 HLS report：latency、II、resource usage。
+3. 与 target 比较，未达标则回到 directive planning。
+4. 标记 unresolved dependency、failed II、inferred latch 等 warning。
+5. 验证 interface protocol 与 system integration 要求一致。
 
 ### QoR Metrics to Evaluate
-- II: matches or beats `design_state.constraints.hls.target_ii` (one of target_ii or target_latency_cycles must be set; prefer target_ii if both)
-- Latency: within `design_state.constraints.hls.target_latency_cycles` cycles (one of target_ii or target_latency_cycles must be set)
-- Area: within budget
-- No latch inference warnings
+- II 满足 `constraints.hls.target_ii`
+- Latency 满足 `constraints.hls.target_latency_cycles`
+- Area 在 budget 内
+- 无 latch inference warning
 
 ### Output Required
-- HLS synthesis report (latency, II, resource summary)
-- Generated RTL files
-- Unresolved warnings with justification
+- HLS synthesis report
+- Generated RTL
+- Unresolved warning 与 justification
 
 ---
 
 ## Stage: rtl_qc
 
 ### Domain Rules
-1. Run lint on HLS-generated RTL (same rules as rtl-design skill)
-2. Verify no latches in generated RTL
-3. Verify interface signal names match integration requirements
-4. Check all registers reset correctly
+1. 对 HLS-generated RTL 运行与 rtl-design Skill 相同的 lint。
+2. 确认无 latch。
+3. Interface signal name 与 integration requirement 一致。
+4. 所有 register reset 正确。
 
 ### QoR Metrics to Evaluate
-- Lint: 0 errors
-- No latches inferred
-- Interface ports match integration spec
+- Lint error：0
+- Inferred latch：0
+- Interface port match：PASS
 
 ### Output Required
-- Lint report on HLS-generated RTL
+- HLS-generated RTL lint report
 
 ---
 
 ## Stage: cosimulation
 
 ### Domain Rules
-1. C testbench drives RTL through HLS wrapper
-2. RTL outputs compared against C golden model automatically
-3. Measure actual latency and II — must match HLS report ±5%
-4. Exercise all code paths; test boundary conditions
+1. C testbench 通过 HLS wrapper 驱动 RTL。
+2. 自动将 RTL output 与 C golden model 比较。
+3. 实测 latency/II，应与 HLS report 匹配。
+4. 覆盖全部 code path 和 boundary condition。
 
 ### Common Failures
 | Failure | Fix |
-|---------|-----|
-| Output mismatch | Check fixed-point overflow; increase bit widths |
-| AXI handshake error | Fix INTERFACE pragma configuration |
-| Latency differs | Verify loop bounds are static |
-| X propagation | Initialise all variables in C source |
+|---|---|
+| Output mismatch | 检查 fixed-point overflow，增加 bit width |
+| AXI handshake error | 修正 INTERFACE pragma |
+| Latency 不一致 | 检查 loop bound 是否 static |
+| X propagation | 初始化 C source 中所有 variable |
 
 ### QoR Metrics to Evaluate
-- Co-simulation: 100% output match with C golden model
-- Latency measured: within `design_state.constraints.hls.cosim_tolerance_pct`% of HLS report (default: 5%)
-- II measured: matches HLS report exactly
-- No simulation errors or X propagation
+- Co-sim output 与 C golden：100% match
+- Latency 偏差 ≤ `constraints.hls.cosim_tolerance_pct`%，默认 5%
+- II 与 HLS report 完全一致
+- 无 simulation error / X propagation
 
 ### Output Required
 - Co-simulation pass/fail report
-- Latency and II measurement log
+- Latency/II measurement log
 
 ---
 
 ## Stage: hls_signoff
 
 ### Sign-off Checklist
-- [ ] All HLS-hostile patterns resolved
-- [ ] Achieved II ≤ `design_state.constraints.hls.target_ii` (one of target_ii or target_latency_cycles must be set; prefer target_ii if both)
-- [ ] Latency ≤ `design_state.constraints.hls.target_latency_cycles` cycles (one of target_ii or target_latency_cycles must be set)
-- [ ] Area within budget
-- [ ] RTL QC: lint clean, no latches
-- [ ] Co-simulation: 100% output match; latency within `design_state.constraints.hls.cosim_tolerance_pct`% (default: 5%)
-- [ ] Interface ports match system integration spec
+- [ ] HLS-hostile pattern 全解决
+- [ ] Achieved II ≤ target
+- [ ] Latency ≤ target
+- [ ] Area 在 budget 内
+- [ ] RTL QC：lint clean、无 latch
+- [ ] Co-sim：100% output match；latency 在 tolerance 内
+- [ ] Interface port 符合 integration spec
 
 ### Output Required
-- HLS RTL package (generated .v/.sv files)
-- Co-simulation pass report
-- HLS QoR report (latency, II, area)
+- HLS RTL package（.v/.sv）
+- Co-sim pass report
+- HLS QoR report（latency、II、area）
 - Interface documentation
 
 ---
 
 ## Constraint Validation
-
-See `plugins/meta/skills/pipeline-orchestration/SKILL.md` §Constraints Schema for the authoritative schema and stage-entry validation rule.
-
-**Required at entry (`algorithm_analysis`) — at least one must be non-null:**
-- `constraints.hls.target_ii` — target initiation interval (one of target_ii or target_latency_cycles must be set; prefer target_ii if both)
-- `constraints.hls.target_latency_cycles` — target latency in clock cycles (one of target_ii or target_latency_cycles must be set)
-
-**Optional (schema defaults apply when absent):**
-- `constraints.hls.cosim_tolerance_pct` (default: 5) — acceptable co-simulation latency deviation %
-- `constraints.clock.clk_mhz` — target clock for synthesis (used if set; otherwise tool default)
+权威 schema 见 Meta Pipeline Skill。
+进入 `algorithm_analysis` 时，`constraints.hls.target_ii` 与
+`constraints.hls.target_latency_cycles` 至少一个必须非 null；两者同时存在时优先 target_ii。
+Optional：`hls.cosim_tolerance_pct` 默认 5；`clock.clk_mhz` 如有则作为 synthesis target。
 
 ---
 
 ## Memory
 
 ### Write on stage completion
-After each stage completes (regardless of whether an orchestrator session is active),
-write or overwrite one JSON record in `memory/hls/experiences.jsonl` keyed by
-`run_id`. This ensures data is persisted even if the flow is interrupted or called
-without full orchestrator context.
+每 stage 完成后按 `run_id` upsert `memory/hls/experiences.jsonl`。
+`run_id = hls_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用；
+每条 JSON 必须包含匹配的顶层 `run_id`，最终 sign-off 前保持 `signoff_achieved:false`。
 
-Use `run_id` = `hls_<YYYYMMDD>_<HHMMSS>` (set once at flow start; reuse on each
-stage update). Every JSON record written must include a top-level `"run_id"` field
-whose value matches this key — this is what makes overwrites unambiguous. Set
-`signoff_achieved: false` until the final sign-off stage completes.
-### Run state (write before first stage, update after each stage)
-Write `memory/hls/run_state.md` as the **first action** before launching any tool:
+### Run state
+工具执行前第一步写 `memory/hls/run_state.md`：
 ```markdown
 run_id:      hls_<YYYYMMDD>_<HHMMSS>
 design_name: <design>
@@ -261,11 +235,8 @@ tool:        <primary tool>
 start_time:  <ISO-8601>
 last_stage:  <first stage name>
 ```
-Update `last_stage` after each stage completes. This file lets wakeup-loop prompts
-and resumed sessions identify the correct run without relying on in-memory state.
-Create the file and parent directories if they do not exist.
+每 stage 后更新 `last_stage`。
 
 ### Optional: claude-mem index
-If `mcp__plugin_ecc_memory__add_observations` is available in this session, emit each
-applied fix as an observation to entity `chip-design-hls-fixes` after writing to
-`experiences.jsonl`. Skip silently if the tool is absent — JSONL is the canonical record.
+如 `mcp__plugin_ecc_memory__add_observations` 可用，将 applied fix 写入
+`chip-design-hls-fixes`；否则跳过，JSONL 为 canonical record。
