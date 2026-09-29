@@ -65,7 +65,7 @@ module_planning → rtl_coding → lint_check → cdc_rdc_analysis → synth_che
 }
 ```
 
-## 行为规则
+## Behaviour Rules
 1. 每个 stage 执行前读取 rtl-design Skill。
 2. 每次 `rtl_coding` 都强制执行 Skill 中定义的 SystemVerilog 编码规范。
 3. 达到最大迭代次数时必须明确升级，展示当前状态和根因，具体流程见 Stage Gating and Escalation 第 3 条。
