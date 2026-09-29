@@ -1,11 +1,11 @@
-# Formal Verification Flow — Full Architecture Design
+# 形式验证流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven formal verification flow covering formal property verification (FPV), logical equivalence checking (LEC), and CDC/RDC formal analysis. Complements simulation-based verification for exhaustive proof of correctness.
+> **目的**：AI 驱动的 Formal Verification 流程，覆盖 Formal Property Verification（FPV）、Logical Equivalence Checking（LEC）以及 CDC/RDC formal analysis。它与 simulation-based verification 互补，用穷尽证明补足仿真覆盖不到的状态空间。
 
 ---
 
-## 1. Shared State Object
+## 1. 共享状态对象
 
 ```json
 {
@@ -36,7 +36,7 @@
 
 ---
 
-## 2. Stage Sequence
+## 2. Stage Sequence（阶段顺序）
 
 ```
 [Property Planning] ──► [Environment Setup] ──► [FPV Run]
@@ -55,16 +55,16 @@
 
 ### Loop-Back Rules
 
-| Failure                              | Loop Back To       | Max |
-|--------------------------------------|--------------------|-----|
-| FPV: CEX found (RTL bug)             | (Fix RTL) → FPV   | N/A |
-| FPV: Vacuous proof                   | Environment Setup  | 3   |
-| FPV: Inconclusive (bound too small)  | FPV Run (inc. bound)| 3  |
-| LEC: Unmatched points                | (Fix netlist) → LEC| 3  |
+| 失败 | 回退到 | 最大次数 |
+|---|---|---:|
+| FPV：发现 CEX（RTL bug） | Fix RTL → FPV | N/A |
+| FPV：vacuous proof | Environment Setup | 3 |
+| FPV：inconclusive/bound 太小 | FPV Run，增加 bound | 3 |
+| LEC：unmatched point | Fix netlist → LEC | 3 |
 
 ---
 
-## 3. Skill File Specifications
+## 3. Skill 文件说明
 
 ### 3.1 `sv-formal-property/SKILL.md`
 
@@ -72,34 +72,32 @@
 # Skill: Formal — Property Planning
 
 ## Purpose
-Define the complete set of properties to be proven formally.
+定义需要 formal proof 的完整 property 集合。
 
 ## Property Categories
-1. Safety: "something bad never happens"
-   → assert property (@(posedge clk) !(error && valid));
-2. Liveness: "something good eventually happens"
-   → assert property (@(posedge clk) req |-> ##[1:MAX] ack);
-3. Stability: "output is stable while condition holds"
-   → assert property (@(posedge clk) valid |-> $stable(data));
-4. Reachability: "a state is reachable" (use cover)
-   → cover property (@(posedge clk) state == DONE);
-5. Equivalence: "two implementations are equal"
-   → used in LEC flow
+1. Safety：“坏事永远不会发生”
+   → `assert property (@(posedge clk) !(error && valid));`
+2. Liveness：“好事最终会发生”
+   → `assert property (@(posedge clk) req |-> ##[1:MAX] ack);`
+3. Stability：condition 成立时 output 保持稳定
+   → `assert property (@(posedge clk) valid |-> $stable(data));`
+4. Reachability：某个 state 可达，使用 cover
+5. Equivalence：两个实现等价，用于 LEC
 
 ## Property Writing Rules
-1. All properties: include descriptive name and failure message
-2. Liveness properties: always bound the "eventually" (##[1:BOUND])
-3. Assumptions (restrict_): must be validated for vacuity
-4. Use $past(), $rose(), $fell() over manual delay modeling
-5. Disable iff: use for reset conditions
+1. 每条 property 有明确名称和 failure message
+2. Liveness 必须有有限 bound
+3. Assumption 必须经过 vacuity validation
+4. 优先使用 $past()/$rose()/$fell()，避免手工 delay model
+5. Reset 条件使用 disable iff
 
 ## QoR Metrics
-- All spec features mapped to at least one property or cover point
-- Cover points: verifiable reachability for key states
+- 每个 spec feature 至少映射到 property 或 cover point
+- 关键 state 的 reachability 可证明
 
 ## Output Required
-- Property plan document (feature → property mapping)
-- SVA property file (.sva)
+- Property plan
+- SVA property file
 - SVA assumption file
 ```
 
@@ -111,20 +109,19 @@ Define the complete set of properties to be proven formally.
 # Skill: Formal — Environment Setup
 
 ## Purpose
-Build a correct and complete formal verification environment
-(constraints/assumptions) that accurately models the DUT's context.
+构建正确完整的 formal environment（constraint/assumption），真实模拟 DUT 所处上下文。
 
 ## Domain Rules
-1. Constrain all primary inputs to legal values only
-2. Protocol assumptions: model upstream block behavior
-3. Reset assumption: force correct reset sequence at time 0
-4. Over-constraining → vacuous proof (nothing can be proven wrong)
-5. Under-constraining → false CEX (bug in environment, not DUT)
-6. Vacuity check: run with assume disabled — property should NOT hold
-7. Use helper assumptions sparingly and document each one
+1. Primary input 只约束到合法值
+2. Protocol assumption 模拟上游行为
+3. Reset assumption 强制 time 0 的正确 reset sequence
+4. Over-constraining 会造成 vacuous proof
+5. Under-constraining 会产生环境导致的假 CEX
+6. Vacuity check：禁用 assumption 后，property 不应仍无条件成立
+7. Helper assumption 谨慎使用并逐条文档化
 
 ## Common Assumptions Template
-```
+```systemverilog
 // Reset behavior
 assume property (@(posedge clk) $rose(rst_n) |-> ##1 !rst_n throughout ##[0:5] rst_n);
 
@@ -134,13 +131,13 @@ assume property (@(posedge clk) (s_axi_awvalid && !s_axi_awready) |=>
 ```
 
 ## QoR Metrics
-- Vacuity check: PASS for all properties
-- No over-constraining: formal tool reports reasonable state space
-- Environment review: signed off by verification lead
+- 所有 property vacuity check PASS
+- 无明显 over-constraining
+- Environment review 已由 verification lead sign-off
 
 ## Output Required
-- Formal environment file (constraints)
-- Vacuity check report
+- Formal environment file
+- Vacuity report
 - Environment review record
 ```
 
@@ -152,32 +149,32 @@ assume property (@(posedge clk) (s_axi_awvalid && !s_axi_awready) |=>
 # Skill: Formal — Property Verification (FPV) Execution
 
 ## Purpose
-Run formal property verification and classify all property results.
+运行 formal property verification，并分类全部 property 结果。
 
 ## Result Classifications
-| Result        | Meaning                                    | Action              |
-|---------------|--------------------------------------------|---------------------|
-| PROVEN        | Property holds for all reachable states    | Log and continue    |
-| CEX           | Counterexample found — property violated   | Analyze, fix        |
-| VACUOUS       | Holds because antecedent never fires       | Fix assumption/prop |
-| INCONCLUSIVE  | Bound too small or state space too large   | Increase bound / abstract |
-| UNREACHABLE   | Cover point never reachable                | Verify or waive     |
+| Result | 含义 | 动作 |
+|---|---|---|
+| PROVEN | 所有 reachable state 都满足 property | 记录并继续 |
+| CEX | 发现 counterexample | 分析并修复 |
+| VACUOUS | antecedent 从未触发导致“证明” | 修 assumption/property |
+| INCONCLUSIVE | Bound 不够或 state space 太大 | 增加 bound / abstraction |
+| UNREACHABLE | Cover point 不可达 | 核实或 waive |
 
 ## Strategies for Inconclusive Results
-1. Increase BMC bound (k-induction)
-2. Apply abstractions (data abstraction, counter abstraction)
-3. Decompose: prove sub-properties, compose to main property
-4. Hybrid: use formal to close, simulation to reach deep states
-5. Document as "assumed correct" with justification if intractable
+1. 增加 BMC bound / k-induction depth
+2. 使用 data/counter abstraction
+3. 分解 property，再组合证明
+4. Formal + simulation 混合
+5. 无法收敛时必须记录 justification，不能伪装成 PASS
 
 ## QoR Metrics
-- Target: 100% PROVEN or VACUOUS-FREE
-- No unanalyzed CEX
-- All INCONCLUSIVE: documented with justification
+- 目标：P0 全部 PROVEN，且无 vacuous proof
+- 无未分析 CEX
+- 所有 INCONCLUSIVE 有明确说明
 
 ## Output Required
-- FPV run report (per property: result, CEX trace if applicable)
-- CEX waveform descriptions for any failures
+- Per-property FPV report
+- Failure 的 CEX trace/waveform
 ```
 
 ---
@@ -188,38 +185,37 @@ Run formal property verification and classify all property results.
 # Skill: Formal — Logical Equivalence Checking (LEC)
 
 ## Purpose
-Prove that two representations of the same design (RTL vs netlist,
-pre-ECO vs post-ECO, etc.) are logically equivalent.
+证明同一设计的两种表示（RTL vs netlist、pre-ECO vs post-ECO）逻辑等价。
 
 ## LEC Flow
-1. Read golden (reference): RTL or pre-ECO netlist
-2. Read revised: post-synthesis netlist or post-ECO netlist
-3. Map points: match sequential/combinational key points
-4. Verify all points: compare cone-of-influence
-5. Report: EQUIVALENT / UNMATCHED / ABORTED
+1. Read golden/reference
+2. Read revised
+3. Map sequential/combinational compare point
+4. 验证所有 point 的 cone-of-influence
+5. 报告 EQUIVALENT / UNMATCHED / ABORTED
 
 ## Domain Rules
-1. Always use same SDC for both golden and revised
-2. Scan mode: flatten scan chains for LEC or use scan-unaware mode
-3. Black boxes: handle consistently in both netlists
-4. Clock gating: verify gating logic is preserved
-5. Unmatched points: must be analyzed — not waived without root cause
-6. Post-ECO: run LEC after every ECO, not just at sign-off
+1. Golden/revised 使用同一套 SDC
+2. Scan mode 对两边必须一致处理
+3. Blackbox 必须一致
+4. Clock gating mapping 要正确
+5. Unmatched point 必须 root-cause，不能无理由 waive
+6. 每次 ECO 后都运行 LEC，不只 sign-off 时运行
 
 ## Common LEC Failures
-- Optimizer removed logic (verify with tool report)
-- SDC mismatch between RTL and netlist
-- Scan chain reordering introduced difference
-- Black box in one but not other
+- Optimizer 删除逻辑
+- RTL/netlist SDC 不一致
+- Scan-chain reorder
+- 只有一侧存在 blackbox
 
 ## QoR Metrics
-- All compare points: EQUIVALENT
-- 0 UNMATCHED points (no waivers without RTL team approval)
-- 0 ABORTED points
+- 所有 compare point EQUIVALENT
+- UNMATCHED = 0
+- ABORTED = 0
 
 ## Output Required
 - LEC run report
-- Unmatched point analysis (if any)
+- Unmatched point analysis
 - EQUIVALENT sign-off record
 ```
 
@@ -246,3 +242,5 @@ LOOP-BACK RULES:
 Track all property results in state_object.properties.
 Flag any unproven P0 property as a blocker for sign-off.
 ```
+
+> 固定 stage 名、枚举和机器接口保持英文，正文已中文化。
