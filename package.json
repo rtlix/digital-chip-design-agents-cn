@@ -1,7 +1,7 @@
 {
   "name": "digital-chip-design-agents",
   "version": "1.8.0",
-  "description": "Full digital chip design pipeline — 16 Claude Code plugins across 15 domains, from infrastructure setup through tape-out and firmware, with closed-loop verification↔RTL feedback.",
+  "description": "完整数字芯片设计流水线——16 个 Claude Code 插件覆盖 15 个领域，从基础设施配置、设计实现到流片与固件，并支持 Verification↔RTL 闭环反馈。",
   "type": "module",
   "bin": {
     "digital-chip-design-agents": "bin/install.mjs"
