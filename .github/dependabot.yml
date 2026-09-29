@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Keep the SHA-pinned GitHub Actions in .github/workflows/ up to date.
+  # 保持 .github/workflows/ 中使用 SHA 固定的 GitHub Actions 为最新版本。
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -8,8 +8,8 @@ updates:
     commit-message:
       prefix: "ci"
     groups:
-      # Batch routine action bumps into a single PR to reduce noise; majors
-      # still come as separate PRs so they can be reviewed individually.
+      # 将常规 Action 升级合并到一个 PR 中以减少噪声；
+      # major 版本仍单独创建 PR，便于逐项审查。
       github-actions:
         update-types:
           - "minor"
