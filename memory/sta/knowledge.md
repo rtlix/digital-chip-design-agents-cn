@@ -1,42 +1,23 @@
-# STA Domain Knowledge
+# STA Domain Knowledge（STA 领域知识）
 
 ## Known Failure Patterns
 
-- **OpenSTA hold analysis without set_propagated_clock**: OpenSTA `set_propagated_clock` is
-  required before hold analysis. Without it, OpenSTA uses ideal clock (zero skew) for hold
-  checks, which produces false "clean hold" results that fail on silicon. Always call
-  `set_propagated_clock [all_clocks]` in the STA script before `report_checks -path_delay min`.
-- **Multi-corner hold closure needs target library hold_margin**: Multi-corner hold closure in
-  sky130 usually requires setting a `hold_margin` in the target liberty file. The default
-  hold_margin of 0 ps is insufficient for signoff at slow-slow corner with RCMAX parasitics —
-  add 50–100 ps margin.
-- **ECO cells > 2% → upstream issue**: If ECO cell count exceeds 2% of total cells during
-  `eco_guidance`, this almost always indicates a floorplan or CTS issue upstream — not a timing
-  exception problem. Escalate to the physical design team rather than continuing ECO iteration.
-- **rcx extraction accuracy for hold at 28nm and below**: RCX extraction accuracy significantly
-  affects hold timing at 28nm and below. OpenROAD's built-in RC estimator (`estimate_parasitics`)
-  is not accurate enough for hold signoff — use SPEF from a dedicated extraction tool (Calibre xRC,
-  StarRC, or OpenRCX with calibrated rules).
+- **OpenSTA hold analysis 缺 `set_propagated_clock`**：hold check 前必须 `set_propagated_clock [all_clocks]`。否则使用 ideal clock（zero skew），可能得到假 “clean hold”，silicon 才失败。
+- **Multi-corner hold closure 的 hold margin**：sky130 在 slow-slow + RCMAX 下通常需要 target liberty hold margin；0 ps 往往不够，建议根据项目加 50–100 ps margin。
+- **ECO cell >2% → 上游问题**：`eco_guidance` 中 ECO cell 超过总 cell 2% 往往是 floorplan/CTS 根因，不是 exception 问题；应升级给 PD。
+- **28nm 及以下 hold 对 RCX 精度敏感**：OpenROAD `estimate_parasitics` 不足以做严谨 hold sign-off，应使用 Calibre xRC、StarRC 或 calibrated OpenRCX 生成 SPEF。
 
 ## Successful Tool Flags
 
-- `sta -exit <script.tcl>` — `-exit` ensures OpenSTA exits cleanly with a return code; required
-  for CI/CD integration where a hung process would block the pipeline.
-- `report_timing -path_type full_clock_expanded -delay_type max -nworst 10` — `full_clock_expanded`
-  shows full clock network paths; essential for diagnosing clock skew contributions to WNS.
-- `report_slack_histogram -num_bins 20` — quick overview of slack distribution; use before
-  detailed path analysis to understand whether violations are widespread or concentrated.
+- `sta -exit <script.tcl>`：保证 OpenSTA clean exit 并返回 code，适合 CI。
+- `report_timing -path_type full_clock_expanded -delay_type max -nworst 10`：完整显示 clock network，便于分析 skew 对 WNS 的贡献。
+- `report_slack_histogram -num_bins 20`：在 detailed path analysis 前快速判断 violation 是广泛还是集中。
 
 ## PDK / Tool Quirks
 
-- **PrimeTime POCV vs AOCV**: PrimeTime POCV (parametric OCV) is more accurate than AOCV for
-  advanced nodes but requires POCV coefficient files from the PDK vendor. Using AOCV on a design
-  that has POCV coefficients available leaves pessimism on the table.
-- **Tempus multi-mode multi-corner**: Tempus MMMC setup requires a `constraint_mode` and
-  `delay_corner` for every combination — missing combinations produce incorrect "all clear" reports
-  for unconstrained paths.
+- **PrimeTime POCV vs AOCV**：先进节点有 POCV coefficient 时，POCV 通常比 AOCV 更准确、更少 pessimism。
+- **Tempus MMMC**：每个 mode/corner 组合都需要 `constraint_mode` 与 `delay_corner`；缺组合可能出现错误的“all clear”。
 
 ## Notes
 
-- STA signoff requires `setup_wns_ns >= 0` AND `setup_tns_ps == 0` AND `hold_wns_ps >= 0`
-  AND `hold_tns_ps == 0` at ALL corners. A single failing corner blocks tape-out.
+- STA sign-off 要求所有 corner 同时满足 setup WNS/TNS 与 hold WNS/TNS 目标；任一 corner fail 都阻止 tape-out。
