@@ -1,11 +1,11 @@
 {
-  "_comment": "OpenROAD batch MCP server — for single-stage invocations. For ECO iteration queries on a loaded design use mcp-openroad-session.json instead.",
+  "_comment": "OpenROAD 批处理 MCP Server —— 用于单个 stage 的调用。对于已经加载 design 的 ECO 迭代查询，请改用 mcp-openroad-session.json。",
   "_setup": [
-    "Two substitutions required before use:",
-    "1. Replace the two '/absolute/path/to' strings in 'args' with the absolute path to this repo root (e.g. /home/user/digital-chip-design-agents).",
-    "2. Set PDK_ROOT in 'env' to the directory containing your installed PDKs (e.g. /home/user/pdk or $PDKPATH).",
-    "PLATFORM and TOOL_TIMEOUT_S can be left as-is or overridden per design.",
-    "Run 'bash install.sh' first — it copies this template and can apply path substitution automatically."
+    "使用前需要完成两项替换：",
+    "1. 将 args 中两处 '/absolute/path/to' 替换为本仓库根目录的绝对路径（例如 /home/user/digital-chip-design-agents）。",
+    "2. 将 env 中的 PDK_ROOT 设置为已安装 PDK 的目录（例如 /home/user/pdk 或 $PDKPATH）。",
+    "PLATFORM 和 TOOL_TIMEOUT_S 可以保持默认，也可以按 design 覆盖。",
+    "请先运行 'bash install.sh' —— 安装脚本会复制此模板，并可自动完成路径替换。"
   ],
   "mcpServers": {
     "openroad": {
@@ -15,7 +15,7 @@
         "/absolute/path/to/plugins/infrastructure/tools/mcp-adapter.py",
         "--wrapper", "/absolute/path/to/plugins/infrastructure/tools/wrap-openroad.sh",
         "--tool", "openroad",
-        "--description", "Run a single OpenROAD stage and return compact JSON: wns_ns, tns_ns, drc_violations, last 5 progress messages"
+        "--description", "运行单个 OpenROAD stage 并返回紧凑 JSON：wns_ns、tns_ns、drc_violations、最后 5 条 progress message"
       ],
       "env": {
         "PDK_ROOT": "/path/to/pdks",
