@@ -482,11 +482,7 @@ upsert 一条：
 "signoff_achieved": false
 ```
 
-最终 sign-off 成功后才：
-
-```json
-"signoff_achieved": true
-```
+只有最终 sign-off 的全部判据真实通过后，才允许把该布尔字段更新为成功状态；任何 partial、escalated、abandoned 或 unverified 运行都必须继续保持 `false`。
 
 同一 `run_id`
 **不得追加第二行**；
