@@ -1,4 +1,4 @@
-"""Static contract checks on the orchestrator agent and skill markdown.
+"""对 Orchestrator Agent 与 Skill Markdown 做静态 contract 检查。
 
 These guard wording that orchestrators copy verbatim into the records they write,
 so a defect in the template becomes a defect in every run's output.
@@ -17,8 +17,8 @@ AGENT_FILES = sorted(REPO_ROOT.glob("plugins/*/agents/*.md"))
 SKILL_FILES = sorted(REPO_ROOT.glob("plugins/*/skills/*/SKILL.md"))
 MEMORY_README = REPO_ROOT / "memory" / "README.md"
 
-# A JSON example that hardcodes success. Prose such as `signoff_achieved: true`
-# (no JSON quotes) is how the rules describe the success case and is allowed.
+# 下面匹配硬编码成功状态的 JSON 示例。规则正文中的 `signoff_achieved: true`
+#（没有 JSON 引号）只是对成功场景的说明，因此允许存在。
 HARDCODED_SIGNOFF = re.compile(r'"signoff_achieved"\s*:\s*true')
 
 
@@ -41,8 +41,8 @@ def test_agent_files_discovered():
     "path", AGENT_FILES + SKILL_FILES + [MEMORY_README], ids=_rel
 )
 def test_signoff_achieved_not_hardcoded_true(path):
-    """distill.py counts sign-off with ``is True``; a template defaulting to true
-    records escalated and abandoned runs as successes."""
+    """distill.py 使用 ``is True`` 统计 sign-off；如果模板默认 true，
+    就会把 escalated/abandoned run 错记为成功。"""
     lines = [
         f"{_rel(path)}:{n}"
         for n, line in enumerate(_read(path).splitlines(), 1)
@@ -53,8 +53,8 @@ def test_signoff_achieved_not_hardcoded_true(path):
 
 @pytest.mark.parametrize("path", AGENT_FILES + SKILL_FILES, ids=_rel)
 def test_experience_records_are_not_append_only(path):
-    """Records are upserted by run_id (memory/README.md). An append per stage or
-    per re-run gives one run several records, and distill.py does not dedup."""
+    """Record 按 run_id upsert（见 memory/README.md）。如果每个 stage 或
+    每次 re-run 都 append，同一个 run 会产生多条记录，而 distill.py 不会去重。"""
     text = _read(path)
     for phrase in ("append one JSON line", "always append"):
         assert phrase not in text, f"{_rel(path)}: append-only wording: {phrase!r}"
@@ -78,8 +78,8 @@ DECISION_ENUM = re.compile(r'"decision"\s*:\s*"([^"]*\|[^"]*)"')
 
 @pytest.mark.parametrize("path", AGENT_FILES, ids=_rel)
 def test_decision_enum_lists_every_value_the_agent_writes(path):
-    """The checkpoint gate writes decision "await_approval"; the history-entry
-    enum the agent copies from must offer it."""
+    """Checkpoint gate 会写 decision "await_approval"；Agent 复制的 history-entry
+    enum 必须包含该值。"""
     text = _read(path)
     if 'decision: "await_approval"' not in text:
         pytest.skip("agent has no checkpoint gate")
@@ -94,7 +94,7 @@ def test_decision_enum_lists_every_value_the_agent_writes(path):
 
 @pytest.mark.parametrize("path", AGENT_FILES, ids=_rel)
 def test_escalation_guidance_goes_in_history_reason(path):
-    """Domain orchestrators set pending_approval only at their gates; type
+    """Domain Orchestrator 只能在自己的 gate 设置 pending_approval；
     "escalation" belongs to the pipeline-orchestrator. A rule that puts every
-    escalation's guidance in pending_approval.reason implies otherwise."""
+    如果 pending_approval.reason 的 escalation guidance 暗示其他用法，就是 contract 错误。"""
     assert "When escalating, `pending_approval.reason` must state" not in _read(path)
