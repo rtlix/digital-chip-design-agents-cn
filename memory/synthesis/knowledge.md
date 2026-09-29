@@ -1,42 +1,22 @@
-# Synthesis Domain Knowledge
+# Synthesis Domain Knowledge（综合领域知识）
 
 ## Known Failure Patterns
 
-- **Yosys -flatten required for hierarchical sky130 designs**: Yosys synthesis of hierarchical
-  designs targeting sky130 PDK requires `-flatten` in the `synth` pass. Without flattening,
-  technology mapping fails to optimize across hierarchy boundaries, producing ~15–20% area
-  overhead vs. flattened synthesis. Use `synth -top <top> -flatten` for sky130 targets.
-- **Genus set_max_area alone does not close WNS**: In Cadence Genus, `set_max_area 0` alone
-  does not drive timing closure. WNS violations persist if timing constraints are not applied
-  before area optimization. Always set timing constraints (`create_clock`, `set_input_delay`,
-  `set_output_delay`) before `compile_ultra` — area optimization runs automatically within the
-  timing budget.
-- **Scan chain false paths before compile_ultra**: Scan chain false paths must be declared in the
-  SDC (`set_false_path -from [get_ports scan_in] -to [get_ports scan_out]`) before `compile_ultra`.
-  Declaring them after causes Fusion Compiler to re-optimize scan paths, breaking chain continuity
-  and requiring LEC re-run.
+- **sky130 hierarchy 使用 Yosys -flatten**：层次化 design 对 sky130 综合时，`synth -flatten` 往往能避免 hierarchy boundary 阻止 technology optimization；不 flatten 可能带来约 15–20% area overhead。
+- **Genus 只 set_max_area 不能关闭 WNS**：必须先正确设置 `create_clock/set_input_delay/set_output_delay`，再做 area optimization；否则 WNS 仍会违反。
+- **compile_ultra 前声明 scan false path**：scan chain false path 应在 compile 前写入 SDC，例如 `set_false_path -from [get_ports scan_in] -to [get_ports scan_out]`。后补可能让工具重新优化 scan path，破坏 chain continuity 并迫使 LEC 重跑。
 
 ## Successful Tool Flags
 
-- `yosys -p "synth -top <top> -flatten; dfflibmap -liberty <lib.lib>; abc -liberty <lib.lib> -D <period_ps>"` —
-  complete Yosys synthesis command for sky130; `-D <period_ps>` sets the timing target for ABC
-  delay optimization.
-- `dc_shell -f <script.tcl> -output_log_file <log>` — always capture the log; `check_design`
-  warnings about unresolved references are the most common root cause of synthesis failures.
-- `genus -legacy_ui -files <script.tcl>` — `--legacy_ui` mode is more stable for scripted flows
-  than the default UI mode; avoids interactive prompts that hang batch jobs.
+- `yosys -p "synth -top <top> -flatten; dfflibmap -liberty <lib.lib>; abc -liberty <lib.lib> -D <period_ps>"`：sky130 常用完整 Yosys synthesis；`-D` 设置 ABC timing target。
+- `dc_shell -f <script.tcl> -output_log_file <log>`：始终保留 log；`check_design` unresolved-reference warning 是综合失败的常见根因。
+- `genus -legacy_ui -files <script.tcl>`：scripted flow 下 legacy UI 往往更稳定，避免 batch job 被交互 prompt 卡住。
 
 ## PDK / Tool Quirks
 
-- **`ultra` effort past 2× loop-backs**: `compile_ultra` with `ultra` effort rarely closes WNS
-  past 2 loop-back iterations — further effort yields < 1% improvement at 3–5× runtime cost.
-  Switch to targeted path optimization (`compile_ultra -only_design_rule` + `optimize_registers`)
-  after 2 failed `compile_ultra` runs.
-- **ABC liberty compatibility**: ABC requires liberty files without `pg_pin` (power/ground pin)
-  entries. Strip `pg_pin` blocks from sky130 liberty with `sed '/pg_pin/,/^  }/d'` before passing
-  to Yosys/ABC — `pg_pin` entries cause ABC to silently ignore the cell.
+- **`compile_ultra` 超过 2 次 loop-back 收益很小**：继续 ultra effort 往往只改善 <1%，却增加 3–5× runtime。两次失败后应转 targeted path optimization。
+- **ABC Liberty compatibility**：ABC 对带 `pg_pin` 的 liberty support 有限制。给 Yosys/ABC 前可按 flow 要求清理相关 block，例如 `sed '/pg_pin/,/^  }/d'`；否则可能静默忽略 cell。
 
 ## Notes
 
-- LEC must be run after every netlist change — not just at signoff. A single unverified netlist
-  change that reaches PD and fails LEC there costs a full PD re-run.
+- 每次 netlist change 后都应运行 LEC，而不是只在 sign-off。未验证 netlist 进入 PD 后再暴露 LEC fail，会造成完整 PD 重跑。
