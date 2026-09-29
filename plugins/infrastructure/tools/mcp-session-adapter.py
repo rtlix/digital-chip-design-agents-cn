@@ -1,27 +1,25 @@
 #!/usr/bin/env python3
 """
-mcp-session-adapter.py — Persistent MCP stdio server for interactive EDA tool sessions.
+mcp-session-adapter.py —— 面向交互式 EDA tool session 的持久化 MCP stdio Server。
 
-Implements MCP protocol version 2024-11-05 over stdio (JSON-RPC 2.0, newline-delimited).
-Keeps a long-lived Tcl subprocess (openroad or sta) open between tool calls, so the
-agent can query timing, DRC, area, etc. on an already-loaded design without re-loading
-on every call.
+通过 stdio 实现 MCP protocol 2024-11-05（JSON-RPC 2.0，每行一个消息）。
+在多次 tool call 之间保持长期运行的 Tcl 子进程（openroad 或 sta），这样 Agent 可以对已加载 design 反复查询 timing、DRC、area 等，而无需每次重新加载。
 
-Usage:
+用法：
     python3 mcp-session-adapter.py --tool openroad [--version 1.0.0]
     python3 mcp-session-adapter.py --tool opensta  [--version 1.0.0]
 
-Environment (openroad):
+环境变量（openroad）：
     OPENROAD_EXE        openroad executable name or path (default: openroad)
     PDK_ROOT            path to PDK root (used in load_design defaults)
     PLATFORM            PDK platform name e.g. sky130hd
 
-Environment (opensta):
+环境变量（opensta）：
     OPENSTA_EXE         sta executable name or path (default: sta)
     LIBERTY_PATH        default directory for .lib files
     SPEF_PATH           full path to the .spef parasitics file (not a directory); passed directly to read_parasitics
 
-Environment (both):
+环境变量（两者通用）：
     SESSION_TIMEOUT_S   per-command timeout in seconds (default: 120)
     SESSION_STARTUP_S   startup drain timeout in seconds (default: 10)
 """
@@ -40,12 +38,9 @@ from typing import Optional
 
 def _readline_timed(stream, deadline: float) -> str:
     """
-    Read one line from stream, returning '' if the deadline passes before
-    a line arrives.  Uses select(2) so the calling thread is not blocked
-    beyond the remaining time budget.
+    从 stream 读取一行；若在收到数据前已到 deadline，则返回空字符串。使用 select(2)，确保调用线程不会阻塞超过剩余时间预算。
 
-    Note: select on file objects is POSIX-only (Linux/macOS).  These wrapper
-    scripts target Linux EDA environments; Windows is not supported.
+    注意：对 file object 使用 select 仅适用于 POSIX（Linux/macOS）。这些 wrapper script 面向 Linux EDA 环境，不支持 Windows。
     """
     remaining = deadline - time.time()
     if remaining <= 0:
@@ -56,7 +51,7 @@ def _readline_timed(stream, deadline: float) -> str:
     return stream.readline()
 
 # ---------------------------------------------------------------------------
-# Protocol helpers
+# Protocol 辅助函数
 # ---------------------------------------------------------------------------
 
 def _send(msg: dict) -> None:
@@ -85,10 +80,9 @@ _SENTINEL = "<<MCP_SESSION_DONE>>"
 
 class TclSession:
     """
-    Wraps a long-lived Tcl-based EDA process (openroad / sta).
+    封装长期运行的 Tcl-based EDA 进程（openroad / sta）。
 
-    Commands are sent via stdin; output is collected until the sentinel line
-    appears.  stderr is merged into stdout so error messages are captured.
+    命令通过 stdin 发送；持续收集输出直到 sentinel 行出现。stderr 合并进 stdout，以便捕获错误消息。
     """
 
     def __init__(self, exe: str, startup_timeout: int = 10):
@@ -102,14 +96,13 @@ class TclSession:
         )
         self._lock = threading.Lock()
         self._alive = True
-        # Drain any startup banner
+        # 清理启动 banner
         self._drain_startup(startup_timeout)
         _log(f"session started (pid={self._proc.pid})")
 
     def _drain_startup(self, timeout: int) -> None:
         """
-        Discard any startup banner by sending the sentinel immediately
-        and collecting until it echoes back.  Respects timeout via select.
+        通过立即发送 sentinel 并收集到回显为止，丢弃启动 banner；通过 select 遵守 timeout。
         """
         self._proc.stdin.write(f'puts "{_SENTINEL}"\n')
         self._proc.stdin.flush()
@@ -121,9 +114,7 @@ class TclSession:
 
     def run(self, tcl: str, timeout: int = 120) -> tuple[list[str], bool]:
         """
-        Send Tcl commands and collect output until the sentinel.
-
-        Returns (lines, had_error).  Thread-safe.
+        发送 Tcl 命令并收集输出直到 sentinel。返回 (lines, had_error)，线程安全。
         """
         if not self._alive:
             return ["session is closed"], True
@@ -144,7 +135,7 @@ class TclSession:
             while True:
                 line = _readline_timed(self._proc.stdout, deadline)
                 if line == '':
-                    # '' means either deadline passed (select timeout) or EOF
+                    # 空字符串表示 deadline 已到（select timeout）或 EOF
                     if self._proc.poll() is not None:
                         self._alive = False
                         had_error = True
@@ -191,11 +182,11 @@ class TclSession:
 
 
 # ---------------------------------------------------------------------------
-# Parsing helpers
+# 解析辅助函数
 # ---------------------------------------------------------------------------
 
 def _parse_timing(lines: list[str]) -> dict:
-    """Extract WNS, TNS, and worst slack paths from report_timing output."""
+    """从 report_timing 输出提取 WNS、TNS 和 worst-slack path。"""
     text = '\n'.join(lines)
     result: dict = {}
 
@@ -206,7 +197,7 @@ def _parse_timing(lines: list[str]) -> dict:
     if tns_m:
         result["setup_tns_ns"] = float(tns_m.group(1))
 
-    # Hold metrics
+    # Hold 指标
     hold_wns_m = re.search(r'hold\s+wns\s+([-\d.]+)', text, re.I)
     hold_tns_m = re.search(r'hold\s+tns\s+([-\d.]+)', text, re.I)
     if hold_wns_m:
@@ -214,7 +205,7 @@ def _parse_timing(lines: list[str]) -> dict:
     if hold_tns_m:
         result["hold_tns_ns"] = float(hold_tns_m.group(1))
 
-    # Worst path endpoint names
+    # 最差路径 endpoint 名称
     endpoints = re.findall(r'Endpoint\s*:\s*(\S+)', text)
     if endpoints:
         result["worst_endpoints"] = endpoints[:5]
@@ -228,14 +219,14 @@ def _parse_timing(lines: list[str]) -> dict:
 
 
 def _parse_drc(lines: list[str]) -> dict:
-    """Extract DRC violation counts from check_drc / report_drc output."""
+    """从 check_drc / report_drc 输出提取 DRC violation 数量。"""
     text = '\n'.join(lines)
     result: dict = {}
     total_m = re.search(r'(\d+)\s+(?:DRC\s+)?(?:violations?|errors?)', text, re.I)
     if total_m:
         result["drc_total"] = int(total_m.group(1))
     else:
-        # No count in the output: the result is unknown, not zero violations.
+        # 输出中没有计数时，结果是 unknown，而不是 0 violation。
         result["drc_total"] = None
 
     cats: dict = {}
@@ -249,7 +240,7 @@ def _parse_drc(lines: list[str]) -> dict:
 
 
 def _parse_area(lines: list[str]) -> dict:
-    """Extract area and utilisation from report_design_area output."""
+    """从 report_design_area 输出提取 area 和 utilization。"""
     text = '\n'.join(lines)
     result: dict = {}
     area_m = re.search(r'Design area\s+([\d.]+)\s+u\^2\s+([\d.]+)%', text)
@@ -261,7 +252,7 @@ def _parse_area(lines: list[str]) -> dict:
 
 
 def _parse_power(lines: list[str]) -> dict:
-    """Extract power summary from report_power output."""
+    """从 report_power 输出提取 power summary。"""
     text = '\n'.join(lines)
     result: dict = {}
     total_m = re.search(r'Total\s+([\d.e+\-]+)\s+([\d.e+\-]+)\s+([\d.e+\-]+)\s+([\d.e+\-]+)', text)
@@ -275,19 +266,19 @@ def _parse_power(lines: list[str]) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool definitions per session type
+# 各 session 类型的工具定义
 # ---------------------------------------------------------------------------
 
 _TOOLS_OPENROAD = [
     {
         "name": "load_design",
-        "description": "Load an OpenROAD design database (.odb/.db) into the session",
+        "description": "把 OpenROAD design database（.odb/.db）加载到当前 session",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "db_path": {
                     "type": "string",
-                    "description": "Absolute path to the .odb or .db file"
+                    "description": ".odb 或 .db 文件的绝对路径"
                 }
             },
             "required": ["db_path"],
@@ -295,52 +286,52 @@ _TOOLS_OPENROAD = [
     },
     {
         "name": "query_timing",
-        "description": "Report setup/hold timing summary: WNS, TNS, worst endpoints",
+        "description": "报告 setup/hold timing summary：WNS、TNS、worst endpoints",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "path_count": {
                     "type": "integer",
                     "default": 5,
-                    "description": "Number of worst paths to report (default: 5)"
+                    "description": "要报告的 worst path 数量（默认 5）"
                 },
                 "path_type": {
                     "type": "string",
                     "enum": ["setup", "hold", "both"],
                     "default": "setup",
-                    "description": "Timing check type to report"
+                    "description": "要报告的 timing check 类型"
                 },
             },
         },
     },
     {
         "name": "query_drc",
-        "description": "Run DRC check and return total violation count and per-category breakdown",
+        "description": "运行 DRC check，并返回总 violation 数和按 category 分类的统计",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "get_design_area",
-        "description": "Return core area (um²) and utilisation percentage",
+        "description": "返回 core area（um²）和 utilization 百分比",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "get_power",
-        "description": "Return power breakdown: internal, switching, leakage, total (Watts)",
+        "description": "返回 power breakdown：internal、switching、leakage、total（W）",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "run_tcl",
-        "description": "Execute arbitrary Tcl in the OpenROAD session and return raw output lines",
+        "description": "在 OpenROAD session 中执行任意 Tcl，并返回原始输出行",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "script": {
                     "type": "string",
-                    "description": "Tcl script to execute"
+                    "description": "要执行的 Tcl script"
                 },
                 "timeout_s": {
                     "type": "integer",
-                    "description": "Per-command timeout override in seconds"
+                    "description": "覆盖单条命令 timeout 的秒数"
                 },
             },
             "required": ["script"],
@@ -348,7 +339,7 @@ _TOOLS_OPENROAD = [
     },
     {
         "name": "close_design",
-        "description": "Reset the OpenROAD session (clears loaded design; session stays alive)",
+        "description": "重置 OpenROAD session（清除已加载 design，但 session 进程保持运行）",
         "inputSchema": {"type": "object", "properties": {}},
     },
 ]
@@ -356,30 +347,30 @@ _TOOLS_OPENROAD = [
 _TOOLS_OPENSTA = [
     {
         "name": "load_design",
-        "description": "Load a gate-level netlist, liberty, SDC, and optionally parasitics into OpenSTA",
+        "description": "把 gate-level netlist、Liberty、SDC 以及可选 parasitics 加载到 OpenSTA",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "netlist": {
                     "type": "string",
-                    "description": "Path to gate-level Verilog netlist"
+                    "description": "gate-level Verilog netlist 路径"
                 },
                 "sdc": {
                     "type": "string",
-                    "description": "Path to SDC constraints file"
+                    "description": "SDC constraint 文件路径"
                 },
                 "liberty_files": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Paths to .lib liberty files (supplements LIBERTY_PATH env)"
+                    "description": "`.lib` Liberty 文件路径列表（补充 LIBERTY_PATH 环境变量）"
                 },
                 "spef": {
                     "type": "string",
-                    "description": "Path to .spef parasitics file (optional)"
+                    "description": "`.spef` parasitics 文件路径（可选）"
                 },
                 "top_module": {
                     "type": "string",
-                    "description": "Name of the top-level module to link"
+                    "description": "要 link 的 top-level module 名称"
                 },
             },
             "required": ["netlist", "sdc"],
@@ -387,60 +378,60 @@ _TOOLS_OPENSTA = [
     },
     {
         "name": "report_timing",
-        "description": "Report setup/hold timing: WNS, TNS, worst slack paths per corner",
+        "description": "报告 setup/hold timing：WNS、TNS、每个 corner 的 worst-slack path",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "path_count": {
                     "type": "integer",
                     "default": 5,
-                    "description": "Number of worst paths (default: 5)"
+                    "description": "worst path 数量（默认 5）"
                 },
                 "path_type": {
                     "type": "string",
                     "enum": ["max", "min", "both"],
                     "default": "max",
-                    "description": "max=setup, min=hold"
+                    "description": "max=setup，min=hold"
                 },
                 "corner": {
                     "type": "string",
-                    "description": "Specific corner name; omit for all corners"
+                    "description": "指定 corner 名；省略则表示全部 corner"
                 },
             },
         },
     },
     {
         "name": "report_slack_histogram",
-        "description": "Return a slack distribution histogram across all endpoints",
+        "description": "返回所有 endpoint 的 slack 分布 histogram",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "bins": {
                     "type": "integer",
                     "default": 10,
-                    "description": "Number of histogram bins"
+                    "description": "histogram bin 数量"
                 }
             },
         },
     },
     {
         "name": "check_timing",
-        "description": "Report unconstrained paths, multi-driven nets, and missing constraints",
+        "description": "报告 unconstrained path、multi-driven net 和 missing constraint",
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "run_tcl",
-        "description": "Execute arbitrary Tcl in the OpenSTA session and return raw output lines",
+        "description": "在 OpenSTA session 中执行任意 Tcl，并返回原始输出行",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "script": {
                     "type": "string",
-                    "description": "Tcl script to execute"
+                    "description": "要执行的 Tcl script"
                 },
                 "timeout_s": {
                     "type": "integer",
-                    "description": "Per-command timeout override in seconds"
+                    "description": "覆盖单条命令 timeout 的秒数"
                 },
             },
             "required": ["script"],
@@ -448,7 +439,7 @@ _TOOLS_OPENSTA = [
     },
     {
         "name": "close_design",
-        "description": "Reset the OpenSTA session (clears loaded design; session stays alive)",
+        "description": "重置 OpenSTA session（清除已加载 design，但 session 进程保持运行）",
         "inputSchema": {"type": "object", "properties": {}},
     },
 ]
@@ -520,7 +511,7 @@ def _dispatch_opensta(
     if tool_name == "load_design":
         tcl_parts: list[str] = []
 
-        # Liberty files from env + input
+        # Liberty 文件来自环境变量和输入参数
         liberty_dir = os.environ.get("LIBERTY_PATH", "")
         for lib in inputs.get("liberty_files", []):
             tcl_parts.append(f'read_liberty {{{lib}}}')
@@ -596,18 +587,18 @@ def _dispatch_opensta(
 
 
 # ---------------------------------------------------------------------------
-# Main server loop
+# 主 Server 循环
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Persistent MCP stdio session adapter for OpenROAD / OpenSTA"
+        description="OpenROAD / OpenSTA 的持久化 MCP stdio session adapter"
     )
     parser.add_argument(
         "--tool",
         required=True,
         choices=["openroad", "opensta"],
-        help="Which tool to manage: openroad or opensta",
+        help="要管理的工具：openroad 或 opensta",
     )
     parser.add_argument("--version", default="1.0.0")
     args = parser.parse_args()
@@ -698,7 +689,7 @@ def main() -> None:
         else:
             _send(_err(req_id, -32601, f"Method not found: {method}"))
 
-    # Clean up session on EOF
+    # EOF 时清理 session
     if session and session.is_alive():
         session.close()
 
