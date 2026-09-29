@@ -1,18 +1,18 @@
-# Physical Design Flow — Full Architecture Design
+# Physical Design 流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: This document defines the complete architecture for an AI-driven Physical Design (PD) flow. It is intended to be copied into a new session for implementation. It covers all skill file structures, stage agent designs, and the top-level orchestrator agent.
+> **目的**：定义 AI 驱动 Physical Design（PD）流程的完整架构。覆盖所有 Skill、Stage Agent 和顶层 Orchestrator，从 gate-level netlist 一直到 tape-out-ready GDS。
 
 ---
 
-## 1. Architecture Overview
+## 1. 架构总览
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   ORCHESTRATOR AGENT                        │
-│  - Receives: Netlist, SDC, LEF/DEF, Technology files        │
-│  - Manages: Stage sequencing, QoR state, loop-back logic    │
-│  - Outputs: Final GDS, timing/power/area reports            │
+│  输入：Netlist、SDC、LEF/DEF、technology file                │
+│  管理：Stage sequence、QoR state、loop-back logic             │
+│  输出：Final GDS、timing/power/area report                    │
 └────────────────────┬────────────────────────────────────────┘
                      │ dispatches to
      ┌───────────────┼───────────────────────┐
@@ -27,56 +27,52 @@
 ┌─────────┐   ┌─────────────┐         ┌──────────────┐
 │  SKILL  │   │   SKILL     │         │    SKILL     │
 │floorplan│   │  placement  │         │   signoff    │
-│.md      │   │  .md        │         │   .md        │
 └─────────┘   └─────────────┘         └──────────────┘
 ```
 
-### Core Principle
-- **Skills** = domain knowledge per stage (rules, heuristics, SDC syntax, metrics)
-- **Stage Agents** = execute one stage, evaluate QoR, return structured results
-- **Orchestrator** = sequences stages, passes state, handles failures and loop-backs
+### 核心原则
+
+- **Skills**：每个 stage 的 domain knowledge、rule、heuristic、constraint 与 metric
+- **Stage Agents**：执行单个 stage、评估 QoR、返回结构化结果
+- **Orchestrator**：按顺序调度 stage、传递 state、处理 failure 和 loop-back
 
 ---
 
-## 2. Shared Data Contract (State Object)
+## 2. 共享数据契约（State Object）
 
-All agents communicate through a single shared JSON state object. Every stage agent reads from and writes to this object.
+所有 Agent 通过同一个 JSON state object 通信：
 
 ```json
 {
   "run_id": "pd_run_001",
   "technology": "tsmc7nm",
   "design_name": "my_chip",
-
   "inputs": {
-    "netlist":    "path/to/netlist.v",
-    "sdc":        "path/to/constraints.sdc",
-    "lef":        ["tech.lef", "cells.lef"],
-    "def":        "path/to/floorplan.def",
-    "upf":        "path/to/power_intent.upf",
-    "lib":        ["tt.lib", "ss.lib", "ff.lib"]
+    "netlist": "path/to/netlist.v",
+    "sdc": "path/to/constraints.sdc",
+    "lef": ["tech.lef", "cells.lef"],
+    "def": "path/to/floorplan.def",
+    "upf": "path/to/power_intent.upf",
+    "lib": ["tt.lib", "ss.lib", "ff.lib"]
   },
-
   "stages": {
-    "floorplan":          { "status": "pending", "qor": {}, "issues": [], "output": {} },
-    "placement":          { "status": "pending", "qor": {}, "issues": [], "output": {} },
-    "cts":                { "status": "pending", "qor": {}, "issues": [], "output": {} },
-    "routing":            { "status": "pending", "qor": {}, "issues": [], "output": {} },
-    "timing_optimization":{ "status": "pending", "qor": {}, "issues": [], "output": {} },
-    "power_optimization": { "status": "pending", "qor": {}, "issues": [], "output": {} },
-    "area_optimization":  { "status": "pending", "qor": {}, "issues": [], "output": {} },
-    "signoff":            { "status": "pending", "qor": {}, "issues": [], "output": {} }
+    "floorplan": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "placement": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "cts": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "routing": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "timing_optimization": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "power_optimization": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "area_optimization": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "signoff": {"status":"pending","qor":{},"issues":[],"output":{}}
   },
-
   "global_qor": {
-    "wns":          null,
-    "tns":          null,
-    "worst_slack":  null,
-    "total_power":  null,
+    "wns": null,
+    "tns": null,
+    "worst_slack": null,
+    "total_power": null,
     "core_area_util": null,
     "drc_violations": null
   },
-
   "loop_count": {},
   "current_stage": null,
   "flow_status": "not_started"
@@ -85,7 +81,7 @@ All agents communicate through a single shared JSON state object. Every stage ag
 
 ---
 
-## 3. Stage Sequence & Loop-Back Logic
+## 3. Stage Sequence 与 Loop-Back
 
 ```
 [Floorplan] ──► [Placement] ──► [CTS] ──► [Routing]
@@ -103,600 +99,259 @@ All agents communicate through a single shared JSON state object. Every stage ag
                     [Area Optimization] ──► [Sign-off]
                                                │
                               ┌────────────────┘
-                              │ DRC/LVS fail → back to Routing
-                              │ Timing fail  → back to Timing Opt
+                              │ DRC/LVS fail → Routing
+                              │ Timing fail → Timing Opt
                               ▼ all pass
                            [DONE — GDS]
 ```
 
-### Loop-Back Rules (Orchestrator enforces these)
+### Loop-Back Rules
 
-| Failure Condition              | Loop Back To          | Max Iterations |
-|--------------------------------|-----------------------|----------------|
-| Post-placement timing WNS < -0.5ns | Floorplan          | 2              |
-| Post-routing timing WNS < 0    | Timing Optimization   | 3              |
-| Power exceeds budget           | Power Optimization    | 2              |
-| DRC violations > 0             | Routing               | 3              |
-| LVS mismatch                   | Routing               | 2              |
-| Area utilization > 85%         | Area Optimization     | 2              |
-
----
-
-## 4. Skill File Specifications
-
-Each skill file should be created at the path shown. Contents define what the stage agent loads before execution.
+| 失败条件 | 回退到 | 最大次数 |
+|---|---|---:|
+| Post-placement WNS < -0.5 ns | Floorplan | 2 |
+| Post-route WNS <0 | Timing Optimization | 3 |
+| Power 超预算 | Power Optimization | 2 |
+| DRC violation >0 | Routing | 3 |
+| LVS mismatch | Routing | 2 |
+| Area utilization >85% | Area Optimization | 2 |
 
 ---
 
-### 4.1 `sv-pd-floorplan/SKILL.md`
+## 4. Skill 文件说明
+
+### 4.1 Floorplanning
 
 ```markdown
 # Skill: Physical Design — Floorplanning
 
 ## Purpose
-Guide floorplan creation including die size, core area, IO placement,
-macro placement, power grid planning, and blockage definition.
-
-## Key Inputs
-- Netlist (gate-level), SDC, LEF files, Technology node specs
-- Area estimate from synthesis (from report_area)
+规划 die/core、IO、macro、power grid 和 blockage。
 
 ## Domain Rules
-1. Core utilization target: 70–80% (leave margin for routing)
-2. Macros: place at edges or corners, with halos (typically 5–10μm)
-3. IO pads: evenly distributed; match pin assignments from package
-4. Power grid: VDD/VSS straps every N rows (technology-dependent)
-5. Blockages: place hard blockages around analog/RF macros
-6. Aspect ratio: keep close to 1:1 unless package constrains otherwise
+1. Core utilization 目标约 70–80%
+2. Macro 靠 edge/corner，留 5–10 μm halo
+3. IO 与 package pin assignment 一致
+4. Power strap 间距按 technology rule
+5. Analog/RF macro 周围加 hard blockage
+6. Aspect ratio 尽量 1:1
 
-## QoR Metrics to Evaluate
-- Estimated congestion (H/V) — flag if > 80%
-- Estimated WNS from floorplan-stage STA — flag if < -2ns
-- IR drop estimate — flag if > 10% of VDD
-
-## Common Issues & Fixes
-- High congestion in center → spread macros outward
-- Negative slack at floorplan → revisit macro placement or increase die size
-- Power grid IR drop → add more straps or widen existing
+## QoR Metrics
+- Congestion >80% 告警
+- Floorplan-stage WNS < -2 ns 告警
+- IR drop >10% VDD 告警
 
 ## Output Required
-- DEF file (floorplan.def)
-- Power grid DEF or script
+- floorplan.def
+- Power-grid script/DEF
 - Macro placement report
-- Estimated congestion map
+- Congestion map
 ```
 
----
-
-### 4.2 `sv-pd-placement/SKILL.md`
+### 4.2 Placement
 
 ```markdown
 # Skill: Physical Design — Placement
 
-## Purpose
-Guide standard cell placement including coarse placement, legalization,
-and pre-CTS optimization.
-
-## Key Inputs
-- Floorplan DEF, synthesized netlist, SDC, timing libraries
-
 ## Domain Rules
-1. Run global placement → legalization → detailed placement
-2. Pre-CTS timing optimization should assume ideal clocks
-3. Max utilization per partition: 80% (leave room for filler cells)
-4. High-fanout nets: buffer before placement or use placement constraints
-5. Timing-critical paths: use placement constraints (set_dont_touch, groups)
-6. Scan chains: reorder after placement for minimum wirelength
+1. Global placement → legalization → detailed placement
+2. Pre-CTS timing 使用 ideal clock
+3. Partition utilization <80%
+4. High-fanout net 提前 buffer/constraint
+5. Critical path 可加 placement guidance
+6. Placement 后 scan reorder
 
-## QoR Metrics to Evaluate
-- Pre-CTS WNS: should be > -0.3ns (accounting for clock uncertainty)
-- Pre-CTS TNS: review paths with slack < -0.1ns
-- Cell density map: flag hotspots > 90% local density
-- Estimated routing congestion: flag if overflow > 1%
-
-## Common Issues & Fixes
-- Congestion hotspot → add placement blockage, spread cells
-- Timing violations on long paths → manually guide placement of critical cells
-- High density near macros → adjust macro halos
+## QoR Metrics
+- Pre-CTS WNS > -0.3 ns
+- Local density >90% 告警
+- Routing overflow >1% 告警
 
 ## Output Required
-- Placed DEF (placement.def)
-- Pre-CTS timing report (setup and hold)
-- Cell density / congestion report
+- placement.def
+- Pre-CTS setup/hold report
+- Density/congestion report
 ```
 
----
-
-### 4.3 `sv-pd-cts/SKILL.md`
+### 4.3 Clock Tree Synthesis（CTS）
 
 ```markdown
-# Skill: Physical Design — Clock Tree Synthesis (CTS)
-
-## Purpose
-Build balanced clock trees that meet skew, insertion delay,
-and transition time targets.
-
-## Key Inputs
-- Placed DEF, SDC (create_clock, clock constraints), CTS spec file
-
 ## Domain Rules
-1. Target clock skew: < 100ps (or per SDC uncertainty spec)
-2. Target insertion delay: minimize; match SDC set_clock_latency if specified
-3. Max transition on clock nets: per technology DRC rule (typically 150–200ps)
-4. Max fanout per buffer: set per library (typically 16–32)
-5. Useful skew: apply only on timing-critical paths with explicit sign-off
-6. Clock gating cells: integrate into CTS; ensure enable pin timing is met
-7. Multi-clock designs: handle each domain independently; check CDC paths
+1. Clock skew target <100 ps 或按项目 SDC
+2. Insertion delay 尽量小，并与 set_clock_latency intent 一致
+3. Clock max transition 常见 150–200 ps
+4. Buffer max fanout 常见 16–32
+5. Useful skew 只在明确 sign-off 场景使用
+6. Clock-gating cell 与 CTS 集成
+7. 多 clock domain 独立处理并复查 CDC
 
-## QoR Metrics to Evaluate
-- Global skew per clock domain: flag if > 150ps
-- Max insertion delay: flag if > 500ps (technology-dependent)
-- Post-CTS WNS (setup): flag if < -0.2ns
-- Post-CTS hold slack: must be > 0 before routing
-- Clock tree power: flag if > 20% of dynamic power
-
-## Common Issues & Fixes
-- High skew → add balancing buffers, adjust CTS exclusion pins
-- Hold violations → fix with delay cells before routing
-- Clock transition violations → resize clock buffers
+## QoR Metrics
+- Global skew >150 ps 告警
+- Insertion delay >500 ps 告警
+- Post-CTS WNS < -0.2 ns 告警
+- Routing 前 hold slack 应 ≥0
+- Clock-tree power > dynamic power 20% 告警
 
 ## Output Required
 - Post-CTS DEF
-- Clock tree report (skew, insertion delay per domain)
-- Post-CTS timing report (setup and hold)
+- Clock-tree report
+- Post-CTS setup/hold report
 ```
 
----
-
-### 4.4 `sv-pd-routing/SKILL.md`
+### 4.4 Routing
 
 ```markdown
-# Skill: Physical Design — Routing
-
-## Purpose
-Complete signal routing from global routing through detailed routing
-to produce a DRC-clean layout.
-
-## Key Inputs
-- Post-CTS DEF, LEF, technology routing rules
-
 ## Domain Rules
-1. Sequence: global route → track assignment → detailed route → search & repair
-2. DRC rules: follow technology DRC deck strictly (spacing, width, via rules)
-3. Signal integrity: shield critical clock/analog nets; minimize coupling on high-speed signals
-4. Layer assignment: prefer upper metals for power, lower metals for signals
-5. Antenna rules: insert antenna diodes or use long wire prevention
-6. Double patterning (7nm and below): ensure same-color violations are resolved
+1. Global route → track assignment → detailed route → search/repair
+2. 严格遵循 foundry DRC
+3. Clock/analog critical net 做 shielding
+4. Upper metal 优先 power，lower metal 优先 signal
+5. Antenna 用 diode/jump-via 修复
+6. 先进节点处理 multi-patterning/color
 
-## QoR Metrics to Evaluate
-- DRC violations: must be 0 at signoff
-- LVS errors: must be 0 at signoff
-- Post-route WNS: flag if < 0
-- Post-route TNS: review all failing paths
-- Routing congestion overflow: must be 0
-
-## Common Issues & Fixes
-- DRC shorts → reroute affected nets, adjust spacing rules
-- Antenna violations → insert diodes or jump vias
-- Post-route timing degradation → ECO: resize/reroute critical paths
+## QoR Metrics
+- DRC =0
+- LVS =0
+- Post-route WNS <0 告警
+- Routing overflow =0
 
 ## Output Required
-- Routed DEF (routed.def)
-- DRC report
-- LVS report
-- Post-route timing report (setup and hold)
+- routed.def
+- DRC/LVS report
+- Post-route timing report
 ```
 
----
-
-### 4.5 `sv-pd-timing/SKILL.md`
+### 4.5 Timing Optimization
 
 ```markdown
-# Skill: Physical Design — Timing Optimization
-
-## Purpose
-Close timing on setup and hold paths after routing using ECO techniques,
-buffer insertion, gate resizing, and Vt swapping.
-
-## Key Inputs
-- Routed DEF, SDF/SPEF, SDC, timing libraries (multi-corner)
-
 ## Domain Rules
-1. Multi-corner analysis: run at SS (setup), FF (hold), and TT corners
-2. Setup fixing: upsize drivers, insert repeaters, retime registers
-3. Hold fixing: insert delay buffers (prefer HVT delay cells)
-4. Vt swapping: SVT for speed-critical paths, HVT for power savings
-5. ECO flow: formal ECO → place ECO cells in reserved sites → re-route ECO nets
-6. Do not modify scan chain order during ECO
-7. OCV/AOCV/POCV: apply per signoff agreement with foundry
+1. Multi-corner：SS setup、FF hold、TT typical
+2. Setup：driver upsize、repeater、retime
+3. Hold：delay buffer，优先 HVT
+4. Critical path 可做 Vt swap
+5. ECO 后 placement/routing/STA 重新验证
+6. Scan-chain order 未经 DFT 批准不得修改
+7. Sign-off 使用 foundry-approved AOCV/POCV
 
-## QoR Metrics to Evaluate
-- WNS: must be ≥ 0 at all corners for signoff
-- TNS: must be 0 for signoff
-- Hold slack: must be ≥ 0 (post-hold-fixing)
-- Timing ECO cell count: flag if > 2% of total cell count (indicates floorplan/placement issue)
-
-## Common Issues & Fixes
-- Persistent setup violations → check for missing multicycle paths or incorrect SDC
-- Hold violations reappearing → check CTS skew; may need CTS re-run
-- Large ECO count → escalate to orchestrator for upstream loop-back
+## QoR Metrics
+- 所有 corner WNS ≥ target
+- TNS = target（通常 0）
+- Hold slack ≥0
+- ECO cell >2% 总 cell 时告警
 
 ## Output Required
-- Timing closure report (all corners, all modes)
-- ECO change list
-- SPEF (post-route parasitics)
-- Updated routed DEF (post-ECO)
+- All-corner timing closure report
+- ECO list
+- SPEF
+- Post-ECO routed DEF
 ```
 
----
-
-### 4.6 `sv-pd-power/SKILL.md`
+### 4.6 Power Optimization
 
 ```markdown
-# Skill: Physical Design — Power Optimization
-
-## Purpose
-Reduce dynamic and static power while meeting power budget and
-not degrading timing beyond recovery.
-
-## Key Inputs
-- Post-timing DEF, UPF (power intent), activity files (.saif or .vcd), lib files
-
 ## Domain Rules
-1. Dynamic power: optimize via clock gating, operand isolation, multi-Vt
-2. Static power (leakage): swap non-critical cells to HVT; verify timing after swap
-3. Power domains: validate UPF — isolation, level-shifters, retention registers
-4. Voltage islands: verify power grid integrity per domain
-5. Always-on logic: verify correct lib used for retention/isolation cells
-6. Power gating: verify wakeup/shutdown sequences in simulation
+1. Dynamic power：clock gating、operand isolation、multi-Vt
+2. Leakage：非 critical cell 换 HVT，每批后重查 timing
+3. 验证 UPF isolation/level-shifter/retention
+4. 每个 voltage island 检查 IR drop
+5. Always-on logic 使用正确 cell
+6. Power-gating routing 修改前验证 wakeup/shutdown sequence
 
-## QoR Metrics to Evaluate
-- Total power: must be within power budget (from spec)
-- Dynamic power breakdown: clock, logic, memory
-- Leakage power: flag if > 15% of total power at TT corner
-- IR drop: must be < 5% VDD across all domains (static and dynamic)
-- Post-power-opt timing: WNS must remain ≥ 0
-
-## Common Issues & Fixes
-- Power over budget after HVT swap → check which paths prevented full swap
-- IR drop hotspot → add decap cells, widen power straps locally
-- UPF violations → review isolation cell placement and enable logic
+## QoR Metrics
+- Total power 在 budget 内
+- Leakage < total power 15%
+- IR drop <5% VDD
+- Post-opt WNS ≥0
 
 ## Output Required
-- Power analysis report (dynamic + static per domain)
-- IR drop report (static + dynamic)
-- Updated DEF (post-power-opt)
+- Per-domain dynamic/static power report
+- IR-drop report
+- Updated DEF
 - UPF compliance report
 ```
 
----
-
-### 4.7 `sv-pd-area/SKILL.md`
+### 4.7 Area Optimization
 
 ```markdown
-# Skill: Physical Design — Area Optimization
-
-## Purpose
-Reduce die area through cell resizing, logic restructuring,
-and layout compaction while maintaining timing and power closure.
-
-## Key Inputs
-- Post-power DEF, timing reports, synthesis netlist
-
 ## Domain Rules
-1. Remove redundant buffers and inverter pairs (buffer removal ECO)
-2. Downsize non-timing-critical cells to minimum drive strength
-3. Merge equivalent logic cones (if supported by tool)
-4. Reclaim unused standard cell sites (remove filler, resize, re-fill)
-5. Do not reduce area at the cost of timing margin < 50ps WNS buffer
-6. Re-run DRC after any area ECO
+1. 删除冗余 buffer/inverter
+2. Downsize 非 critical cell
+3. 回收 unused standard-cell site
+4. WNS margin 不低于 50 ps
+5. Area ECO 后重跑 DRC
 
-## QoR Metrics to Evaluate
-- Core area utilization: target 70–80% (not exceeding 85%)
-- Cell count delta: track reduction from area optimization
-- WNS post-area-opt: must remain ≥ 0
-- DRC: must remain clean after optimization
-
-## Common Issues & Fixes
-- Area still over target after optimization → escalate to orchestrator; may need RTL-level changes
-- Timing degraded after downsizing → revert specific cell changes
-- DRC violations after compaction → reroute affected areas
+## QoR Metrics
+- Core utilization 70–80%，hard limit 85%
+- 跟踪 cell-count reduction
+- WNS 保持 ≥0
+- DRC 保持 clean
 
 ## Output Required
-- Area utilization report (pre vs post)
-- Updated DEF (post-area-opt)
-- Cell count / type breakdown
+- Pre/post area report
+- Updated DEF
+- Cell-count/type breakdown
 ```
 
----
-
-### 4.8 `sv-pd-signoff/SKILL.md`
+### 4.8 Sign-off
 
 ```markdown
-# Skill: Physical Design — Sign-off
-
-## Purpose
-Perform final verification including STA sign-off, DRC, LVS, ERC,
-and power sign-off to confirm the design is tape-out ready.
-
-## Key Inputs
-- Final routed DEF, GDSII, SPEF, SDC, UPF, DRC/LVS decks
-
 ## Domain Rules
-1. STA sign-off: run at all required PVT corners with POCV/AOCV
-2. DRC: run foundry-approved DRC deck; zero violations allowed
-3. LVS: netlist vs layout; zero errors allowed
-4. ERC: electromigration and IR drop sign-off
-5. Antenna check: zero antenna violations
-6. Density check: metal density within foundry window (usually 20–80%)
-7. Final GDS: merge all layers, add seal ring, verify chip-level DRC
+1. 所有 required PVT 跑 sign-off STA
+2. Foundry DRC deck：0 violation
+3. LVS：0 error
+4. ERC/EM/IR clean
+5. Antenna =0
+6. Metal density 在 foundry window
+7. Final GDS 合并 layer/seal ring 后再做 chip-level DRC
 
-## QoR Metrics (All Must Pass)
-- STA: WNS ≥ 0, TNS = 0, Hold ≥ 0 at all corners
-- DRC violations: 0
-- LVS errors: 0
-- ERC: no EM violations, IR drop < 5% VDD
-- Antenna violations: 0
-- Density check: PASS
-
-## Failure Escalation
-- Timing fail → loop back to Timing Optimization
-- DRC/LVS fail → loop back to Routing
-- Power/EM fail → loop back to Power Optimization
+## QoR Metrics
+- STA：所有 corner WNS ≥0、TNS=0、hold ≥0
+- DRC =0
+- LVS =0
+- IR drop <5% VDD
+- Antenna =0
+- Density PASS
 
 ## Output Required
-- Sign-off STA report (all corners)
-- DRC clean report
-- LVS clean report
-- Final GDS II file
-- Tape-out checklist (completed)
+- All-corner STA
+- DRC/LVS clean report
+- Final GDS-II
+- Tape-out checklist
 ```
 
 ---
 
-## 5. Stage Agent Specifications
+## 5. Stage Agent 规范
 
-Each stage agent follows this standard interface:
+所有 stage 使用相同接口：
 
 ```
-STAGE AGENT INTERFACE
-─────────────────────
 INPUT:  { state_object, stage_name, skill_content }
 OUTPUT: { updated_state_object, stage_result }
 
-INTERNAL STEPS:
-  1. Load skill for this stage
-  2. Extract relevant inputs from state_object
-  3. Analyze / execute the stage task
-  4. Evaluate QoR metrics per skill definition
-  5. Classify result: PASS | FAIL | WARN
-  6. Write results back to state_object.stages[stage_name]
-  7. Return updated state to orchestrator
+内部步骤：
+  1. 加载本 stage Skill
+  2. 从 state_object 提取输入
+  3. 执行/分析 stage
+  4. 按 Skill 评估 QoR
+  5. 分类 PASS | FAIL | WARN
+  6. 写回 state_object.stages[stage_name]
+  7. 返回给 Orchestrator
 ```
 
-### Stage Agent Prompt Template
-
-When implementing each stage agent, use this system prompt structure:
-
-```
-SYSTEM PROMPT FOR STAGE AGENT:
-───────────────────────────────
-You are a Physical Design Stage Agent responsible for: [STAGE NAME].
-
-You have been provided with:
-1. The current PD run state (JSON)
-2. Your stage skill document (domain rules, QoR metrics, fixes)
-3. Any relevant design files or reports
-
-Your job:
-- Analyze the inputs for this stage
-- Apply domain rules from your skill document
-- Evaluate QoR metrics
-- Identify issues and recommend fixes
-- Return a structured JSON result:
-
-{
-  "stage": "[stage_name]",
-  "status": "PASS" | "FAIL" | "WARN",
-  "qor": { ... metrics ... },
-  "issues": [ { "severity": "ERROR|WARN", "description": "...", "fix": "..." } ],
-  "suggested_next_step": "proceed | loop_back_to:<stage> | retry_stage | escalate | abandon",
-  "output": { ... stage output files/data ... }
-}
-
-Do not proceed to the next stage. Return results only.
-```
+结构化输出中的 `stage/status/qor/issues/suggested_next_step/output`
+属于机器接口，保持英文。
 
 ---
 
-## 6. Orchestrator Agent — Full Specification
+## 6. Orchestrator 规范
 
-### 6.1 Orchestrator System Prompt
+PD Orchestrator 管理从 floorplan 到 tape-out sign-off 的多阶段实现流程。
+核心职责：
 
-```
-SYSTEM PROMPT — PD ORCHESTRATOR AGENT:
-────────────────────────────────────────
-You are the Physical Design Orchestrator. You manage a multi-stage
-chip implementation flow from floorplan through tape-out sign-off.
-
-You maintain a shared state object that tracks all stages, QoR metrics,
-and loop-back counts. You dispatch tasks to stage agents one at a time,
-evaluate their results, and decide what to do next.
-
-Your responsibilities:
-1. Initialize the state object from user-provided inputs
-2. Execute stages in order, dispatching to the correct stage agent
-3. After each stage agent returns, evaluate the result
-4. Apply loop-back logic if a stage fails (see rules below)
-5. Enforce maximum loop iteration limits
-6. Escalate to the user if max iterations are exceeded
-7. Declare flow complete when sign-off passes all checks
-8. Generate a final PD summary report
-
-STAGE SEQUENCE:
-  floorplan → placement → cts → routing →
-  timing_optimization → power_optimization →
-  area_optimization → signoff
-
-LOOP-BACK RULES:
-  - placement FAIL (WNS < -0.5ns)      → retry floorplan (max 2x)
-  - routing FAIL (timing)              → retry timing_optimization (max 3x)
-  - routing FAIL (DRC/LVS)             → retry routing (max 3x)
-  - timing_optimization FAIL           → retry from routing if ECO > 2% cells (max 1x)
-  - power_optimization FAIL            → retry power_optimization (max 2x)
-  - area_optimization FAIL             → WARN user, proceed to signoff
-  - signoff FAIL (timing)              → retry timing_optimization (max 2x)
-  - signoff FAIL (DRC/LVS)             → retry routing (max 2x)
-  - signoff FAIL (power)               → retry power_optimization (max 1x)
-
-MAX LOOP EXCEEDED: escalate to user with full state + recommendations.
-
-At each step, update state_object.current_stage and state_object.loop_count.
-Always return the full updated state_object along with your decision.
-```
-
-### 6.2 Orchestrator Decision Logic (Pseudocode)
-
-```python
-def run_pd_flow(state):
-    stage_sequence = [
-        "floorplan", "placement", "cts", "routing",
-        "timing_optimization", "power_optimization",
-        "area_optimization", "signoff"
-    ]
-
-    current_index = 0
-
-    while current_index < len(stage_sequence):
-        stage = stage_sequence[current_index]
-        state["current_stage"] = stage
-
-        # Load skill for this stage
-        skill = load_skill(f"sv-pd-{stage}/SKILL.md")
-
-        # Dispatch to stage agent
-        result = dispatch_stage_agent(stage, state, skill)
-
-        # Write result into state
-        state["stages"][stage] = result
-        update_global_qor(state, result["qor"])
-
-        if result["status"] == "PASS":
-            current_index += 1  # proceed to next stage
-
-        elif result["status"] == "FAIL":
-            loop_target = resolve_loop_back(stage, result, state)
-
-            if loop_target is None:
-                # No loop-back possible — escalate
-                escalate_to_user(state, result)
-                return
-
-            loop_key = f"{stage}_to_{loop_target}"
-            state["loop_count"][loop_key] = state["loop_count"].get(loop_key, 0) + 1
-
-            max_loops = get_max_loops(loop_key)
-            if state["loop_count"][loop_key] > max_loops:
-                escalate_to_user(state, result)
-                return
-
-            # Jump back
-            current_index = stage_sequence.index(loop_target)
-
-        elif result["status"] == "WARN":
-            # Log warning, proceed
-            log_warning(stage, result)
-            current_index += 1
-
-    # All stages passed
-    state["flow_status"] = "COMPLETE"
-    return generate_final_report(state)
-```
-
-### 6.3 Orchestrator Final Report Template
-
-When the flow completes, the orchestrator generates a report in this format:
-
-```markdown
-# Physical Design Run Report
-**Design**: [design_name]
-**Technology**: [technology]
-**Run ID**: [run_id]
-**Status**: TAPE-OUT READY / FAILED
-
-## QoR Summary
-| Metric            | Value     | Target    | Status |
-|-------------------|-----------|-----------|--------|
-| WNS (setup)       | Xns       | ≥ 0       | PASS   |
-| TNS               | 0ps       | 0         | PASS   |
-| Hold Slack        | Xps       | ≥ 0       | PASS   |
-| Total Power       | XmW       | < [budget]| PASS   |
-| Core Utilization  | X%        | 70–80%    | PASS   |
-| DRC Violations    | 0         | 0         | PASS   |
-| LVS Errors        | 0         | 0         | PASS   |
-
-## Stage Execution Log
-| Stage               | Status | Iterations | Key Issues         |
-|---------------------|--------|------------|--------------------|
-| Floorplan           | PASS   | 1          | —                  |
-| Placement           | PASS   | 1          | —                  |
-| CTS                 | PASS   | 1          | —                  |
-| Routing             | PASS   | 2          | DRC shorts (fixed) |
-| Timing Optimization | PASS   | 1          | —                  |
-| Power Optimization  | PASS   | 1          | —                  |
-| Area Optimization   | WARN   | 1          | 82% util (within)  |
-| Sign-off            | PASS   | 1          | —                  |
-
-## Output Files
-- Final GDS: [path]
-- Sign-off STA report: [path]
-- DRC clean report: [path]
-- LVS clean report: [path]
-- Power report: [path]
-```
-
----
-
-## 7. Implementation Guide for New Session
-
-When starting a new session to implement this, follow these steps in order:
-
-### Step 1 — Create Skill Files
-Create each skill file at its specified path. Populate with the content defined in Section 4. These are read-only reference documents.
-
-### Step 2 — Implement Stage Agents
-For each of the 8 stages, create a stage agent using the interface defined in Section 5. Each agent:
-- Accepts `(state_object, skill_content)` as input
-- Returns a structured JSON result
-- Uses the Claude API (`claude-sonnet-4-20250514`) for analysis
-- Has the stage-specific system prompt injected at call time
-
-### Step 3 — Implement the Orchestrator
-Build the orchestrator using the system prompt in Section 6.1 and decision logic in Section 6.2. The orchestrator:
-- Is the only agent the user interacts with directly
-- Manages all state
-- Dispatches to stage agents programmatically
-- Handles all loop-back and escalation logic
-
-### Step 4 — Wire Up the State Object
-Initialize the state object (Section 2) from user inputs at the start of each run. Pass it through every agent call. Persist it between calls.
-
-### Step 5 — Test with a Simple Design
-Before running a full flow, test each stage agent independently with a known-good input to verify skill loading and QoR evaluation are working correctly.
-
----
-
-## 8. Key Design Decisions Summary
-
-| Decision | Choice | Rationale |
-|---|---|---|
-| Agent granularity | One agent per PD stage | Isolation of concerns; easier to debug and iterate per stage |
-| State management | Single shared JSON object | All agents speak the same language; easy to inspect mid-flow |
-| Loop-back enforcement | Orchestrator only | Stage agents don't make flow decisions; cleaner separation |
-| Skill format | Markdown per stage | Human-readable; easy to update domain rules without code changes |
-| Max loop limits | Hardcoded per transition | Prevents infinite loops; forces escalation with context |
-| Model | claude-sonnet-4-20250514 | Balance of reasoning quality and speed for EDA analysis tasks |
-
----
-
-*End of Architecture Document — Ready for Implementation*
+- 按 Stage Sequence 调度
+- 在每 stage 前加载对应 Skill
+- 根据 QoR 决定 proceed / loop-back / escalation
+- 维护共享 state 和 loop count
+- 不允许 FAIL 被跳过
+- 最终只有 timing、DRC、LVS、power/IR 等 sign-off gate 全部实际通过，
+  才输出 tape-out-ready GDS
