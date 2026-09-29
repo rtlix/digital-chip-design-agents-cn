@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wrap-gem5.sh — run gem5 and emit a compact JSON summary
+# wrap-gem5.sh —— 运行 gem5，并输出紧凑 JSON summary
 set -euo pipefail
 
 TOOL="gem5"
@@ -44,9 +44,9 @@ if ipc_m:       summary["ipc"]          = float(ipc_m.group(1))
 summary["error_count"]   = len(errors)
 summary["warning_count"] = len(warnings)
 
-# PASS needs a result found in the output; exit 0 alone is not one. gem5 writes
-# its statistics to m5out/stats.txt, so a run that prints none of them is
-# reported unverified and the agent reads that file.
+# PASS 必须有工具输出中的可识别结果；仅 exit 0 不能作为 PASS 依据。 gem5 writes
+# gem5 会把统计写入 m5out/stats.txt；如果运行输出中没有任何可识别统计，
+# 则标记为 unverified，由 Agent 再读取该文件。
 evidence = bool(sim_insts_m or host_secs_m or ipc_m)
 
 if exit_code != 0 or errors:
