@@ -1,40 +1,23 @@
-# Physical Design Domain Knowledge
+# Physical Design Domain Knowledge（物理设计领域知识）
 
 ## Known Failure Patterns
 
-- **ORFS density > 65% → routing congestion**: OpenROAD/ORFS placement density above 65% almost
-  always correlates with routing congestion (DRC violations in routing stage). Reduce target
-  density in `floorplan` to 60–65% before retrying; do not push past 70% without manual congestion
-  analysis.
-- **CTS target skew for sky130 at 500 MHz**: Use 50 ps target skew for 500 MHz designs in sky130.
-  Tighter targets (< 30 ps) are unreachable with OpenROAD CTS and will cause the CTS stage to
-  loop indefinitely.
-- **Post-route timing closure ECO rounds**: Post-route timing closure typically requires 2–3 ECO
-  rounds. If WNS has not converged after 3 rounds, escalate to floorplan revision — incremental
-  ECO will not close timing if the root cause is placement congestion.
-- **LVS failures from missing substrate tie-offs**: The most common LVS failure in sky130 is
-  missing n-well tie-offs and substrate tie-offs for standard cells. Ensure the PDK standard
-  cell library includes tie-off cells and that the floorplan inserts them at the required pitch.
+- **ORFS density >65% → routing congestion**：OpenROAD/ORFS placement density 超过 65% 经常与 routing-stage DRC violation 强相关。Retry 前把 floorplan target density 降到 60–65%；未做人工 congestion 分析前不要推到 70% 以上。
+- **sky130 500 MHz CTS target skew**：建议 50 ps。<30 ps 的目标在 OpenROAD CTS 通常不可达，会导致 CTS 无限 loop。
+- **Post-route timing closure ECO rounds**：通常需要 2–3 轮。3 轮后 WNS 仍不收敛，应升级到 floorplan revision；placement congestion 根因靠 incremental ECO 很难关闭。
+- **LVS 失败来自 substrate tie-off**：sky130 常见是 n-well/substrate tie-off 缺失。确保 PDK standard-cell library 有 tie cell，并按规定 pitch 插入。
 
 ## Successful Tool Flags
 
-- `make DESIGN_CONFIG=... finish` (ORFS) — run the full pipeline to completion before reading
-  `reports/.../metrics.json`; partial runs leave stale metrics files.
-- `klayout -rd input=<gds> -r <drc_script.rb> -zz` — batch DRC mode; `-zz` suppresses GUI and
-  is required for CI/CD integration.
-- `openroad -no_init` with `read_lef`/`read_def`/`report_checks` TCL sequence — useful for
-  one-shot timing queries on a routed design without reloading the full ORFS database.
+- `make DESIGN_CONFIG=... finish`（ORFS）：读 `reports/.../metrics.json` 前先让 full flow 完成，partial run 可能留下 stale metrics。
+- `klayout -rd input=<gds> -r <drc_script.rb> -zz`：batch DRC；`-zz` 关闭 GUI，适合 CI。
+- `openroad -no_init` + `read_lef/read_def/report_checks`：可对 routed design 做一次性 timing query，无需重新加载完整 ORFS database。
 
 ## PDK / Tool Quirks
 
-- **sky130 antenna rules**: sky130 antenna rules are stricter than most commercial PDKs. Enable
-  antenna repair (`repair_antennas`) in OpenROAD after routing; expect 5–15% of nets to need
-  repair on a typical design.
-- **OpenROAD global routing vs detailed routing DRC**: Global routing DRC (overflow) does not
-  guarantee detailed routing DRC clean. Always run `detailed_route` and check `drc_count` from
-  the metrics file — not the global routing overflow count.
+- **sky130 antenna rule 较严**：routing 后开启 OpenROAD `repair_antennas`；典型设计可能有 5–15% net 需要 repair。
+- **Global routing clean ≠ detailed routing clean**：global overflow 为 0 不能代表 detailed DRC clean；必须跑 `detailed_route` 并看 metrics 的 `drc_count`。
 
 ## Notes
 
-- `core_area_util_pct` above 85% at sign-off is a hard stop — route congestion and ECO closure
-  become intractable above this threshold in sky130 with OpenROAD.
+- Sign-off 时 `core_area_util_pct >85%` 属于 hard stop；sky130 + OpenROAD 在该密度以上 routing/ECO closure 会非常困难。
