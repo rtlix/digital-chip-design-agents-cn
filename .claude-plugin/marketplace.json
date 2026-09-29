@@ -167,7 +167,7 @@
     },
     {
       "name": "chip-design-fpga",
-      "description": "FPGA 原型验证——ASIC→FPGA 适配、partition、bring-up 与软件验证",
+      "description": "FPGA 原型验证（FPGA emulation）——ASIC→FPGA 适配、partition、bring-up 与软件验证",
       "source": "./plugins/fpga",
       "strict": true,
       "skills": [

@@ -1,8 +1,8 @@
 ---
 name: dft
 description: >
-  可测性设计（Design for Test）——包括扫描架构规划、扫描链插入、ATPG 测试向量生成、
-  嵌入式存储器 MBIST，以及 JTAG 边界扫描。适用于规划 DFT 策略、插入 scan、
+  可测性设计（Design for Test）——包括扫描架构规划、扫描链插入（scan insertion）、ATPG 测试向量生成、
+  嵌入式存储器 MBIST，以及 JTAG 边界扫描（JTAG boundary scan）。适用于规划 DFT 策略、插入 scan、
   生成测试 pattern，或验证芯片在量产制造阶段是否具备可测试性。
 version: 1.0.0
 author: chuanseng-ng

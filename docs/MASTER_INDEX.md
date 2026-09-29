@@ -1,7 +1,7 @@
 # 数字设计与软件流水线 — 总索引
 ## 芯片设计完整 Agent + Skill 架构
 
-> **目的**：这是完整数字芯片设计流水线的总索引。它把每份流程文档映射到端到端设计流程中的位置，并定义 Orchestrator 之间如何交接，从规格一路走到 tape-out、compiler、firmware 和 FPGA 原型验证。
+> **目的**：这是完整数字芯片设计流水线的总索引。它把每份流程文档映射到端到端设计流程中的位置，并定义 Orchestrator 之间如何交接，从规格一路走到 tape-out、compiler、firmware 和 FPGA 原型验证（FPGA emulation）。
 
 ---
 

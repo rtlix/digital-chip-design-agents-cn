@@ -28,4 +28,4 @@
 
 architecture（架构）· rtl-design（RTL 设计）· verification（功能验证）· formal（形式验证）· synthesis（逻辑综合）·
 dft（可测性设计）· sta（静态时序分析）· hls（高层综合）· physical-design（物理设计）· soc-integration（SoC 集成）·
-memory-ip-design（存储器 IP 设计）· compiler-toolchain（编译器工具链）· embedded-firmware（嵌入式固件）· fpga-emulation（FPGA 原型验证）
+memory-ip-design（存储器 IP 设计）· compiler-toolchain（编译器工具链）· embedded-firmware（嵌入式固件）· fpga-emulation（FPGA 原型验证 / FPGA emulation）

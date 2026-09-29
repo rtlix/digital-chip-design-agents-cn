@@ -318,7 +318,7 @@ const OPENCODE_MODE_DISPLAY = {
   "memory-ip": ["chip-memory-ip", "Memory IP 设计"],
   compiler: ["chip-compiler", "编译器工具链"],
   firmware: ["chip-firmware", "嵌入式固件"],
-  fpga: ["chip-fpga", "FPGA 原型验证"],
+  fpga: ["chip-fpga", "FPGA 原型验证（FPGA emulation）"],
 };
 
 // Mirrors domain.replace('-', ' ').title() for domains absent from the map.

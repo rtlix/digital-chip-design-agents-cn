@@ -3,6 +3,9 @@
 > Claude Code Marketplace 插件 —— 覆盖完整数字芯片设计流程。  
 > 16 个插件 · 17 个 Skill 文件 · 14 个芯片设计领域 + 基础设施 + 流水线编排器 · 验证↔RTL 闭环反馈。
 
+> 翻译自 [`rtlix/digital-chip-design-agents`](https://github.com/rtlix/digital-chip-design-agents)。
+> This repository is the Chinese translation of [rtlix/digital-chip-design-agents](https://github.com/rtlix/digital-chip-design-agents). For the original project README, see the [English README](https://github.com/rtlix/digital-chip-design-agents/blob/master/README.md).
+
 [![Validate](https://github.com/chuanseng-ng/digital-chip-design-agents/actions/workflows/validate.yml/badge.svg)](https://github.com/chuanseng-ng/digital-chip-design-agents/actions/workflows/validate.yml)
 
 ---

@@ -440,7 +440,7 @@ mode_display = {
     'memory-ip':    ('chip-memory-ip',    'Memory IP 设计'),
     'compiler':     ('chip-compiler',     '编译器工具链'),
     'firmware':     ('chip-firmware',     '嵌入式固件'),
-    'fpga':         ('chip-fpga',         'FPGA 原型验证'),
+    'fpga':         ('chip-fpga',         'FPGA 原型验证（FPGA emulation）'),
 }
 
 base = json.load(open(os.path.join(repo_dir, 'ides', 'opencode', 'opencode-base.json')))

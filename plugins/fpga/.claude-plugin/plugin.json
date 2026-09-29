@@ -1,7 +1,7 @@
 {
   "name": "chip-design-fpga",
   "version": "1.2.0",
-  "description": "FPGA 原型验证——ASIC→FPGA 适配、partition、bring-up 与软件验证",
+  "description": "FPGA 原型验证（FPGA emulation）——ASIC→FPGA 适配、partition、bring-up 与软件验证",
   "author": {
     "name": "chuanseng-ng",
     "url": "https://github.com/chuanseng-ng"

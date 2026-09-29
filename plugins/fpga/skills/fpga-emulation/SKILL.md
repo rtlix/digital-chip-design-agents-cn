@@ -1,7 +1,7 @@
 ---
 name: fpga-emulation
 description: >
-  FPGA 原型验证——ASIC 到 FPGA 的 RTL 适配、多 FPGA partition、FPGA 综合与时序收敛、
+  FPGA 原型验证（FPGA emulation）——ASIC 到 FPGA 的 RTL 适配、多 FPGA partition、FPGA 综合与时序收敛、
   硬件 bring-up，以及在原型机上的软件验证。适用于把 ASIC 设计移植到 Xilinx/Intel FPGA，
   用于流片前软件开发与硬件验证。
 version: 1.0.0

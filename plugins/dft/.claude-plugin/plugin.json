@@ -1,7 +1,7 @@
 {
   "name": "chip-design-dft",
   "version": "1.2.0",
-  "description": "可测性设计（DFT）——扫描链插入、ATPG、MBIST、JTAG 边界扫描",
+  "description": "可测性设计（DFT）——扫描链插入（scan insertion）、ATPG、MBIST、JTAG 边界扫描（JTAG boundary scan）",
   "author": { "name": "chuanseng-ng", "url": "https://github.com/chuanseng-ng" },
   "homepage": "https://github.com/chuanseng-ng/digital-chip-design-agents",
   "repository": "https://github.com/chuanseng-ng/digital-chip-design-agents",
