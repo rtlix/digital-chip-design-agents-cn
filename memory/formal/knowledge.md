@@ -1,36 +1,22 @@
-# Formal Verification Domain Knowledge
+# Formal Verification Domain Knowledge（形式验证领域知识）
 
 ## Known Failure Patterns
 
-- **Vacuous proofs from over-constrained environment**: A vacuous proof means the `assume`
-  constraints in `environment_setup` make the input space unreachable. Run vacuity check
-  (`sby --vacuity`) after every environment iteration. If vacuity is detected, relax constraints
-  one at a time — do not remove all constraints and re-add, as this loses context.
-- **Insufficient bound depth**: SymbiYosys `--depth` must be set to at least `pipeline_depth + 2`
-  to exercise all pipeline stages. Shallow bounds produce false "PASS" results for properties that
-  only fire at the end of a pipeline.
-- **LEC failures after synthesis**: LEC unmatched points after synthesis almost always indicate
-  clock-gating cells that need equivalence mapping (`set_dont_touch` or explicit mapping script).
-  Provide the synthesis tool's clock-gating cell list to the LEC tool before running.
+- **Over-constrained environment 导致 vacuous proof**：`environment_setup` 的 `assume` 让 input space 不可达时会出现 vacuous proof。每次 environment iteration 后运行 vacuity check（`sby --vacuity`）。发现 vacuity 时一次只放宽一个 constraint，不要全部删除后重建，以免丢失上下文。
+- **Bound depth 不足**：SymbiYosys `--depth` 至少应为 `pipeline_depth + 2`，才能覆盖全部 pipeline stage。Bound 太浅可能让只在 pipeline 尾部触发的 property 出现假 “PASS”。
+- **Synthesis 后 LEC fail**：常见原因是 clock-gating cell 缺 equivalence mapping（`set_dont_touch` 或显式 mapping script）。运行 LEC 前把 synthesis tool 的 clock-gating cell list 提供给 LEC tool。
 
 ## Successful Tool Flags
 
-- `sby -f <task>.sby --depth <N>` — always set `--depth` explicitly; never rely on default bound.
-- `sby --multiclock` — required when the design has multiple clock domains; single-clock mode
-  silently ignores cross-domain paths.
-- `jg -allow_empty_cex` — prevents JasperGold from treating an empty CEX set as proof of vacuity;
-  use with explicit vacuity check script.
+- `sby -f <task>.sby --depth <N>`：始终显式设置 `--depth`，不要依赖默认 bound。
+- `sby --multiclock`：多 clock domain 必需；single-clock mode 可能静默忽略跨域路径。
+- `jg -allow_empty_cex`：防止 JasperGold 把空 CEX set 误当 vacuity proof；同时配合显式 vacuity check。
 
 ## PDK / Tool Quirks
 
-- **Z3 vs Boolector for bitvector arithmetic**: Z3 is generally faster for designs with heavy
-  arithmetic; Boolector outperforms Z3 on pure Boolean problems. Try both when a proof runs
-  for > 30 minutes without result.
-- **Yosys `prep` before sby**: Running `yosys -p "prep -top <top>"` on the design before
-  invoking SymbiYosys catches synthesis elaboration errors early and significantly reduces
-  proof setup time.
+- **Z3 vs Boolector**：重 arithmetic 的 bitvector 设计 Z3 通常更快；纯 Boolean problem Boolector 常更好。Proof 超过 30 分钟无结果时可切换 solver。
+- **Yosys `prep` before sby**：先运行 `yosys -p "prep -top <top>"` 可提前捕获 elaboration error，并显著减少 formal setup time。
 
 ## Notes
 
-- CEX found for a P0 property = hard blocker. Suspend the formal flow, report to the RTL
-  team with the full counterexample trace, and do not retry until RTL fix is confirmed.
+- P0 property 出现 CEX 是 hard blocker。暂停 formal flow，携带完整 counterexample trace 交给 RTL team；确认 RTL fix 前不要继续重试。
