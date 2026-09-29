@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# install.sh — installs digital-chip-design-agents plugins
+# install.sh — 安装 digital-chip-design-agents 插件
 #
-# Usage:
+# 用法：
 #   bash install.sh                         # auto-detect installed agents + confirm
 #   bash install.sh --yes                   # auto-detect, no confirmation prompt
 #   bash install.sh --ide claude            # Claude Code (explicit)
@@ -14,11 +14,11 @@
 #   bash install.sh --ide codex --global    # OpenAI Codex CLI global (~/.codex/instructions.md)
 #   bash install.sh --ide all               # Claude Code + all four other IDEs (copilot, gemini, opencode, codex)
 #
-# With no --ide flag the script detects which of the five supported agents
-# (claude, codex, opencode, gemini, copilot) are present and installs to them
-# after a confirmation prompt. Passing --ide bypasses detection.
+# 不指定 --ide 时，脚本会检测五种受支持的 Agent
+#（claude、codex、opencode、gemini、copilot），确认后安装到检测到的目标。
+# 显式指定 --ide 会跳过自动检测。
 #
-# Works on macOS, Linux, and Git Bash / MSYS2 on Windows.
+# 支持 macOS、Linux，以及 Windows 上的 Git Bash / MSYS2。
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
       # Guard against a trailing `--ide` so `set -u` doesn't abort on $2 before
       # the user sees a usage message.
       if [[ $# -lt 2 ]]; then
-        echo "ERROR: --ide requires a value: claude|copilot|gemini|opencode|codex|all|auto"
+        echo "错误：--ide 需要指定值：claude|copilot|gemini|opencode|codex|all|auto"
         exit 1
       fi
       IDE="$2"; shift 2
@@ -48,13 +48,13 @@ while [[ $# -gt 0 ]]; do
       YES="true"; shift
       ;;
     -h|--help)
-      echo "Usage: bash install.sh [--ide claude|copilot|gemini|opencode|codex|all] [--global] [--yes]"
-      echo "  With no --ide, detects installed agents and installs to them after confirmation."
+      echo "用法：bash install.sh [--ide claude|copilot|gemini|opencode|codex|all] [--global] [--yes]"
+      echo "  不指定 --ide 时，会检测已安装的 Agent，并在确认后安装。"
       exit 0
       ;;
     *)
-      echo "Unknown argument: $1"
-      echo "Usage: bash install.sh [--ide claude|copilot|gemini|opencode|codex|all] [--global] [--yes]"
+      echo "未知参数：$1"
+      echo "用法：bash install.sh [--ide claude|copilot|gemini|opencode|codex|all] [--global] [--yes]"
       exit 1
       ;;
   esac
@@ -64,7 +64,7 @@ if [[ -n "$IDE" && "$IDE" != "auto" ]]; then
   case "$IDE" in
     claude|copilot|gemini|opencode|codex|all) ;;
     *)
-      echo "ERROR: --ide must be one of: claude, copilot, gemini, opencode, codex, all, auto"
+      echo "错误：--ide 必须是以下选项之一：claude、copilot、gemini、opencode、codex、all、auto"
       exit 1
       ;;
   esac
@@ -72,7 +72,7 @@ fi
 
 # ── Shared sanity check ───────────────────────────────────────────────────────
 if [[ ! -f "$REPO_DIR/.claude-plugin/marketplace.json" ]]; then
-  echo "ERROR: Cannot locate repo root. Ensure install.sh is inside the cloned repo."
+  echo "错误：找不到仓库根目录。请确认 install.sh 位于已克隆的仓库内。"
   exit 1
 fi
 
@@ -94,7 +94,7 @@ is_installed() {
 # Mirrors the destinations in bin/detect.mjs and the per-IDE install blocks below.
 destination_for() {
   case "$1" in
-    claude)   echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude} (global plugin cache)" ;;
+    claude)   echo "${CLAUDE_CONFIG_DIR:-$HOME/.claude}（全局插件缓存）" ;;
     codex)    [[ "$GLOBAL" == "true" ]] && echo "$HOME/.codex/instructions.md" || echo "$PWD/AGENTS.md" ;;
     opencode) [[ "$GLOBAL" == "true" ]] && echo "$HOME/.config/opencode/config.json" || echo "$PWD/opencode.json" ;;
     gemini)   [[ "$GLOBAL" == "true" ]] && echo "$HOME/GEMINI.md" || echo "$PWD/GEMINI.md" ;;
@@ -147,29 +147,29 @@ declare -A SEL=()
 ALL_TARGETS=(claude codex opencode gemini copilot)
 
 if [[ -z "$IDE" || "$IDE" == "auto" ]]; then
-  echo "Detecting installed AI coding agents..."
+  echo "正在检测已安装的 AI 编码 Agent..."
   echo ""
   detected=()
   for t in "${ALL_TARGETS[@]}"; do
     if is_installed "$t"; then
-      detected+=("$t"); echo "  [found] $t -> $(destination_for "$t")"
+      detected+=("$t"); echo "  [找到] $t -> $(destination_for "$t")"
     else
       echo "  [  -  ] $t"
     fi
   done
   if [[ ${#detected[@]} -eq 0 ]]; then
     echo ""
-    echo "No supported agents detected. Install one explicitly with:"
+    echo "未检测到受支持的 Agent。可以显式指定一个目标安装："
     echo "  bash install.sh --ide claude   (or copilot|gemini|opencode|codex|all)"
     exit 0
   fi
   if [[ "$YES" != "true" && -t 0 ]]; then
     echo ""
-    read -r -p 'Install to all detected targets? [Y/n] (or list a subset, e.g. "claude,codex"): ' ans
+    read -r -p '安装到所有已检测到的目标吗？[Y/n]（也可以输入子集，例如 "claude,codex"）：' ans
     ans="$(echo "$ans" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "$ans" in
       ""|y|yes) for t in "${detected[@]}"; do SEL[$t]=1; done ;;
-      n|no)     echo "Aborted."; exit 0 ;;
+      n|no)     echo "已取消。"; exit 0 ;;
       *)
         IFS=',' read -ra picks <<< "$ans"
         for p in "${picks[@]}"; do
@@ -180,7 +180,7 @@ if [[ -z "$IDE" || "$IDE" == "auto" ]]; then
   else
     for t in "${detected[@]}"; do SEL[$t]=1; done
     echo ""
-    echo "Installing to all detected targets."
+    echo "将安装到所有检测到的目标。"
   fi
 elif [[ "$IDE" == "all" ]]; then
   for t in "${ALL_TARGETS[@]}"; do SEL[$t]=1; done
@@ -189,7 +189,7 @@ else
 fi
 
 if [[ ${#SEL[@]} -eq 0 ]]; then
-  echo "Nothing selected. Aborted."
+  echo "未选择任何目标，已取消。"
   exit 0
 fi
 
@@ -197,8 +197,8 @@ fi
 # (Even the Claude block reads plugin versions and merges settings.json via
 # python3.) The Python-free path is the npm installer: npx digital-chip-design-agents.
 if ! command -v python3 &>/dev/null; then
-  echo "ERROR: python3 is required by install.sh but was not found in PATH."
-  echo "  For a Python-free install, use: npx digital-chip-design-agents"
+  echo "错误：install.sh 需要 python3，但 PATH 中未找到。"
+  echo "  如需无需 Python 的安装方式，请使用：npx digital-chip-design-agents"
   exit 1
 fi
 
@@ -219,17 +219,17 @@ if [[ -n "${SEL[claude]:-}" ]]; then
   CACHE_DIR="$CLAUDE_DIR/plugins/cache/$MARKETPLACE"
   SETTINGS="$CLAUDE_DIR/settings.json"
 
-  echo "Claude config : $CLAUDE_DIR"
-  echo "Plugin cache  : $CACHE_DIR"
+  echo "Claude 配置目录 : $CLAUDE_DIR"
+  echo "插件缓存目录   : $CACHE_DIR"
   echo ""
 
   if [[ ! -d "$CLAUDE_DIR" ]]; then
-    echo "ERROR: Claude config directory not found at $CLAUDE_DIR"
-    echo "  Make sure Claude Code is installed and has been run at least once."
+    echo "错误：在 $CLAUDE_DIR 找不到 Claude 配置目录"
+    echo "  请确认已安装 Claude Code，并且至少运行过一次。"
     exit 1
   fi
 
-  echo "Installing Claude Code plugin cache..."
+  echo "正在安装 Claude Code 插件缓存..."
   for plugin in "${PLUGINS[@]}"; do
     subdir="${PLUGIN_DIRS[$plugin]}"
     src="$REPO_DIR/plugins/$subdir"
@@ -246,7 +246,7 @@ if [[ -n "${SEL[claude]:-}" ]]; then
   done
 
   echo ""
-  echo "Updating $SETTINGS ..."
+  echo "正在更新 $SETTINGS ..."
 
   python3 - "$SETTINGS" "$MARKETPLACE" "$REPO_DIR" <<PYEOF
 import json, sys, os
@@ -281,18 +281,18 @@ with open(settings_path, "w") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
 
-print(f"  [OK] {len(plugins)} plugins enabled in settings.json")
+print(f"  [OK] settings.json 中已启用 {len(plugins)} 个插件")
 PYEOF
 
   # Seed the central memory root from the in-repo memory/ seed (idempotent;
   # copies knowledge.md only if absent, migrates any repo-local runtime data).
   echo ""
-  echo "Seeding central memory root..."
+  echo "正在初始化中央 Memory root..."
   python3 "$REPO_DIR/plugins/infrastructure/skills/memory-keeper/memory_root.py" --init || \
-    echo "  [skip] could not seed memory root; run memory_root.py --init manually."
+    echo "  [跳过] 无法初始化 Memory root；请手动运行 memory_root.py --init。"
 
   echo ""
-  echo "Done! Restart Claude Code to activate all 16 plugins."
+  echo "完成！请重启 Claude Code，以激活全部 16 个插件。"
 
 fi  # end Claude Code block
 
@@ -302,7 +302,7 @@ fi  # end Claude Code block
 if [[ -n "${SEL[copilot]:-}" ]]; then
 
   echo ""
-  echo "Installing GitHub Copilot instructions..."
+  echo "正在安装 GitHub Copilot 指令文件..."
 
   python3 - "$REPO_DIR" "$PWD" <<'PYEOF'
 import json, os, re, glob, sys, shutil
@@ -338,8 +338,8 @@ for skill_path in skill_files:
         f.write(f'---\napplyTo: "{applyto}"\n---\n\n{body}\n')
     print(f'  [OK] .github/instructions/{domain}.instructions.md')
 
-print(f'\nCopilot: {len(skill_files)} instruction files installed.')
-print('Commit .github/ to share domain rules with your team.')
+print(f'\nCopilot：已安装 {len(skill_files)} 个指令文件。')
+print('如需与团队共享这些领域规则，请提交 .github/ 目录。')
 PYEOF
 
 fi  # end Copilot block
@@ -350,7 +350,7 @@ fi  # end Copilot block
 if [[ -n "${SEL[gemini]:-}" ]]; then
 
   echo ""
-  echo "Installing Gemini Code Assist context file..."
+  echo "正在安装 Gemini Code Assist 上下文文件..."
 
   if [[ "$GLOBAL" == "true" ]]; then
     GEMINI_TARGET="${HOME}/GEMINI.md"
@@ -368,13 +368,13 @@ out_path = sys.argv[2]
 header = open(os.path.join(repo_dir, 'ides', 'gemini', 'gemini-header.md'), encoding='utf-8').read().strip()
 
 lines = [
-    '# Digital Chip Design Agents — Gemini Context',
-    f'<!-- Generated by install.sh --ide gemini -->',
+    '# 数字芯片设计 Agents — Gemini 上下文',
+    f'<!-- 由 install.sh --ide gemini 生成 -->',
     f'<!-- Source: {repo_dir} -->',
     '',
     header,
     '',
-    '## Domain Knowledge',
+    '## 领域知识',
     '',
 ]
 
@@ -410,7 +410,7 @@ fi  # end Gemini block
 if [[ -n "${SEL[opencode]:-}" ]]; then
 
   echo ""
-  echo "Installing OpenCode config..."
+  echo "正在安装 OpenCode 配置..."
 
   if [[ "$GLOBAL" == "true" ]]; then
     OPENCODE_TARGET="${HOME}/.config/opencode/config.json"
@@ -427,20 +427,20 @@ is_global  = sys.argv[3] == 'true'
 
 # Mode key / display-name mapping
 mode_display = {
-    'architecture': ('chip-architecture', 'Chip Architecture Evaluation'),
-    'rtl-design':   ('chip-rtl',          'RTL Design (SystemVerilog)'),
-    'verification': ('chip-verification', 'Functional Verification (UVM)'),
-    'formal':       ('chip-formal',       'Formal Verification (FPV/LEC)'),
-    'synthesis':    ('chip-synthesis',    'Logic Synthesis'),
-    'dft':          ('chip-dft',          'Design for Test'),
-    'sta':          ('chip-sta',          'Static Timing Analysis'),
-    'hls':          ('chip-hls',          'High-Level Synthesis'),
-    'pd':           ('chip-pd',           'Physical Design'),
-    'soc':          ('chip-soc',          'SoC IP Integration'),
-    'memory-ip':    ('chip-memory-ip',    'Memory IP Design'),
-    'compiler':     ('chip-compiler',     'Compiler Toolchain'),
-    'firmware':     ('chip-firmware',     'Embedded Firmware'),
-    'fpga':         ('chip-fpga',         'FPGA Emulation'),
+    'architecture': ('chip-architecture', '芯片架构评估'),
+    'rtl-design':   ('chip-rtl',          'RTL 设计（SystemVerilog）'),
+    'verification': ('chip-verification', '功能验证（UVM）'),
+    'formal':       ('chip-formal',       '形式验证（FPV/LEC）'),
+    'synthesis':    ('chip-synthesis',    '逻辑综合'),
+    'dft':          ('chip-dft',          '可测性设计（DFT）'),
+    'sta':          ('chip-sta',          '静态时序分析（STA）'),
+    'hls':          ('chip-hls',          '高层综合（HLS）'),
+    'pd':           ('chip-pd',           '物理设计（PD）'),
+    'soc':          ('chip-soc',          'SoC IP 集成'),
+    'memory-ip':    ('chip-memory-ip',    'Memory IP 设计'),
+    'compiler':     ('chip-compiler',     '编译器工具链'),
+    'firmware':     ('chip-firmware',     '嵌入式固件'),
+    'fpga':         ('chip-fpga',         'FPGA 原型验证'),
 }
 
 base = json.load(open(os.path.join(repo_dir, 'ides', 'opencode', 'opencode-base.json')))
@@ -482,7 +482,7 @@ with open(target, 'w', encoding='utf-8') as f:
     f.write('\n')
 
 print(f'  [OK] {target} — {len(modes)} modes')
-print('  Use /mode chip-<domain> in OpenCode to activate a domain.')
+print('  在 OpenCode 中使用 /mode chip-<domain> 激活对应领域。')
 PYEOF
 
 fi  # end OpenCode block
@@ -493,7 +493,7 @@ fi  # end OpenCode block
 if [[ -n "${SEL[codex]:-}" ]]; then
 
   echo ""
-  echo "Installing OpenAI Codex CLI context file..."
+  echo "正在安装 OpenAI Codex CLI 上下文文件..."
 
   if [[ "$GLOBAL" == "true" ]]; then
     CODEX_TARGET="${HOME}/.codex/instructions.md"
@@ -511,13 +511,13 @@ out_path = sys.argv[2]
 header = open(os.path.join(repo_dir, 'ides', 'codex', 'AGENTS.md'), encoding='utf-8').read().strip()
 
 lines = [
-    '# Digital Chip Design Agents — Codex CLI Context',
-    f'<!-- Generated by install.sh --ide codex -->',
+    '# 数字芯片设计 Agents — Codex CLI 上下文',
+    f'<!-- 由 install.sh --ide codex 生成 -->',
     f'<!-- Source: {repo_dir} -->',
     '',
     header,
     '',
-    '## Domain Knowledge',
+    '## 领域知识',
     '',
 ]
 
@@ -543,7 +543,7 @@ with open(out_path, 'w', encoding='utf-8') as f:
     f.write('\n'.join(lines) + '\n')
 
 print(f'  [OK] {out_path}')
-print(f'  ({len(skill_files)} domains inlined)')
+print(f'  （已内联 {len(skill_files)} 个领域）')
 PYEOF
 
 fi  # end Codex block
