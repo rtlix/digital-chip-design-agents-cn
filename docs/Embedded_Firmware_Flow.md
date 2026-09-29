@@ -1,11 +1,11 @@
-# Embedded Firmware & Device Driver Development Flow
+# 嵌入式固件与设备驱动开发流程
 ## Orchestrator + Stage Agents + Skills
 
-> **Purpose**: AI-driven flow for developing firmware and device drivers that run on or interface with the designed chip. Covers BSP development, peripheral drivers, RTOS integration, and firmware validation.
+> **目的**：面向芯片固件与设备驱动开发的 AI 驱动流程。覆盖 BSP 开发、外设驱动、RTOS 集成和固件验证。
 
 ---
 
-## 1. Shared State Object
+## 1. 共享状态对象
 
 ```json
 {
@@ -36,7 +36,7 @@
 
 ---
 
-## 2. Stage Sequence
+## 2. Stage Sequence（阶段顺序）
 
 ```
 [BSP Development] ──► [Peripheral Drivers] ──► [RTOS Integration]
@@ -53,7 +53,7 @@
 
 ---
 
-## 3. Skill File Specifications
+## 3. Skill 文件说明
 
 ### 3.1 `sv-fw-bsp/SKILL.md`
 
@@ -61,54 +61,53 @@
 # Skill: Firmware — Board Support Package (BSP) Development
 
 ## Purpose
-Create the hardware abstraction layer that enables firmware to
-boot and initialize the chip from reset.
+创建从 reset 开始完成芯片启动和初始化所需的硬件抽象层。
 
 ## BSP Components
-1. Startup code (crt0.S / startup.c):
-   - Set stack pointer
-   - Initialize .data section (copy from flash to RAM)
-   - Zero .bss section
-   - Call SystemInit()
-   - Branch to main()
+1. Startup code（crt0.S / startup.c）：
+   - 设置 stack pointer
+   - 初始化 .data（从 flash 复制到 RAM）
+   - 清零 .bss
+   - 调用 SystemInit()
+   - 跳转 main()
 
-2. System initialization (SystemInit):
-   - Configure PLLs / clock tree
-   - Configure memory (flash wait states, DRAM init)
-   - Disable watchdog if safe at startup
-   - Enable caches (I-cache, D-cache) if present
+2. System initialization（SystemInit）：
+   - 配置 PLL / clock tree
+   - 配置 memory（flash wait state、DRAM init）
+   - 若启动阶段允许，关闭 watchdog
+   - 如存在 I-cache / D-cache，完成 cache enable
 
-3. Interrupt controller (NVIC / PLIC / custom):
-   - Vector table definition
-   - IRQ enable/disable primitives
+3. Interrupt controller（NVIC / PLIC / custom）：
+   - 定义 vector table
+   - IRQ enable/disable primitive
    - Priority configuration API
    - ISR registration mechanism
 
-4. Memory map header (memory_map.h):
-   - All peripheral base addresses as #defines
-   - Register offset definitions
-   - Bit field definitions (prefer struct/union or masks)
+4. Memory map header（memory_map.h）：
+   - 全部 peripheral base address 的 #define
+   - Register offset definition
+   - Bit field definition（优先 struct/union 或 mask）
 
-5. Linker scripts:
-   - Boot region, code region, data region, stack, heap
+5. Linker script：
+   - Boot region、code region、data region、stack、heap
 
 ## Coding Standards for BSP
-1. Volatile: all hardware register accesses must use volatile pointer
-2. Atomic: read-modify-write on hardware registers: disable IRQ or use atomic ops
-3. Barriers: use memory barriers (DMB/DSB) around hardware access sequences
-4. No OS calls in BSP: BSP must be RTOS-agnostic
+1. Volatile：所有硬件寄存器访问必须使用 volatile pointer
+2. Atomic：硬件寄存器 read-modify-write 时关闭 IRQ 或使用 atomic op
+3. Barriers：硬件访问序列前后使用 memory barrier（DMB/DSB）
+4. BSP 不调用 OS API：必须保持 RTOS 无关
 
 ## QoR Metrics
-- Boot: chip reaches main() within expected time
-- Clock: all PLLs locked, peripherals clocked correctly
-- Interrupts: vector table valid, default handler in place
-- Memory: .data and .bss correctly initialized
+- Boot：芯片在预期时间进入 main()
+- Clock：所有 PLL lock，peripheral clock 正确
+- Interrupt：vector table 有效，default handler 已配置
+- Memory：.data 和 .bss 正确初始化
 
 ## Output Required
-- startup.S and system_init.c
-- memory_map.h (complete register definitions)
-- Linker scripts
-- BSP build system (Makefile or CMakeLists.txt)
+- startup.S 和 system_init.c
+- memory_map.h（完整寄存器定义）
+- Linker script
+- BSP build system（Makefile 或 CMakeLists.txt）
 ```
 
 ---
@@ -119,7 +118,7 @@ boot and initialize the chip from reset.
 # Skill: Firmware — Peripheral Driver Development
 
 ## Purpose
-Implement clean, tested, reusable device drivers for all chip peripherals.
+为芯片全部外设实现结构清晰、可测试、可复用的设备驱动。
 
 ## Driver Architecture Pattern (HAL-style)
 ```c
@@ -139,34 +138,34 @@ void UART_TransferHandleIRQ(UART_Type *base, uart_handle_t *handle);
 ```
 
 ## Driver Development Rules
-1. All register access: via memory_map.h definitions (no magic numbers)
-2. Timeout: all polling loops have timeout; return error on timeout
-3. Error handling: return status codes (not void); define status_t enum
-4. Thread safety: document whether driver is thread-safe; if not, note lock requirement
-5. DMA integration: provide DMA-based transfer variants for high-bandwidth peripherals
-6. Power management: implement suspend/resume hooks for low-power modes
-7. Callback pattern: use callbacks for async completion notification
+1. 所有 register access 都通过 memory_map.h，禁止 magic number
+2. 所有 polling loop 必须有 timeout，超时返回 error
+3. 返回 status code，不使用无意义的 void；统一定义 status_t enum
+4. 记录 driver 是否 thread-safe；不安全时明确 lock requirement
+5. 高带宽外设提供 DMA-based transfer variant
+6. Low-power mode 提供 suspend/resume hook
+7. Async completion 使用 callback
 
 ## Driver Test Pattern (bare-metal)
-- Loopback tests: UART TX→RX, SPI master→slave loopback
-- DMA tests: verify buffer contents after DMA transfer
-- Interrupt tests: verify callback fires on correct event
-- Error injection: force error conditions, verify error handling
+- Loopback：UART TX→RX、SPI master→slave
+- DMA：传输后核对 buffer contents
+- Interrupt：确认正确事件触发 callback
+- Error injection：强制错误并验证处理
 
 ## Standard Peripheral Driver Checklist
-- [ ] UART: init, send, receive, baud rate, parity, flow control
-- [ ] SPI: master/slave, all modes (CPOL/CPHA), DMA
-- [ ] I2C: master/slave, 7/10-bit addressing, repeated start
-- [ ] GPIO: input/output, pull up/down, interrupt on edge
-- [ ] Timer: periodic, one-shot, PWM output, input capture
-- [ ] DMA: channel config, scatter-gather, completion callback
-- [ ] Watchdog: init, refresh, triggered reset test
-- [ ] Ethernet: MAC init, DMA descriptors, PHY init (MDIO)
+- [ ] UART：init、send、receive、baud rate、parity、flow control
+- [ ] SPI：master/slave、全部 mode（CPOL/CPHA）、DMA
+- [ ] I2C：master/slave、7/10-bit addressing、repeated start
+- [ ] GPIO：input/output、pull up/down、edge interrupt
+- [ ] Timer：periodic、one-shot、PWM、input capture
+- [ ] DMA：channel config、scatter-gather、completion callback
+- [ ] Watchdog：init、refresh、triggered reset test
+- [ ] Ethernet：MAC init、DMA descriptor、PHY init（MDIO）
 
 ## Output Required
-- Driver source files (one .c/.h pair per peripheral)
+- 每个 peripheral 一组 .c/.h
 - Driver test suite
-- Driver API documentation (Doxygen-compatible)
+- Doxygen-compatible API 文档
 ```
 
 ---
@@ -177,40 +176,41 @@ void UART_TransferHandleIRQ(UART_Type *base, uart_handle_t *handle);
 # Skill: Firmware — RTOS Integration
 
 ## Purpose
-Integrate an RTOS (FreeRTOS, Zephyr, or similar) with the BSP
-and peripheral drivers for multi-tasking firmware.
+将 FreeRTOS、Zephyr 或类似 RTOS 与 BSP、peripheral driver 集成，
+支持多任务 firmware。
 
 ## FreeRTOS Integration Steps
-1. Port layer: implement portmacro.h for target architecture
-2. Tick timer: configure hardware timer for RTOS tick (typ. 1ms)
-3. Context switch: implement PendSV/SVC handlers (or equivalent)
-4. Heap: select heap scheme (heap_4 for most embedded use cases)
-5. Stack sizing: size each task stack (use uxTaskGetStackHighWaterMark)
-6. Interrupt nesting: configure BASEPRI or equivalent for IRQ masking
+1. Port layer：为目标架构实现 portmacro.h
+2. Tick timer：用 hardware timer 提供 RTOS tick（通常 1 ms）
+3. Context switch：实现 PendSV/SVC 或等价 handler
+4. Heap：常见嵌入式场景默认选 heap_4
+5. Stack sizing：用 uxTaskGetStackHighWaterMark 评估
+6. Interrupt nesting：配置 BASEPRI 或等价 IRQ masking
+7. Priority inversion：使用支持 priority inheritance 的 mutex
 
 ## RTOS-Aware Driver Requirements
-1. Blocking calls: use RTOS semaphore/queue instead of busy-wait
-2. ISR-to-task notification: use xSemaphoreGiveFromISR() pattern
-3. Mutual exclusion: use mutex for shared peripheral access
-4. DMA + RTOS: use event flags for DMA completion notification
-5. No FreeRTOS API calls from within ISR unless FromISR variant
+1. Blocking call：使用 semaphore/queue，避免 busy-wait
+2. ISR→task notification：使用 xSemaphoreGiveFromISR() 模式
+3. Mutual exclusion：共享外设使用 mutex
+4. DMA + RTOS：用 event flag/semaphore 通知完成
+5. ISR 内禁止调用非 FromISR 版本 FreeRTOS API
 
 ## Common RTOS Integration Bugs
-- Stack overflow: set configCHECK_FOR_STACK_OVERFLOW = 2
-- Priority inversion: use mutex with priority inheritance
-- ISR calling non-ISR API: linker/assert catch in debug builds
-- Tick timer wrong frequency: verify with logic analyzer
+- Stack overflow：设置 configCHECK_FOR_STACK_OVERFLOW = 2
+- Priority inversion：使用带 priority inheritance 的 mutex
+- ISR 调用非 ISR API：debug build 中通过 assert/linker 捕获
+- Tick frequency 错误：用 logic analyzer 测量确认
 
 ## QoR Metrics
-- RTOS boots: idle task runs, tick fires at correct rate
-- Task creation: all application tasks created and running
-- No stack overflow detected in stress test
-- Driver + RTOS: no deadlocks under concurrent access
+- RTOS 能正常启动：idle task 运行，tick 频率正确
+- 所有 application task 成功创建并运行
+- Stress test 无 stack overflow
+- Driver + RTOS 并发访问无 deadlock
 
 ## Output Required
-- RTOS port layer files (if custom target)
-- FreeRTOSConfig.h / prj.conf (configured for target)
-- RTOS integration test (multi-task producer-consumer)
+- RTOS port layer（自定义 target 时）
+- FreeRTOSConfig.h / prj.conf
+- Multi-task producer-consumer integration test
 ```
 
 ---
@@ -221,40 +221,39 @@ and peripheral drivers for multi-tasking firmware.
 # Skill: Firmware — Validation and System Testing
 
 ## Purpose
-Validate that firmware correctly controls all chip peripherals
-and meets system-level functional requirements.
+验证 firmware 能正确控制全部外设并满足系统级功能要求。
 
 ## Validation Strategy
-| Level            | What it tests                              | Environment       |
-|------------------|--------------------------------------------|-------------------|
-| Unit (driver)    | Individual peripheral, loopback            | Bare-metal on HW  |
-| Integration      | Multiple peripherals together              | RTOS on HW        |
-| System           | Full application scenario                  | RTOS on HW        |
-| Stress           | Long-run, high-throughput, corner cases    | Overnight on HW   |
-| Power            | Verify low-power modes, wake-up            | HW + power meter  |
+| Level | 测试内容 | 环境 |
+|---|---|---|
+| Unit (driver) | 单个外设、loopback | Bare-metal on HW |
+| Integration | 多外设协同 | RTOS on HW |
+| System | 完整 application scenario | RTOS on HW |
+| Stress | 长时间、高吞吐、corner case | Overnight on HW |
+| Power | Low-power mode / wake-up | HW + power meter |
 
 ## Automated Testing Framework
-1. Unity or CppUTest: C unit test framework for driver tests
-2. Test runner: Python script controls target via UART/JTAG
-3. Pass/fail: target sends PASS/FAIL over UART; host logs result
-4. CI integration: run on every commit via FPGA farm or emulator
+1. Unity 或 CppUTest：C unit-test framework
+2. Python host script 通过 UART/JTAG 控制 target
+3. Target 通过 UART 回报 PASS/FAIL，host 记录结果
+4. 每次 commit 可通过 FPGA farm/emulator 接入 CI
 
 ## Performance Validation
-- UART: verify throughput at maximum baud rate
-- SPI: verify throughput at maximum clock
-- DMA: verify transfer rate matches theoretical (memcpy benchmark)
-- Interrupt latency: measure IRQ-to-ISR entry time
+- UART：maximum baud rate throughput
+- SPI：maximum clock throughput
+- DMA：对比理论 transfer rate
+- Interrupt latency：测量 IRQ 到 ISR entry 时间
 
 ## QoR Metrics
-- All peripheral driver tests: 100% pass
-- System integration tests: 100% pass
-- Stress test: 24hr run with 0 failures
-- Performance: within 10% of theoretical limits
+- 所有 peripheral driver test 100% PASS
+- System integration test 100% PASS
+- 24h stress test 0 failure
+- Performance 与理论上限差异 ≤10%
 
 ## Output Required
-- Test results report (per peripheral, per scenario)
-- Performance measurements
-- Any known limitations with workarounds
+- Per-peripheral / per-scenario test report
+- Performance measurement
+- Known limitation 与 workaround
 ```
 
 ---
@@ -275,9 +274,11 @@ LOOP-BACK RULES:
   - peripheral_drivers: driver test fail    → peripheral_drivers (max 3x)
   - rtos_integration: deadlock/overflow     → rtos_integration (max 3x)
   - driver_validation: fail                 → peripheral_drivers (max 3x)
-  - system_integration: fail               → peripheral_drivers (max 2x)
+  - system_integration: fail                → peripheral_drivers (max 2x)
 
 Track drivers_complete[] in state_object.
 Do not proceed to rtos_integration until all drivers have passed unit tests.
 Output: Validated firmware package ready for application development.
 ```
+
+> 上述 System Prompt 中的 stage 名、字段名和固定枚举属于机器接口，因此保留英文；其含义已在本文正文中中文化。
