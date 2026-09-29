@@ -1,4 +1,4 @@
-"""Tests for how mcp-adapter.py interprets what a wrapper script returns.
+"""测试 mcp-adapter.py 如何解释 wrapper script 的返回值。
 
 The wrapper contract is to print JSON on every run. A wrapper that exits 0 and
 prints nothing, or prints something that is not the wrapper JSON, has not
@@ -66,7 +66,7 @@ def test_valid_wrapper_json_is_passed_through_unchanged(adapter, monkeypatch, st
 
 
 def test_wrapper_json_without_verified_field_is_passed_through(adapter, monkeypatch):
-    """A custom wrapper written before the field existed keeps working."""
+    """字段引入前编写的 custom wrapper 仍应保持可用。"""
     payload = {"tool": "custom", "exit_code": 0, "status": "PASS", "summary": {},
                "errors": [], "warnings": [], "raw_log": ""}
     assert run(adapter, monkeypatch, stdout=json.dumps(payload)) == payload
