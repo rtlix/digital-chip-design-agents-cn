@@ -1,267 +1,200 @@
 ---
 name: formal-verification
 description: >
-  Formal property verification (FPV) and logical equivalence checking (LEC).
-  Use when proving design properties exhaustively, checking RTL vs gate-level
-  netlist equivalence, verifying CDC crossings formally, or closing verification
-  coverage gaps that simulation cannot efficiently reach.
+  形式属性验证（FPV）和逻辑等价性检查（LEC）。适用于穷尽式证明设计属性、
+  检查 RTL 与 gate-level netlist 等价性、形式化验证 CDC，或关闭仿真难以高效覆盖的验证缺口。
 version: 1.0.0
 author: chuanseng-ng
 license: MIT
 allowed-tools: Read, Write, Bash
 ---
 
-# Skill: Formal Verification (FPV + LEC)
+# Skill: Formal Verification (FPV + LEC)（形式验证）
 
 ## Invocation
-
-When this skill is loaded and a user presents a formal verification task, **do not
-execute stages directly**. Immediately spawn the
-`digital-chip-design-agents:formal-orchestrator` agent and pass the full user
-request and any available context to it. The orchestrator enforces the stage
-sequence, loop-back rules, and sign-off criteria defined below.
-
-Use the domain rules in this file only when the orchestrator reads this skill
-mid-flow for stage-specific guidance, or when the user asks a targeted reference
-question rather than requesting a full flow execution.
+用户提出 formal verification 任务时，**不要直接执行 stage**；立即启动
+`digital-chip-design-agents:formal-orchestrator` 并传入完整请求和上下文。
+仅当 Orchestrator 中途读取本 Skill 获取某 stage 的指导，或用户只问针对性参考问题时，
+才直接使用本文件规则。
 
 ## Pre-run Context
-
-Before executing or advising on **any** stage, read the following files if they exist:
-
-1. `memory/formal/knowledge.md` — known failure patterns, successful tool flags, PDK/tool quirks.
-   Incorporate its guidance into every stage decision. If absent, proceed without it.
-2. `memory/formal/run_state.md` — current run identity (`run_id`, `design_name`, `tool`,
-   `last_stage`). Use this to resume correctly after interruption. If absent, a new run
-   is starting; the orchestrator will create this file before the first stage.
-
-This pre-run read applies whether this skill is loaded by a user or called by the
-orchestrator mid-flow. It ensures the fix database is consulted before any diagnosis step.
+任何 stage 前，如存在则读取：
+1. `memory/formal/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
+2. `memory/formal/run_state.md` —— 当前 `run_id/design_name/tool/last_stage`，用于中断恢复。
 
 ## Purpose
-Exhaustively prove design properties and equivalence using formal methods.
-Complements simulation-based verification for correctness proofs, protocol
-compliance, and equivalence checking between RTL and gate-level netlists.
+利用形式方法穷尽证明设计属性与等价性，补充 simulation-based verification，
+用于 correctness proof、protocol compliance、CDC/formal closure 和 RTL↔netlist equivalence。
 
 ---
 
 ## Supported EDA Tools
 
 ### Open-Source
-- **SymbiYosys** (`sby`) — formal property verification front-end for open-source solvers
-- **Yosys** (`yosys`) — synthesis and equivalence checking back-end
-- **Boolector** — SMT solver for bit-vector arithmetic
-- **Z3** — general-purpose SMT solver from Microsoft Research
-- **ABC** — logic synthesis and verification framework (sequential equivalence)
-- **Tabby CAD Suite** — commercial bundle of sby + solvers (from YosysHQ)
+- **SymbiYosys**（`sby`）—— formal orchestration
+- **Yosys**（`yosys`）—— elaboration/netlist/formal front-end
+- **Boolector / Z3** —— SMT solver
+- **ABC** —— logic synthesis/verification
+- **Tabby CAD Suite** —— commercial-supported YosysHQ formal stack
 
 ### Proprietary
-- **Cadence JasperGold** (`jg`) — industry-standard FPV, CDC, DFT formal
-- **Synopsys VC Formal** (`vcf`) — property checking and equivalence verification
-- **Siemens Questa Formal** (`qformal`) — FPV and coverage closure
+- **Cadence JasperGold**（`jg`）
+- **Synopsys VC Formal**（`vcf`）
+- **Siemens Questa Formal**（`qformal`）
 
 ---
 
 ## Stage: property_planning
 
-### Property Categories
-1. **Safety**: "something bad never happens"
-   `assert property (@(posedge clk) !(error && valid));`
-2. **Liveness**: "something good eventually happens" (always bound the interval)
-   `assert property (@(posedge clk) req |-> ##[1:MAX] ack);`
-3. **Stability**: "output is stable while condition holds"
-   `assert property (@(posedge clk) valid |-> $stable(data));`
-4. **Reachability**: "a state is reachable" (use cover, not assert)
-   `cover property (@(posedge clk) state == DONE);`
-
 ### Domain Rules
-1. Every spec feature: at least one property or cover point
-2. All properties: include descriptive name and failure message
-3. Liveness properties: always bound with ##[1:BOUND]
-4. Use `$past()`, `$rose()`, `$fell()` over manual delay logic
-5. `disable iff`: use for reset gating
+1. 每个 P0 requirement 至少对应一条 property。
+2. Property 分类：safety、liveness、protocol、data-integrity、control/FSM。
+3. Property 名称应可追溯到 spec feature。
+4. Assumption 只约束环境合法行为，不能约束掉 DUT bug。
+5. 对 liveness property 使用 bounded proof 或明确 fairness assumption。
+6. 同时规划 cover property，确认重要状态确实 reachable。
+7. Property 必须与 simulation assertion/coverage 尽量复用。
 
 ### QoR Metrics to Evaluate
-- All spec features mapped to property or cover
-- Cover points: key states are reachable
+- P0 requirement property coverage：100%
+- 每条 property 都有 owner/priority/expected proof mode
+- 环境 assumption 已审查，不得过度约束 DUT
 
 ### Output Required
-- Property plan (feature → property mapping)
-- SVA property file (.sva)
-- SVA assumption file
+- Property plan
+- SVA property/assumption/cover 列表
+- Requirement → property traceability table
 
 ---
 
 ## Stage: environment_setup
 
 ### Domain Rules
-1. Constrain all primary inputs to legal values only
-2. Protocol assumptions: model upstream block behaviour
-3. Reset assumption: force correct reset sequence at time 0
-4. **Over-constraining → vacuous proof** (nothing can be proven wrong) — always run vacuity check
-5. **Under-constraining → false CEX** (environment bug, not DUT) — check all CEX carefully
-6. Vacuity check: disable each assume — property should NOT hold without it
-7. Document every assumption with justification
-
-### Common Assumption Templates
-```systemverilog
-// Reset sequence
-assume property (@(posedge clk) $rose(rst_n) |-> ##[1:5] rst_n);
-
-// AXI valid stability
-assume property (@(posedge clk)
-  (s_axi_awvalid && !s_axi_awready) |=> $stable(s_axi_awaddr));
-```
+1. 明确 clock/reset，并对 reset deassertion 建模。
+2. Protocol input 用合法 transaction assumption 约束。
+3. 不得直接 assume DUT output。
+4. 对 unconstrained input 做 X/范围检查。
+5. Formal harness 与 DUT 分离，优先 bind/checker。
+6. 每次修改 assumption 后都运行 vacuity check。
+7. 对多 clock domain 明确 ratio/relationship；真正 asynchronous 时不要伪造同步关系。
 
 ### QoR Metrics to Evaluate
-- Vacuity check: PASS for all properties
-- No over-constraining: formal tool reports reasonable state space
-- Environment signed off by verification lead
+- 0 obvious over-constraint
+- 所有 primary input 均有明确环境语义
+- Vacuity check clean
 
 ### Output Required
-- Formal environment file (constraints/assumptions)
-- Vacuity check report
-- Environment review record
+- Formal harness
+- Assumption file
+- Clock/reset/environment constraint
+- Vacuity report
 
 ---
 
 ## Stage: fpv_run
 
-### Result Classifications
-| Result | Meaning | Action |
-|--------|---------|--------|
-| PROVEN | Holds for all reachable states | Log and continue |
-| CEX | Counterexample found | Analyse; fix RTL or assumption |
-| VACUOUS | Antecedent never fires | Fix assumption or property |
-| INCONCLUSIVE | Bound too small or state space too large | Increase bound / abstract |
-| UNREACHABLE | Cover never reachable | Verify or waive |
-
-### Strategies for Inconclusive
-1. Increase BMC bound (k-induction)
-2. Apply abstractions (data abstraction, counter abstraction)
-3. Decompose: prove sub-properties; compose to main property
-4. Document as "assumed correct" with justification if intractable
+### Domain Rules
+1. P0 property 优先运行并 closure。
+2. 区分 PROVEN、FAILED/CEX、UNKNOWN/INCONCLUSIVE。
+3. UNKNOWN 时逐步增加 bound/engine，而不是直接声称 PASS。
+4. CEX 必须保存 trace/waveform 和 failing property。
+5. 发现 RTL bug 时创建结构化 `fix_request`，交给 Meta pipeline，不在 formal 域自行改 RTL。
+6. 每轮 proof 记录 engine、bound、runtime、memory 与结果。
 
 ### QoR Metrics to Evaluate
-- Target: 100% PROVEN or UNREACHABLE (no unanalysed CEX)
-- All INCONCLUSIVE: documented with justification and bound used
+- P0 unproven：0 才可 sign-off
+- Vacuous proof：0
+- CEX 均已分类为 DUT bug / environment issue / property issue
+- UNKNOWN 均有明确后续处理
 
 ### Output Required
-- FPV run report (per property: result, CEX trace if applicable)
-- CEX waveform descriptions for failures
+- Property result table
+- CEX trace
+- Proof log/engine summary
+- Open issue list
 
 ---
 
 ## Stage: cex_analysis
 
 ### Domain Rules
-1. Every CEX: determine if it is a real DUT bug or an assumption/environment bug
-2. Real DUT bug: fix RTL → re-run FPV (counts as RTL bug, not formal bug)
-3. Assumption bug: tighten assumption → re-run vacuity check
-4. False CEX from under-constraining: document clearly before adding assumption
-5. Never waive a CEX without root cause
+1. 从最早 divergence cycle 开始分析。
+2. 区分 assumption violation、property bug 与 RTL bug。
+3. 记录最小触发 sequence、相关 signal 和疑似 RTL module/file。
+4. DUT bug 使用 `fix_request` schema 写入 `design_state.json`。
+5. Property/environment bug 在本域修复后重新 proof，不得错误路由到 RTL。
+6. 保留原始 CEX 作为 regression/formal re-check 证据。
+
+### QoR Metrics to Evaluate
+- 每个 CEX 均完成 root-cause classification
+- DUT CEX 有完整 fix_request context
+- 无未分析 P0 CEX
 
 ### Output Required
-- CEX analysis report (bug or false alarm, root cause, fix applied)
+- CEX root-cause report
+- 最小 witness 描述
+- 必要时的 fix_request
 
 ---
 
 ## Stage: lec_run
 
-### LEC Flow
-1. Read golden: RTL or pre-ECO netlist
-2. Read revised: post-synthesis netlist or post-ECO netlist
-3. Map points: match sequential/combinational key points
-4. Verify all points: compare cone-of-influence
-5. Report: EQUIVALENT / UNMATCHED / ABORTED
-
 ### Domain Rules
-1. Use same SDC for both golden and revised
-2. Scan mode: flatten scan chains or use scan-unaware mode
-3. Black boxes: handle consistently in both netlists
-4. Unmatched points: must be root-caused — not waived without RTL team approval
-5. Post-ECO: run LEC after every ECO, not just at sign-off
-
-### Common LEC Failures
-| Failure | Fix |
-|---------|-----|
-| Optimizer removed logic | Verify with report_removal; add set_dont_touch if needed |
-| SDC mismatch | Ensure same clock groupings in both netlists |
-| Scan chain reordering | Use scan-unaware LEC mode |
-| Black box mismatch | Align black box list in both netlists |
+1. 明确 reference / implementation 版本与 provenance。
+2. 正确处理 blackbox、memory macro、DFT/test logic 和 constant mapping。
+3. 对 rename/optimization 使用结构化 compare point mapping。
+4. Unmatched point 必须分类，不得直接 waive。
+5. Synthesis 引入的不等价应路由给 synthesis domain；V1 不通过 RTL fix_request 处理。
+6. Sign-off LEC 必须使用最终交付 netlist 与对应 RTL。
 
 ### QoR Metrics to Evaluate
-- All compare points: EQUIVALENT
-- 0 UNMATCHED points
-- 0 ABORTED points
+- Unmatched compare point：0
+- Non-equivalent point：0
+- Waiver 全部有 justification
+- Reference/implementation provenance 已确认
 
 ### Output Required
-- LEC run report
-- Unmatched point analysis (if any)
-- EQUIVALENT sign-off record
+- LEC setup
+- Equivalence report
+- Unmatched/non-equivalent point list
+- Waiver list
 
 ---
 
 ## Stage: formal_signoff
 
 ### Sign-off Checklist
-- [ ] All P0 properties: PROVEN
-- [ ] No unanalysed CEX
-- [ ] No vacuous proofs
-- [ ] LEC: 100% EQUIVALENT
-- [ ] All INCONCLUSIVE: documented with justification
-- [ ] Additional coverage closed vs simulation baseline
+- [ ] P0 property 全部 PROVEN
+- [ ] 无 vacuous proof
+- [ ] 所有 CEX 已解决或有批准的 disposition
+- [ ] LEC unmatched/non-equivalent point 为 0
+- [ ] Assumption 已审查
+- [ ] Formal artifact 与最终 RTL/netlist 版本匹配
 
 ### Output Required
 - Formal sign-off report
-- Final property status table
-- LEC clean record
+- Property summary
+- LEC report
+- Open/waived issue list
 
 ---
 
 ## Constraint Validation
-
-See `plugins/meta/skills/pipeline-orchestration/SKILL.md` §Constraints Schema for the authoritative schema and stage-entry validation rule.
-
-**No required keys** for formal verification — all constraints in this domain are optional.
-
-There are no numeric coverage thresholds unique to formal; this domain shares coverage targets
-with the functional-verification domain (`coverage.*`) and timing targets with the STA domain
-(`timing.wns_ns_target`). When evaluating LEC equivalence or FPV property results, tag
-`constraint_ref` in history entries with the relevant dot-path key if a constraint value was
-consulted (e.g. `"coverage.functional_pct"` when reporting coverage contribution).
+权威 schema 见 `plugins/meta/skills/pipeline-orchestration/SKILL.md`。
+Formal domain 没有必填 design constraint；缺失 optional constraint 时使用 schema default 并在 history reason 中注明。
 
 ---
 
 ## Memory
 
 ### Write on stage completion
-After each stage completes (regardless of whether an orchestrator session is active),
-write or overwrite one JSON record in `memory/formal/experiences.jsonl` keyed by
-`run_id`. This ensures data is persisted even if the flow is interrupted or called
-without full orchestrator context.
+每个 stage 完成后，按 `run_id` 在 `memory/formal/experiences.jsonl` 写入/覆盖记录。
+`run_id = formal_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。
+最终 sign-off 前保持 `signoff_achieved:false`。
 
-Use `run_id` = `formal_<YYYYMMDD>_<HHMMSS>` (set once at flow start; reuse on each
-stage update). Every JSON record written must include a top-level `"run_id"` field
-whose value matches this key — stage writes must upsert/overwrite by matching this
-persisted `run_id`. Set `signoff_achieved: false` until the final sign-off stage
-completes.
-### Run state (write before first stage, update after each stage)
-Write `memory/formal/run_state.md` as the **first action** before launching any tool:
-```markdown
-run_id:       formal_<YYYYMMDD>_<HHMMSS>
-design_name:  <design>
-tool:         <primary tool>
-start_time:   <ISO-8601>
-last_stage:   null
-current_stage: <first stage name>
-```
-Update `current_stage` when a stage starts, and set `last_stage` to the completed stage
-name only after successful completion (then clear `current_stage`). This file lets
-wakeup-loop prompts and resumed sessions identify the correct run and distinguish
-completed vs in-flight work. Create the file and parent directories if they do not exist.
+### Run state
+任何工具运行前第一步写 `memory/formal/run_state.md`，每 stage 成功后更新 `last_stage`。
 
 ### Optional: claude-mem index
-If `mcp__plugin_ecc_memory__add_observations` is available in this session, emit each
-applied fix as an observation to entity `chip-design-formal-fixes` after writing to
-`experiences.jsonl`. Skip silently if the tool is absent — JSONL is the canonical record.
+如果 `mcp__plugin_ecc_memory__add_observations` 可用，把 applied fix 写入
+`chip-design-formal-fixes`；否则静默跳过，JSONL 为 canonical record。
