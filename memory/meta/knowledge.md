@@ -1,45 +1,45 @@
-# Pipeline Orchestration — Domain Knowledge
+# Pipeline Orchestration — Domain Knowledge（流水线编排领域知识）
 
-## Cross-Domain Loop Patterns
+## Cross-Domain Loop Patterns（跨域循环模式）
 
 ### Common verification flap signatures
-- **Off-by-one in address calculation** — frequently shows as `wrap_addr` or `incr_addr` mismatch in AXI burst tests; fix usually confined to 2–5 lines in the address-generation logic.
-- **Reset-domain crossing oversight** — RTL lint passes but simulation fails on reset-active transactions; fix requires synchroniser insertion or reset qualification.
-- **State-machine dead state** — directed test reaches unreachable state; fix is adding a default branch or a recovery transition.
-- **Width mismatch on signed/unsigned boundary** — shows as sign-extension artefacts; fix is an explicit cast.
+- **Address 计算 off-by-one**：AXI burst test 中常表现为 `wrap_addr` / `incr_addr` mismatch；通常只需修改 address-generation logic 的 2–5 行。
+- **Reset-domain crossing 漏检**：RTL lint 通过，但 reset-active transaction 仿真失败；需要 synchronizer 或 reset qualification。
+- **State-machine dead state**：directed test 进入不可恢复状态；通常要补 default branch 或 recovery transition。
+- **Signed/unsigned boundary width mismatch**：表现为 sign-extension artifact；通常用显式 cast 修复。
 
 ### Iteration-cap heuristics
-- If `cross_domain_iteration_count=2` without any `status=fixed` entry, the suspected_rtl location is likely wrong. Suggest the user re-examine `waveform_path` before approving a 3rd dispatch.
-- If a new fix_request has the same `summary` as a previous `status=fixed` entry, the fix did not hold — check whether the RTL file was committed before simulation ran.
-- If `cross_domain_iteration_count=3` is reached within a single session, the root cause is usually a misdiagnosis in `suspected_rtl.module`. Escalation message should suggest waveform re-analysis.
+- 若 `cross_domain_iteration_count=2` 且还没有任何 `status=fixed`，`suspected_rtl` 位置很可能判断错。批准第 3 次 dispatch 前应重新检查 `waveform_path`。
+- 新 fix_request 与之前 `status=fixed` 条目有相同 `summary` 时，说明修复没 hold；检查 simulation 前 RTL 文件是否真正提交/生效。
+- 同一 session 达到 `cross_domain_iteration_count=3`，常见根因是 `suspected_rtl.module` 误诊；escalation 应建议重新分析 waveform。
 
 ### Escalation message templates
 
-**Cap exceeded (3 iterations)**:
+**达到 cap（3 iterations）**：
 ```
 Pipeline loop exceeded 3 cross-domain iterations for fix_request <id>.
 Bug summary: <summary>
 Last RTL fix attempted: <rtl_response.diff_summary>
 Waveform at: <waveform_path>
 
-Action required: please review the waveform and re-identify the root cause,
-then clear `pending_approval` and reset `cross_domain_iteration_count` to 0
-before invoking /chip-design-meta:pipeline-orchestration again.
+需要操作：请复查 waveform 并重新确认 root cause，
+然后清空 pending_approval，将 cross_domain_iteration_count 重置为 0，
+再调用 /chip-design-meta:pipeline-orchestration。
 ```
 
-**RTL abandoned without fix**:
+**RTL 未修复即 abandoned**：
 ```
 RTL orchestrator terminated without closing fix_request <id> (status stayed claimed).
 Bug summary: <summary>
-Possible causes: max turns exceeded during RTL coding; design too complex for auto-fix.
+可能原因：RTL coding 达到 max turns；设计过复杂，无法自动修复。
 
-Action required: manually fix <suspected_rtl.file> around lines <line_range>,
-update fix_request status to "fixed" with rtl_response populated,
-then re-invoke /chip-design-verification:functional-verification.
+需要操作：手工修复 <suspected_rtl.file> 的 <line_range> 附近，
+把 fix_request status 更新为 "fixed" 并填充 rtl_response，
+然后重新调用 /chip-design-verification:functional-verification。
 ```
 
 ## RTL Fix-Request Idioms
 
-- When `failure_class=formal_cex`, the CEX trace often pinpoints the exact failing cycle. Remind the RTL orchestrator to load the trace in the sim tool before modifying RTL.
-- `coverage_gap` fix_requests indicate missing RTL behaviour, not a bug per se. The RTL orchestrator should confirm whether new logic is needed or the testbench stimulus is insufficient before modifying RTL.
-- Always check `suspected_rtl.line_range` — if it is `[0, 0]`, the bug location is unknown and the RTL orchestrator should run lint + simulation replay before modifying code.
+- `failure_class=formal_cex` 时，CEX trace 往往能精确到 failing cycle；提醒 RTL Orchestrator 修改 RTL 前先在 simulation tool 中加载 trace。
+- `coverage_gap` 不一定代表 RTL bug，可能是 testbench stimulus 不足；改 RTL 前先确认是否真的缺行为。
+- 始终检查 `suspected_rtl.line_range`。如果是 `[0,0]`，说明位置未知，RTL Orchestrator 应先 replay lint+simulation 再修改代码。
