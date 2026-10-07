@@ -38,9 +38,9 @@ allowed-tools: Read, Write, Bash
 - **MLIR/CIRCT**（`circt-opt`）
 
 ### Proprietary
-- **Xilinx Vitis HLS**（`vitis_hls`）
-- **Cadence Stratus**（`stratus`）
-- **Siemens Catapult**（`catapult`）
+- **Xilinx Vitis HLS** (`vitis_hls`，命令方言 `xilinx`） — 面向 AMD/Xilinx 器件的 C/C++ 到 RTL 转换
+- **Cadence Stratus** (`stratus`，命令方言 `cadence`） — ASIC 与 FPGA 的 SystemC/C++ 高层次综合
+- **Siemens Catapult** (`catapult`，命令方言 `siemens`） — 从 C++/SystemC 进行算法综合
 
 ---
 
@@ -149,8 +149,10 @@ allowed-tools: Read, Write, Bash
 ## Stage: rtl_qc
 
 ### Domain Rules
-1. 对 HLS-generated RTL 运行与 rtl-design Skill 相同的 lint。
-2. 确认无 latch。
+1. 按 rtl-design Skill 的 lint_check ERROR/WARNING 级别 lint HLS 生成 RTL。检查正确性（锁存器、多驱动、未驱动输出、位宽截断），不要求生成器遵循 rtl-design 命名/风格规则，不能为满足风格手工编辑生成 RTL。
+
+2. 确认生成 RTL 无锁存器。slang 必须完整 elaboration（`slang -Weverything --ignore-unknown-modules <files>`）；lint-only 会跳过 elaboration，对任何输入报告零锁存器，因此永远无法发现此类失败。
+
 3. Interface signal name 与 integration requirement 一致。
 4. 所有 register reset 正确。
 

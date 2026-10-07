@@ -33,7 +33,7 @@ Shell 安装脚本需要 `python3`；如果希望完全不依赖 Python，请使
 **macOS / Linux / Git Bash：**
 
 ```bash
-git clone https://github.com/chuanseng-ng/digital-chip-design-agents.git
+git clone https://github.com/hdl-tools/digital-chip-design-agents.git
 cd digital-chip-design-agents
 bash install.sh
 ```
@@ -41,7 +41,7 @@ bash install.sh
 **Windows（PowerShell）：**
 
 ```powershell
-git clone https://github.com/chuanseng-ng/digital-chip-design-agents.git
+git clone https://github.com/hdl-tools/digital-chip-design-agents.git
 cd digital-chip-design-agents
 .\install.ps1
 ```
@@ -53,7 +53,7 @@ cd digital-chip-design-agents
 如果只需要部分领域，可以通过 Claude Code Marketplace 单独安装。先注册 Marketplace，再安装需要的领域：
 
 ```text
-/plugin marketplace add github:chuanseng-ng/digital-chip-design-agents
+/plugin marketplace add github:hdl-tools/digital-chip-design-agents
 ```
 
 <details>

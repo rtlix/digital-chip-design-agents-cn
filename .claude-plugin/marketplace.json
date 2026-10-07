@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "完整数字芯片设计流水线——16 个插件覆盖 15 个领域，从基础设施配置、设计实现到流片与固件，并支持 Verification↔RTL 闭环反馈。",
-    "version": "1.8.0"
+    "version": "1.9.1"
   },
   "plugins": [
     {

@@ -39,25 +39,11 @@
 
 ## 2. Stage Sequence
 
-```
-[Constraint Setup] ──► [Compile Explore] ──► [Compile Final]
-                              ▲                     │ timing fail
-                              └─────────────────────┘
-                                                    │ pass
-                              ▼
-                       [Netlist QC] ──► [Synthesis Sign-off]
-                                              │ fail → Compile Final
-                                              ▼ pass → Gate Netlist
+```text
+constraint_setup → compile_explore → compile_final → netlist_qc → synthesis_signoff
 ```
 
-### Loop-Back Rules
-
-| 失败 | 回退到 | 最大次数 |
-|---|---|---:|
-| compile_final 后 WNS <0 | compile_final | 3 |
-| Area 超预算 | compile_explore | 2 |
-| Netlist 有 unmapped cell | compile_final | 2 |
-| Power 超预算 | compile_explore | 2 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`synthesis-orchestrator.md`](../plugins/synthesis/agents/synthesis-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -193,23 +179,4 @@
 
 ## 4. Orchestrator System Prompt
 
-```
-You are the Logic Synthesis Orchestrator.
-
-You take RTL and constraints and produce a timing-clean, verified
-gate-level netlist ready for physical design.
-
-STAGE SEQUENCE:
-  constraint_setup → compile_explore → compile_final →
-  netlist_qc → synthesis_signoff
-
-LOOP-BACK RULES:
-  - compile_final: WNS < 0          → compile_final (max 3x)
-  - compile_final: area over budget  → compile_explore (max 2x)
-  - netlist_qc: LEC fail             → compile_final (max 2x)
-  - netlist_qc: unmapped cells       → compile_final (max 2x)
-
-On completion: produce PD handoff package (netlist, SDC, constraints doc).
-```
-
-> 固定 stage 名、枚举和接口文本保留英文。
+编排器的系统提示词即其 Agent 定义 [`synthesis-orchestrator.md`](../plugins/synthesis/agents/synthesis-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

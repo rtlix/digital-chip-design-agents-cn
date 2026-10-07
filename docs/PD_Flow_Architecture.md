@@ -81,40 +81,13 @@
 
 ---
 
-## 3. Stage Sequence 与 Loop-Back
+## 3. Stage Sequence
 
-```
-[Floorplan] ──► [Placement] ──► [CTS] ──► [Routing]
-                    ▲                          │
-                    │   timing fail loop       │
-                    └──────────────────────────┘
-                                               │
-                              ▼ pass
-                    [Timing Optimization] ──► [Power Optimization]
-                              ▲                        │
-                              │   power/timing loop    │
-                              └────────────────────────┘
-                                               │
-                              ▼ pass
-                    [Area Optimization] ──► [Sign-off]
-                                               │
-                              ┌────────────────┘
-                              │ DRC/LVS fail → Routing
-                              │ Timing fail → Timing Opt
-                              ▼ all pass
-                           [DONE — GDS]
+```text
+floorplan → placement → cts → routing → timing_optimization → power_optimization → area_optimization → signoff
 ```
 
-### Loop-Back Rules
-
-| 失败条件 | 回退到 | 最大次数 |
-|---|---|---:|
-| Post-placement WNS < -0.5 ns | Floorplan | 2 |
-| Post-route WNS <0 | Timing Optimization | 3 |
-| Power 超预算 | Power Optimization | 2 |
-| DRC violation >0 | Routing | 3 |
-| LVS mismatch | Routing | 2 |
-| Area utilization >85% | Area Optimization | 2 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`physical-design-orchestrator.md`](../plugins/pd/agents/physical-design-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -296,20 +269,24 @@
 ```markdown
 ## Domain Rules
 1. 所有 required PVT 跑 sign-off STA
-2. Foundry DRC deck：0 violation
-3. LVS：0 error
-4. ERC/EM/IR clean
-5. Antenna =0
+2. DRC：运行代工厂批准规则，允许违规数为零
+3. LVS：比较网表与版图，允许错误数为零
+4. ERC：电迁移及 IR drop 签核
+5. 天线检查：违规为零
 6. Metal density 在 foundry window
 7. Final GDS 合并 layer/seal ring 后再做 chip-level DRC
 
-## QoR Metrics
-- STA：所有 corner WNS ≥0、TNS=0、hold ≥0
-- DRC =0
-- LVS =0
-- IR drop <5% VDD
-- Antenna =0
-- Density PASS
+## QoR Metrics (All Must Pass)
+- STA: 所有 corner 均 WNS ≥ 0、TNS = 0、Hold ≥ 0
+- DRC violations: 0
+- LVS errors: 0
+- ERC: 无电迁移违规，IR drop < 5% VDD
+- Antenna violations: 0
+- Density check: PASS
+
+## On Failure
+签核失败的处理目标由编排器的 `## Loop-Back Rules` 决定，见
+[`physical-design-orchestrator.md`](../plugins/pd/agents/physical-design-orchestrator.md).
 
 ## Output Required
 - All-corner STA
@@ -322,36 +299,185 @@
 
 ## 5. Stage Agent 规范
 
-所有 stage 使用相同接口：
+所有阶段使用相同接口：
 
-```
+```text
 INPUT:  { state_object, stage_name, skill_content }
 OUTPUT: { updated_state_object, stage_result }
-
-内部步骤：
-  1. 加载本 stage Skill
-  2. 从 state_object 提取输入
-  3. 执行/分析 stage
-  4. 按 Skill 评估 QoR
-  5. 分类 PASS | FAIL | WARN
-  6. 写回 state_object.stages[stage_name]
-  7. 返回给 Orchestrator
 ```
 
-结构化输出中的 `stage/status/qor/issues/suggested_next_step/output`
-属于机器接口，保持英文。
+内部步骤：加载本阶段 Skill；从 state_object 提取相关输入；分析/执行任务；按 Skill 评价 QoR；分类 PASS/FAIL/WARN；写回 state_object.stages[stage_name]；向编排器返回更新状态。
+
+### 阶段 Agent 提示词模板
+
+实现各阶段 Agent 时，采用以下系统提示词结构：
+
+```text
+你是物理设计阶段 Agent，负责 [STAGE NAME]。
+输入：当前 PD 状态（JSON）、阶段 Skill（领域规则、QoR、修复）、相关设计文件或报告。
+职责：分析本阶段输入；应用 Skill 领域规则；评价 QoR；识别问题并建议修复；返回结构化 JSON。
+```
+
+```json
+{
+  "stage": "[stage_name]",
+  "status": "PASS | FAIL | WARN",
+  "qor": {},
+  "issues": [{"severity": "ERROR|WARN", "description": "...", "fix": "..."}],
+  "suggested_next_step": "proceed | loop_back_to:<stage> | retry_stage | escalate | abandon",
+  "output": {}
+}
+```
+
+不要进入下一阶段，只返回结果。
 
 ---
 
-## 6. Orchestrator 规范
+## 6. 编排器完整规范
 
-PD Orchestrator 管理从 floorplan 到 tape-out sign-off 的多阶段实现流程。
-核心职责：
+### 6.1 编排器系统提示词
 
-- 按 Stage Sequence 调度
-- 在每 stage 前加载对应 Skill
-- 根据 QoR 决定 proceed / loop-back / escalation
-- 维护共享 state 和 loop count
-- 不允许 FAIL 被跳过
-- 最终只有 timing、DRC、LVS、power/IR 等 sign-off gate 全部实际通过，
-  才输出 tape-out-ready GDS
+编排器的系统提示词即其 Agent 定义 [`physical-design-orchestrator.md`](../plugins/pd/agents/physical-design-orchestrator.md)，包括阶段顺序、回退、阶段门控和升级规则。本文不重复这些内容。
+
+### 6.2 编排器决策逻辑（伪代码）
+
+```python
+def run_pd_flow(state):
+    stage_sequence = [
+        "floorplan", "placement", "cts", "routing",
+        "timing_optimization", "power_optimization",
+        "area_optimization", "signoff"
+    ]
+
+    current_index = 0
+
+    while current_index < len(stage_sequence):
+        stage = stage_sequence[current_index]
+        state["current_stage"] = stage
+
+        # Load skill for this stage
+        skill = load_skill(f"sv-pd-{stage}/SKILL.md")
+
+        # Dispatch to stage agent
+        result = dispatch_stage_agent(stage, state, skill)
+
+        # Write result into state
+        state["stages"][stage] = result
+        update_global_qor(state, result["qor"])
+
+        if result["status"] == "PASS":
+            current_index += 1  # proceed to next stage
+
+        elif result["status"] == "FAIL":
+            loop_target = resolve_loop_back(stage, result, state)
+
+            if loop_target is None:
+                # No loop-back possible — escalate
+                escalate_to_user(state, result)
+                return
+
+            loop_key = f"{stage}_to_{loop_target}"
+            state["loop_count"][loop_key] = state["loop_count"].get(loop_key, 0) + 1
+
+            max_loops = get_max_loops(loop_key)
+            if state["loop_count"][loop_key] > max_loops:
+                escalate_to_user(state, result)
+                return
+
+            # Jump back
+            current_index = stage_sequence.index(loop_target)
+
+        elif result["status"] == "WARN":
+            # Log warning, proceed
+            log_warning(stage, result)
+            current_index += 1
+
+    # All stages passed
+    state["flow_status"] = "COMPLETE"
+    return generate_final_report(state)
+```
+
+### 6.3 编排器最终报告模板
+
+流程完成后，编排器按以下格式生成报告：
+
+```markdown
+# 物理设计运行报告
+**设计**：[design_name]
+**工艺**：[technology]
+**Run ID**：[run_id]
+**状态**：TAPE-OUT READY / FAILED
+
+## QoR 摘要
+| 指标 | 值 | 目标 | 状态 |
+|---|---|---|---|
+| WNS（setup）| Xns | ≥ 0 | PASS |
+| TNS | 0ps | 0 | PASS |
+| Hold Slack | Xps | ≥ 0 | PASS |
+| 总功耗 | XmW | < [budget] | PASS |
+| 核心利用率 | X% | 70–80% | PASS |
+| DRC 违规 | 0 | 0 | PASS |
+| LVS 错误 | 0 | 0 | PASS |
+
+## 阶段执行日志
+| 阶段 | 状态 | 迭代次数 | 主要问题 |
+|---|---|---|---|
+| Floorplan | PASS | 1 | — |
+| Placement | PASS | 1 | — |
+| CTS | PASS | 1 | — |
+| Routing | PASS | 2 | DRC 短路，已修复 |
+| Timing Optimization | PASS | 1 | — |
+| Power Optimization | PASS | 1 | — |
+| Area Optimization | WARN | 1 | 利用率 82%，在允许范围内 |
+| Sign-off | PASS | 1 | — |
+
+## 输出文件
+- 最终 GDS：[path]
+- 签核 STA 报告：[path]
+- DRC 干净报告：[path]
+- LVS 干净报告：[path]
+- 功耗报告：[path]
+```
+
+---
+
+## 7. 新会话实现指南
+
+按以下顺序实现：
+
+### 步骤 1：创建 Skill 文件
+
+在指定路径创建各 Skill，填入第 4 节内容。这些文件是只读参考文档。
+
+### 步骤 2：实现阶段 Agent
+
+为 8 个阶段分别按第 5 节接口创建 Agent：接收 `(state_object, skill_content)`，返回结构化 JSON，使用 Claude API（`claude-sonnet-4-20250514`）分析，调用时注入该阶段系统提示词。
+
+### 步骤 3：实现编排器
+
+根据 [Agent 定义](../plugins/pd/agents/physical-design-orchestrator.md)（6.1 节）与 6.2 节决策逻辑构建编排器：它是唯一直接与用户交互的 Agent，管理全部状态，以程序方式派发阶段 Agent，处理全部回退与升级逻辑。
+
+### 步骤 4：连接状态对象
+
+每次运行开始时，根据用户输入初始化第 2 节状态对象；每次 Agent 调用传入该对象，并在调用间持久化。
+
+### 步骤 5：使用简单设计检查
+
+完整流程前，使用已知正常输入独立检查每个阶段 Agent，确认 Skill 加载与 QoR 评价正确。
+
+---
+
+## 8. 关键设计决策摘要
+
+| 决策 | 选择 | 理由 |
+|---|---|---|
+| Agent 粒度 | 每个 PD 阶段一个 Agent | 分离职责，便于逐阶段调试和迭代 |
+| 状态管理 | 单一共享 JSON 对象 | 统一接口，便于流程中途检查 |
+| 回退控制 | 仅由编排器处理 | 阶段 Agent 不作流程决策，职责更清晰 |
+| Skill 格式 | 每阶段一个 Markdown | 人可读，更新领域规则无需改代码 |
+| 最大循环次数 | 按转换硬编码 | 防止无限循环，携带上下文升级 |
+| 模型 | claude-sonnet-4-20250514 | 平衡 EDA 分析推理质量与速度 |
+
+---
+
+*架构文档结束，可开始实现。*

@@ -38,29 +38,11 @@
 
 ## 2. Stage Sequence（阶段顺序）
 
-```
-[Property Planning] ──► [Environment Setup] ──► [FPV Run]
-                                                     │ CEX found
-                                                     ▼
-                                              [CEX Analysis]
-                                                     │ RTL bug → fix RTL
-                                                     │ assumption issue → fix env
-                                                     └──────► [FPV Run] (retry)
-                                                     │ all proven
-                              ▼
-                          [LEC Run] ──► [Formal Sign-off]
-                              │ unmatched points → fix netlist
-                              └──────► [LEC Run] (retry)
+```text
+property_planning → environment_setup → fpv_run → cex_analysis → lec_run → formal_signoff
 ```
 
-### Loop-Back Rules
-
-| 失败 | 回退到 | 最大次数 |
-|---|---|---:|
-| FPV：发现 CEX（RTL bug） | Fix RTL → FPV | N/A |
-| FPV：vacuous proof | Environment Setup | 3 |
-| FPV：inconclusive/bound 太小 | FPV Run，增加 bound | 3 |
-| LEC：unmatched point | Fix netlist → LEC | 3 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`formal-orchestrator.md`](../plugins/formal/agents/formal-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -115,7 +97,7 @@
 1. Primary input 只约束到合法值
 2. Protocol assumption 模拟上游行为
 3. Reset assumption 强制 time 0 的正确 reset sequence
-4. Over-constraining 会造成 vacuous proof
+4. Over-constraining 会造成 空洞证明（vacuous proof）
 5. Under-constraining 会产生环境导致的假 CEX
 6. Vacuity check：禁用 assumption 后，property 不应仍无条件成立
 7. Helper assumption 谨慎使用并逐条文档化
@@ -168,7 +150,7 @@ assume property (@(posedge clk) (s_axi_awvalid && !s_axi_awready) |=>
 5. 无法收敛时必须记录 justification，不能伪装成 PASS
 
 ## QoR Metrics
-- 目标：P0 全部 PROVEN，且无 vacuous proof
+- 目标：P0 全部 PROVEN，且无 空洞证明（vacuous proof）
 - 无未分析 CEX
 - 所有 INCONCLUSIVE 有明确说明
 
@@ -223,24 +205,4 @@ assume property (@(posedge clk) (s_axi_awvalid && !s_axi_awready) |=>
 
 ## 4. Orchestrator System Prompt
 
-```
-You are the Formal Verification Orchestrator.
-
-You manage FPV and LEC flows, track property results, and ensure
-all design properties are proven before RTL sign-off.
-
-STAGE SEQUENCE:
-  property_planning → environment_setup → fpv_run →
-  cex_analysis (if needed) → lec_run → formal_signoff
-
-LOOP-BACK RULES:
-  - fpv_run: CEX found           → (RTL fix) → fpv_run (unlimited, RTL-gated)
-  - fpv_run: vacuous             → environment_setup (max 3x)
-  - fpv_run: inconclusive        → fpv_run with larger bound (max 3x)
-  - lec_run: unmatched           → (netlist fix) → lec_run (max 3x)
-
-Track all property results in state_object.properties.
-Flag any unproven P0 property as a blocker for sign-off.
-```
-
-> 固定 stage 名、枚举和机器接口保持英文，正文已中文化。
+编排器的系统提示词即其 Agent 定义 [`formal-orchestrator.md`](../plugins/formal/agents/formal-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

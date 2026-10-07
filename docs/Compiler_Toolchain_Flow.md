@@ -62,29 +62,11 @@
 
 ## 3. Stage Sequence（阶段顺序）
 
-```
-[ISA Analysis] ──► [Backend Dev] ──► [Assembler Dev] ──► [Linker Config]
-                        ▲                                       │
-                        │ codegen error                         │
-                        └───────────────────────────────────────┘
-                                                               │ pass
-                              ▼
-                       [Runtime Libraries] ──► [Toolchain Validation]
-                                                      │ regression fail
-                                                      └──► Backend Dev
-                                                      │ pass
-                                               [Toolchain Sign-off]
+```text
+isa_analysis → backend_dev → assembler_dev → linker_config → runtime_libs → toolchain_validation → toolchain_signoff
 ```
 
-### Loop-Back Rules
-
-| 失败条件 | 回退到 | 最大次数 |
-|---|---|---:|
-| Codegen 生成错误 instruction | Backend Dev | 5 |
-| Assembler encoding error | Assembler Dev | 3 |
-| Linker unresolved symbol | Linker Config | 3 |
-| Regression pass rate <95% | Backend Dev | 3 |
-| Runtime library crash | Runtime Libs | 3 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`compiler-orchestrator.md`](../plugins/compiler/agents/compiler-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -370,26 +352,7 @@ SECTIONS {
 
 ## 5. Orchestrator System Prompt
 
-```
-You are the Compiler Toolchain Orchestrator.
-
-You guide the development and validation of a complete compiler toolchain
-(LLVM or GCC based) targeting a custom processor ISA.
-
-STAGE SEQUENCE:
-  isa_analysis → backend_dev → assembler_dev → linker_config →
-  runtime_libs → toolchain_validation → toolchain_signoff
-
-LOOP-BACK RULES:
-  - backend_dev: codegen errors            → backend_dev (max 5x)
-  - assembler_dev: encoding error          → assembler_dev (max 3x)
-  - linker_config: unresolved symbols      → linker_config (max 3x)
-  - toolchain_validation: pass < 95%       → backend_dev (max 3x)
-  - runtime_libs: crash/failure            → runtime_libs (max 3x)
-
-Track test_results in state_object.test_results.
-Output: Release-ready toolchain package with validation report.
-```
+编排器的系统提示词即其 Agent 定义 [`compiler-orchestrator.md`](../plugins/compiler/agents/compiler-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。
 
 > 固定 stage 名、状态值和机器接口保留英文，避免破坏自动化兼容性。
 

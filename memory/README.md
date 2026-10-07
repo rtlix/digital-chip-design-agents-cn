@@ -127,7 +127,7 @@ Seed 中预置：
 
 | Domain | `key_metrics` fields |
 |---|---|
-| architecture | `selected_arch`, `estimated_mhz`, `estimated_area_um2` |
+| architecture | `selected_arch`, `estimated_mhz`, `estimated_area_um2`, `candidates_evaluated`, `winning_candidate_profile`, `refinement_of` |
 | compiler | `isa_tests_passed`, `abi_compliant`, `regression_pass_rate` |
 | dft | `scan_coverage_pct`, `atpg_fault_coverage_pct` |
 | firmware | `build_pass`, `flash_size_kb`, `bsp_tests_passed` |
@@ -240,12 +240,20 @@ Record 是 **environment-keyed**。
 - `constraints`
   — timing、area、power 等共享 target，由 architecture 或用户写入
 
-- `architecture`、`rtl`、`synthesis`、`sta`、`pd` 等
-  — 每 domain 的 sign-off state
+Key top-level fields:
+- `spec` — 原始与结构化产品规格（架构流程写入）
+- `interfaces` — AXI/协议接口列表（架构流程写入）
+- `constraints` — 共享时序、面积、功耗目标（架构流程写入）
+- `architecture`, `rtl`, `synthesis`, `sta`, `pd`, ... — 逐领域签核状态
+- `architecture.candidates[]` — 架构编排器评估的所有候选，包括选中和拒绝者，均记录 PPA 估计、风险、`status` 与 `rejection_reason`。综合、PD 或 STA 测得差距确属架构问题时设置 `architecture.refinement_needed` 和 `architecture.refinement_request`；架构编排器从已持久化候选在 `perf_modelling` 恢复，签核后将请求移入 `architecture.refinement_history[]`。须手工重新进入，没有自动派发。
+- `history[]` — 仅追加的执行轨迹，format_version 1.3 起每个**阶段**一条（不是每次运行一条），每条包含： `timestamp`, `agent`, `stage`, `decision` (`proceed|escalate|abandoned|await_approval`), `confidence` (`high|medium|low`), `failure_class` （见下方分类）, `retry_strategy` (`none|regenerate|refine|escalate`, 由 failure_class 映射，format_version 1.5+), `suggested_next_step` (`proceed|loop_back_to:<stage>|retry_stage|escalate|abandon`), `reason`, `constraint_ref`
+- `fix_requests[]` — 验证/形式验证发现 DUT 缺陷时写入的结构化 RTL 修复请求，由 RTL 编排器处理、pipeline-orchestrator 派发（format_version 1.2+）
+- `cross_domain_iteration_count` — pipeline-orchestrator 驱动的验证↔RTL 反馈循环整数计数，达到上限 3 后升级处理
+- `pipeline_config.checkpoints` — 编排器声明签核前需要人工批准的阶段名称列表（format_version 1.3+）。空或缺失表示完全自主，例如 `["arch_signoff", "rtl_signoff", "signoff"]`。由用户写入，编排器绝不覆盖。
+- `approved_checkpoints[]` — 用户已批准的检查点，每条为： `{ "stage": "<name>", "approved_at": "<ISO-8601>", "approved_by": "user" }` (format_version 1.3+).
+- `pending_approval` — 需要人工决策时非 null。type 区分 `checkpoint`（领域编排器在签核边界设置的主动门控）、`constraint_gap`（必需约束缺失，由领域编排器在阶段入口验证时设置）、`escalation`（失败驱动，仅由 pipeline-orchestrator 设置）。领域编排器因循环上限耗尽或上游故障升级时，只在终止 `history[]` 记录，不设置 pending_approval。其他字段为 stage（检查点阶段名或 null）、agent（设置方）、reason、fix_request_id、last_summary、requires_user。
 
-- `history[]`
-  — append-only execution trace。
-  从 format_version 1.3 开始是**每 stage 一条**，不再是每 run 一条。
+`history[]` 条目中的 `failure_class` 值： `none` (PASS), `functional`, `timing`, `power_area`, `drc_lvs`, `coverage_gap`, `connectivity`, `tool_error`, `input_setup`, `spec_gap`, `resource_limit`. 与仅用于验证/形式验证根因的 `fix_request.failure_class` 不同。
 
 每个 history entry 包含：
 
@@ -693,10 +701,7 @@ Orchestrator 可以在 session start 调用它。
   - `tool_used`
   - `design_name`
 
-这只用于**增强**，
-永远不能替代
-`knowledge.md`
-的读取。
+`plugins/infrastructure/tools/mcp-memory.py` 将相同搜索暴露为 MCP stdio 工具 `query_experiences`，遵循 EDA 适配器协议（MCP `2024-11-05`）。使用 `plugins/infrastructure/mcp/mcp-memory.json` 模板（服务器名 chip-design-memory），将 mcpServers 块粘贴到 `.claude/settings.json` 并替换仓库占位路径。基础设施编排器的 mcp_configuration 会与工具服务器配置一起解析该路径。
 
 如果工具不存在，
 Orchestrator 按原流程继续，

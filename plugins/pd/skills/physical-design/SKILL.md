@@ -36,9 +36,9 @@ allowed-tools: Read, Write, Bash
 - **KLayout**：DRC/LVS/GDS viewer/editor
 
 ### Proprietary
-- **Cadence Innovus**
-- **Synopsys IC Compiler 2**
-- **Siemens Aprisa**
+- **Cadence Innovus** (`innovus`，命令方言 `cadence`） — 从布局规划到签核，支持交互及批处理模式
+- **Synopsys IC Compiler 2** (`icc2_shell`，命令方言 `synopsys`） — 使用 Fusion 技术的层次化物理设计
+- **Siemens Aprisa** （命令方言 `siemens`） — 先进工艺节点的物理实现
 
 ### Sequential Flow Log Review
 ORFS/LibreLane 一次 invocation 会顺序跑完整 pipeline，中途不会等待 Agent。

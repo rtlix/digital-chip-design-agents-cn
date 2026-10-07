@@ -38,8 +38,10 @@ WNS ≥ target 且 TNS = target（通常 0）。
 - **OpenROAD STA subsystem** (`openroad -no_init`) —— OpenROAD PD flow 内的 STA
 
 ### Proprietary
-- **Synopsys PrimeTime** (`pt_shell`)
-- **Cadence Tempus** (`tempus`)
+- **Synopsys PrimeTime** (`pt_shell`，命令方言 `synopsys`） — 高标准多角 STA 与功耗分析
+- **Cadence Tempus** (`tempus`，命令方言 `cadence`） — 并发多模式多角 STA 与 ECO 指引
+
+### Sequential Flow Log Review (OpenSTA / OpenROAD STA)
 
 ### Sequential Flow Log Review
 OpenSTA/OpenROAD STA 在 batch mode 按 TCL 命令顺序执行；没有可中途查询的交互 prompt。

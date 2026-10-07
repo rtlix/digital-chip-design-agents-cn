@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/chuanseng-ng/digital-chip-design-agents/blob/main/docs/design_state.schema.json",
+  "$id": "https://github.com/hdl-tools/digital-chip-design-agents/blob/main/docs/design_state.schema.json",
   "title": "design_state.json",
   "description": "数字 RTL→GDSII 与验证流水线中，各 Orchestrator 共享的跨领域状态。它是 memory/README.md 与 plugins/meta/skills/pipeline-orchestration/SKILL.md 中文字版 schema 的机器可读配套定义，同时验证 design_state.json 的 fix_request 与 checkpoint 两种变体。",
   "type": "object",
@@ -124,6 +124,9 @@
       "items": {
         "$ref": "#/$defs/historyEntry"
       }
+    },
+    "architecture": {
+      "$ref": "#/$defs/architecture"
     }
   },
   "$defs": {
@@ -144,6 +147,7 @@
         "coverage_gap",
         "connectivity",
         "tool_error",
+        "input_setup",
         "spec_gap",
         "resource_limit"
       ]
@@ -472,6 +476,22 @@
           "if": {
             "properties": {
               "failure_class": {
+                "const": "input_setup"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "retry_strategy": {
+                "const": "escalate"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "failure_class": {
                 "const": "spec_gap"
               }
             }
@@ -501,6 +521,213 @@
           }
         }
       ]
+    },
+    "architecture": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "selected_candidate": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "microarch_doc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signoff": {
+          "type": "boolean"
+        },
+        "refinement_needed": {
+          "type": "boolean"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/archCandidate"
+          }
+        },
+        "refinement_request": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/archRefinementRequest"
+            }
+          ]
+        },
+        "refinement_history": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/archRefinementRequest"
+              },
+              {
+                "required": [
+                  "serviced_by_run"
+                ],
+                "properties": {
+                  "serviced_by_run": {
+                    "type": "string"
+                  },
+                  "outcome": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "comment": "refinement_needed=true requires an open refinement_request: the flag alone gives the architecture orchestrator nothing to refine against.",
+      "if": {
+        "required": [
+          "refinement_needed"
+        ],
+        "properties": {
+          "refinement_needed": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "refinement_request"
+        ],
+        "properties": {
+          "refinement_request": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "archCandidate": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "profile": {
+          "enum": [
+            "conservative",
+            "balanced",
+            "aggressive",
+            "other"
+          ]
+        },
+        "freq_mhz": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "area_um2": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "power_mw": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "selected",
+            "rejected",
+            "infeasible"
+          ]
+        },
+        "rejection_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "evaluated_in_run": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "archRefinementRequest": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "requested_by",
+        "requested_at",
+        "failure_class",
+        "reason"
+      ],
+      "properties": {
+        "requested_by": {
+          "enum": [
+            "synthesis-orchestrator",
+            "physical-design-orchestrator",
+            "sta-orchestrator"
+          ]
+        },
+        "requested_at": {
+          "type": "string"
+        },
+        "failure_class": {
+          "enum": [
+            "timing",
+            "power_area"
+          ]
+        },
+        "constraint_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "measured": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "evidence_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
     }
   }
 }

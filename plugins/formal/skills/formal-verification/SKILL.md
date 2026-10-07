@@ -38,27 +38,40 @@ allowed-tools: Read, Write, Bash
 - **Tabby CAD Suite** —— commercial-supported YosysHQ formal stack
 
 ### Proprietary
-- **Cadence JasperGold**（`jg`）
-- **Synopsys VC Formal**（`vcf`）
-- **Siemens Questa Formal**（`qformal`）
+- **Cadence JasperGold** (`jg`，命令方言 `cadence`） — 业界常用的 FPV、CDC 和 DFT 形式验证
+- **Synopsys VC Formal** (`vcf`，命令方言 `synopsys`） — 属性检查与等价验证
+- **Siemens Questa Formal** (`qformal`，命令方言 `siemens`） — FPV 与覆盖率收敛
 
 ---
 
 ## Stage: property_planning
 
 ### Domain Rules
-1. 每个 P0 requirement 至少对应一条 property。
-2. Property 分类：safety、liveness、protocol、data-integrity、control/FSM。
-3. Property 名称应可追溯到 spec feature。
-4. Assumption 只约束环境合法行为，不能约束掉 DUT bug。
-5. 对 liveness property 使用 bounded proof 或明确 fairness assumption。
-6. 同时规划 cover property，确认重要状态确实 reachable。
-7. Property 必须与 simulation assertion/coverage 尽量复用。
+1. 每个规格特性至少对应一个属性或覆盖点
+2. 所有属性均包含描述性名称和失败消息
+3. 活性属性始终使用 `##[1:BOUND]` 限定范围
+4. 优先使用 `$past()`、`$rose()`、`$fell()`，避免手写延迟逻辑
+5. 使用 `disable iff` 实现复位门控
+6. 将 RTL 交接内容作为输入：`design_state.rtl.unverified[]` 中的每项（RTL 流程未运行工具便作出的结论）都必须对应属性、覆盖点，或书面说明为何无法通过形式验证处理以及由谁检查。若 `rtl.unverified` 缺失，表示 RTL 流程未报告；在属性计划中注明，并自行从 RTL 推导以下目标。不能将“缺失”解读为“无需证明”。
+7. 除默认参数外，还要在边界参数值上证明：一次证明只对一种参数配置成立。对 `WIDTH=1`、`DEPTH=1` 和 `2`、`N=1` 以及模块支持的非 2 次幂值重新运行。RTL 中带保护条件的 `initial`/`$fatal` 参数断言位于 `synthesis translate_off` 内，形式验证前端可能看不到，因此需要在环境中重申合法参数范围。
+
+### Property Targets Lint Cannot Prove
+lint 通过不能证明以下事项。只要相应结构存在，就必须检查：
+
+| 结构 | 属性 |
+|-----------|-----------|
+| Ready/valid 接口 | 仅在 `valid && ready` 时传输；接受前不得撤回 `valid`；`valid && !ready` 时载荷稳定；复位时 `valid` 和 `ready` 为低 |
+| FSM | 每个状态可达（cover）；每个状态有退出路径（有界活性）；从任何非法编码都能进入合法状态——使用 `unique case` 而无 `default` 的 FSM 必须检查，此断言是唯一的恢复检查 |
+| 仲裁器 | grant 为独热或全零；持续请求者在 N 次授权内获得授权；仅在授权实际被消费后轮转 |
+| FIFO | 满时禁止写、空时禁止读；退出复位时 `empty` 为 1、`full` 为 0；占用量不超过深度 |
+| 算术 | 每个 `+`、`-`、`*` 及累加器不超出结果位宽；仅当规格明确允许时回绕 |
+| 复位 | 退出复位后的首个周期，每个控制触发器具有指定值 |
+| 死锁 | 不存在等待环；每个请求/应答及每次 credit 返回均满足有界活性 |
 
 ### QoR Metrics to Evaluate
-- P0 requirement property coverage：100%
-- 每条 property 都有 owner/priority/expected proof mode
-- 环境 assumption 已审查，不得过度约束 DUT
+- 每项规格特性对应属性或覆盖点
+- 每个 `rtl.unverified[]` 项对应属性、覆盖点或明确理由
+- 覆盖点证明关键状态可达
 
 ### Output Required
 - Property plan
@@ -93,13 +106,20 @@ allowed-tools: Read, Write, Bash
 
 ## Stage: fpv_run
 
-### Domain Rules
-1. P0 property 优先运行并 closure。
-2. 区分 PROVEN、FAILED/CEX、UNKNOWN/INCONCLUSIVE。
-3. UNKNOWN 时逐步增加 bound/engine，而不是直接声称 PASS。
-4. CEX 必须保存 trace/waveform 和 failing property。
-5. 发现 RTL bug 时创建结构化 `fix_request`，交给 Meta pipeline，不在 formal 域自行改 RTL。
-6. 每轮 proof 记录 engine、bound、runtime、memory 与结果。
+### Result Classifications
+| Result | Meaning | Action |
+|--------|---------|--------|
+| PROVEN | 对所有可达状态成立 | 记录并继续 |
+| CEX | 发现反例 | 在 cex_analysis 分析，将 RTL 缺陷交 RTL 流程，或修复假设 |
+| VACUOUS | 前件从不触发 | 修复假设或属性 |
+| INCONCLUSIVE | 界限太小或状态空间太大 | 增大界限或抽象 |
+| UNREACHABLE | 覆盖点始终不可达 | 验证或豁免 |
+
+### Strategies for Inconclusive
+1. 增大 BMC 界限（k-induction）
+2. 应用抽象（数据抽象、计数器抽象）
+3. 分解：证明子属性，再组合为主属性
+4. 若无法处理，将属性记为 `UNVERIFIED`，记录达到的界限及理由。有界证明不等于 PROVEN，假定正确也不算结果；二者均不得计入 PROVEN 总数，P0 属性保持 `UNVERIFIED` 会阻止签核。
 
 ### QoR Metrics to Evaluate
 - P0 unproven：0 才可 sign-off
@@ -118,17 +138,13 @@ allowed-tools: Read, Write, Bash
 ## Stage: cex_analysis
 
 ### Domain Rules
-1. 从最早 divergence cycle 开始分析。
-2. 区分 assumption violation、property bug 与 RTL bug。
-3. 记录最小触发 sequence、相关 signal 和疑似 RTL module/file。
-4. DUT bug 使用 `fix_request` schema 写入 `design_state.json`。
-5. Property/environment bug 在本域修复后重新 proof，不得错误路由到 RTL。
-6. 保留原始 CEX 作为 regression/formal re-check 证据。
-
-### QoR Metrics to Evaluate
-- 每个 CEX 均完成 root-cause classification
-- DUT CEX 有完整 fix_request context
-- 无未分析 P0 CEX
+1. 每个 CEX 都要判断是真实 DUT 缺陷，还是假设/环境缺陷
+2. 真实 DUT 缺陷：不得在本流程修改 RTL。向 `design_state.fix_requests[]` 写入 `fix_request`（`failure_class=formal_cex`、CEX 轨迹路径、失败属性）并停止。RTL 流程按自身 lint 规则修复，再对结果重新运行 FPV。计为 RTL 缺陷，而非形式验证缺陷。
+3. 假设缺陷：收紧假设，然后重新检查空洞证明（vacuity）
+4. 约束不足导致的假 CEX：添加假设前明确记录
+5. 未确定根因前绝不豁免 CEX
+6. 不得通过缩小环境来消除 CEX。添加或收紧假设前，确认所排除行为在规格或上游模块合约中非法；排除合法激励只会掩盖缺陷。也不得通过弱化或删除失败属性来取得通过结果。
+7. 说明如何定位缺陷：CEX 轨迹显示故障信号及周期时，将 `suspected_rtl.basis` 设为 `traced`；由现象推断位置时设为 `hypothesis`。
 
 ### Output Required
 - CEX root-cause report
@@ -165,10 +181,11 @@ allowed-tools: Read, Write, Bash
 
 ### Sign-off Checklist
 - [ ] P0 property 全部 PROVEN
-- [ ] 无 vacuous proof
+- [ ] 无 空洞证明（vacuous proof）
 - [ ] 所有 CEX 已解决或有批准的 disposition
 - [ ] LEC unmatched/non-equivalent point 为 0
-- [ ] Assumption 已审查
+- [ ] 所有 INCONCLUSIVE：记录理由并标为 UNVERIFIED，不能标 PROVEN
+- [ ] 每个 rtl.unverified[] 条目：已证明、已覆盖或附理由说明处理方式
 - [ ] Formal artifact 与最终 RTL/netlist 版本匹配
 
 ### Output Required

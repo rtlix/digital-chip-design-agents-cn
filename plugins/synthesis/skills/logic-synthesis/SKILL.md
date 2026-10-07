@@ -39,9 +39,9 @@ allowed-tools: Read, Write, Bash
 - **ABC** —— logic optimization 与 technology mapping
 
 ### Proprietary
-- **Synopsys Design Compiler** (`dc_shell`)
-- **Cadence Genus** (`genus`)
-- **Synopsys Fusion Compiler** (`fc_shell`)
+- **Synopsys Design Compiler** (`dc_shell`，命令方言 `synopsys`） — 业界常用的逻辑综合
+- **Cadence Genus** (`genus`，命令方言 `cadence`） — RTL 到网表转换与并发优化
+- **Synopsys Fusion Compiler** (`fc_shell`，命令方言 `synopsys`） — 综合与物理指导相结合
 
 ### Sequential Flow Log Review (Yosys)
 Yosys 的 synthesis script（`yosys -c synth.ys` 或 `yosys -p "synth_*"`）
@@ -148,7 +148,7 @@ ORFS/LibreLane 中典型 Yosys log：
 ## Stage: netlist_qc
 
 ### Checks Required
-1. Netlist 中不存在 blackbox/undefined module。
+1. Netlist 中不得存在 blackbox/undefined module。黑盒属于输入集合缺陷，不是 compile 结果：若它对应本项目 RTL，则综合 source list 漏了文件（sv2v 与 Yosys 可能静默将其黑盒化）；否则缺少 library、macro 或 IP view。重新 compile 无法修复。明确报告 module、缺失文件或 view 及对应列表，并以 `input_setup` 升级处理。
 2. 无 combinational loop。
 3. DFT-enabled flow 中 scan chain integrity 正确。
 4. Tie cell、well tie 等 power/ground connection 正确。

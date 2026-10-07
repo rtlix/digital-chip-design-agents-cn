@@ -60,7 +60,8 @@ CI 会用它验证 fixture；其中的 enum、required field 以及下文
     "module": "<module name>",
     "signal": "<signal or null>",
     "file": "<rtl/path.sv or null>",
-    "line_range": [0, 0]
+    "line_range": [0, 0],
+    "basis": "traced | hypothesis"
   },
   "summary": "<one-line bug description>",
   "expected_behavior": "<spec excerpt or null>",
@@ -72,14 +73,14 @@ CI 会用它验证 fixture；其中的 enum、required field 以及下文
 }
 ```
 
+> **`suspected_rtl.basis`（可选）。** `traced` 表示请求生成方已沿波形或 CEX 轨迹追踪到该信号；`hypothesis` 表示位置由现象推断。RTL 编排器将 `hypothesis`、缺失的 `basis` 或 `line_range: [0, 0]` 视为猜测，编辑前先确认原因。误诊 `suspected_rtl` 常导致循环达到迭代上限，因此未观察到的位置不能标为 `traced`。
+
 > **保留字段——`route_to`（可选）。**
 > Schema 接受一个可选 `route_to` 字符串，用来指明负责修复的 servicer domain，
 > 默认 `rtl-design`。当前它只是**面向未来的兼容脚手架**：
 > pipeline-orchestrator 的 `dispatch_to_producer` 仍固定调用 RTL Orchestrator，
 > producer 无需设置它。预留该字段是为了未来增加 multi-servicer dispatch 时
 > 不必再迁移 schema，也与 analog pipeline 的模式保持一致。
-
-`rtl_response` 由 rtl-design-orchestrator 在关闭 request 时填写：
 
 ```json
 {
@@ -319,7 +320,7 @@ Pipeline Orchestrator 会同时读取 `retry_strategy`、`confidence`、`suggest
 
 每个 failure 都要结构化分类，让 recovery 不依赖解析自由文本。
 
-- `failure_class`：发生了什么
+- `failure_class`：发生了什么故障（11 值枚举，原十值新增 input_setup）.
 - `retry_strategy`：怎么恢复
 
 `retry_strategy ∈ none | regenerate | refine | escalate`：
@@ -335,6 +336,8 @@ Pipeline Orchestrator 会同时读取 `retry_strategy`、`confidence`、`suggest
 
 #### Mapping (authoritative — `failure_class` → default `retry_strategy`)
 
+本表通过 `tools/agent_shared_sections.md` 的 `failure-classification` 块镜像到所有领域编排器，使其无需加载本 Skill 就能推导 `retry_strategy`。**修改下表时，同步更新该块并运行 `python3 tools/sync_agent_sections.py`。** 二者偏离时，`tests/test_agent_contract.py::test_retry_strategy_mapping_matches_the_authoritative_table` 会失败。
+
 | `failure_class` | `retry_strategy` | 理由 | legacy alias |
 |---|---|---|---|
 | `none` | `none` | 无 failure | — |
@@ -345,11 +348,14 @@ Pipeline Orchestrator 会同时读取 `retry_strategy`、`confidence`、`suggest
 | `connectivity` | `refine` | 针对 interface/connection 修正 | interface_mismatch |
 | `drc_lvs` | `regenerate` | 从 clean state 重新 place/route | — |
 | `tool_error` | `regenerate` | 同 stage 从头重跑 | invalid_rtl |
+| `input_setup` | `escalate` | 工具在错误输入（列表、include、配置、生成头文件、库视图）上正确运行，重试只会复现，产物从未真正评估 | — |
 | `spec_gap` | `escalate` | spec 缺失/歧义 | incomplete_spec |
 | `resource_limit` | `escalate` | iteration/memory 上限 | — |
 
 Legacy alias 只是早期草案到 live enum 的映射，不引入第二套 taxonomy。
 Verification/Formal 产生 fix_request 时，其 `retry_strategy` 固定为 `refine`。
+
+`input_setup` 与 `tool_error` 分开，因为处理方式相反：崩溃的工具第二次运行可能成功，而指向错误树的 filelist 或 include 路径每次都会相同地失败，`regenerate` 无效。它也与 `functional` 分开：工具因输入中止或检查了错误文件，不能说明产物有问题，回退到产物生成阶段会修改从未被证明有误的内容。因此 `input_setup` 始终升级处理，任何 Loop-Back Rules 行都不能覆盖该规则。添加该值不改变 `format_version`：不认识它的读取方将落入决策表“优先 escalate”的规则，恰为预期操作。
 
 #### Actionable escalation guidance
 
@@ -359,6 +365,7 @@ Verification/Formal 产生 fix_request 时，其 `retry_strategy` 固定为 `ref
 示例：
 - spec_gap：澄清具体 ambiguous requirement，并给出预期 behavior/value。
 - resource_limit：说明哪个 stage 达到 N 次 cap，并让用户选择放宽 constraint、提高 cap 或接受当前 QoR。
+- `input_setup` → "input_setup: <header/file> resolves from <path used> ahead of <path intended> — repoint <filelist/include path/config> and re-run; no design file was changed."
 
 ### format_version
 
@@ -432,6 +439,7 @@ Pipeline Orchestrator 遇到任何非 null pending_approval 都先停止：
 | any | `resource_limit` | `escalate` | any | 通过 pending_approval 升级 |
 | `low` | any | any | `escalate` | 升级，结果不可靠 |
 | `low` | any | any | 非 escalate | 仍升级，low confidence 优先 |
+| any | `input_setup` | `escalate` | any | 通过 pending_approval 升级，绝不重新派发或开启 fix_request，reason 指出需要重新指向的输入 |
 | any | `tool_error` | `regenerate` | `retry_stage` | 同一 Orchestrator 重试一次，仍失败则升级 |
 | any | `drc_lvs` \| `connectivity` | `refine` | `loop_back_to:<stage>` | 带 error log 重跑 generating Orchestrator |
 | any | `functional` \| `coverage_gap` | `refine` | `escalate` | 新建 fix_request，经 RTL 闭环 |
@@ -440,9 +448,7 @@ Pipeline Orchestrator 遇到任何非 null pending_approval 都先停止：
 | `high` \| `medium` | `none` | `none` | `proceed` | 下一 stage / signoff |
 | any | any | any | `abandon` | 升级，child 判定不可恢复 |
 
-`resource_limit` 和 low confidence 始终优先升级。
-未匹配组合采用最保守规则：宁可 escalate，不盲目 retry。
-程序化 branch 只能读取结构化字段，不得重新解析自由文本 `reason`。
+`retry_strategy` 是 `failure_class` 的确定性映射（见 Failure Classification & Retry Strategy），作为粗粒度预筛选；`confidence` 和 `suggested_next_step` 进一步确定最终操作。优先级不变：`resource_limit` 和低置信度无论映射策略为何，均升级处理。表中未列的组合使用匹配规则中最保守者，优先 `escalate` 而非重试。升级时 `pending_approval.reason` 必须包含 `failure_class` 及可执行指引（见 Actionable escalation guidance）。程序分支读取历史条目的结构化字段，不能从供人阅读的自由文本 `reason` 重新推导意图。
 
 ### Dispatch pattern (pipeline-orchestrator)
 
@@ -460,9 +466,9 @@ Spawn：
 
 ### V2 extension points（V1 尚未连接）
 
-- Architecture↔RTL refinement：未来 `architecture.refinement_needed=true` 可触发 arch re-run。
-- Formal property-bug routing：未来可根据 formal owner 路由给 Formal，而非 RTL。
-- LEC unmatched-points：V1 故意不接 fix_request；其正确 consumer 是 synthesis-orchestrator，推迟到 V2。
+- 架构细化自动派发：标志与请求已实现（#35）。综合、PD、STA 测得差距确属架构问题时，设置 `architecture.refinement_needed=true` 和 `architecture.refinement_request`。架构编排器下一次调用时，从持久化的 `architecture.candidates[]` 恢复，在 `perf_modelling` 继续。尚未接通的是：本编排器不会根据标志派发架构编排器，也不会随后重跑综合、PD 或 STA，由用户重新调用。细化请求不使用 `fix_requests[]`。
+- 形式属性缺陷路由：`failure_class=formal_cex` 且 `suspected_owner=formal` 应路由到形式验证编排器而非 RTL，V1 尚未实现。
+- **LEC unmatched-points 循环：** `formal-orchestrator.md` 的 `lec_run: unmatched points` 在 V1 有意不连接 fix_request 协议。LEC 失败表示综合引入的网表与 RTL 不匹配，应由 `synthesis-orchestrator` 而非 `rtl-design-orchestrator` 处理，推迟至 V2。
 
 ## QoR Metrics
 

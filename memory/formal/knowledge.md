@@ -2,7 +2,7 @@
 
 ## Known Failure Patterns
 
-- **Over-constrained environment 导致 vacuous proof**：`environment_setup` 的 `assume` 让 input space 不可达时会出现 vacuous proof。每次 environment iteration 后运行 vacuity check（`sby --vacuity`）。发现 vacuity 时一次只放宽一个 constraint，不要全部删除后重建，以免丢失上下文。
+- **Over-constrained environment 导致 空洞证明（vacuous proof）**：`environment_setup` 的 `assume` 让 input space 不可达时会出现 空洞证明（vacuous proof）。每次 environment iteration 后运行 vacuity check（`sby --vacuity`）。发现 vacuity 时一次只放宽一个 constraint，不要全部删除后重建，以免丢失上下文。
 - **Bound depth 不足**：SymbiYosys `--depth` 至少应为 `pipeline_depth + 2`，才能覆盖全部 pipeline stage。Bound 太浅可能让只在 pipeline 尾部触发的 property 出现假 “PASS”。
 - **Synthesis 后 LEC fail**：常见原因是 clock-gating cell 缺 equivalence mapping（`set_dont_touch` 或显式 mapping script）。运行 LEC 前把 synthesis tool 的 clock-gating cell list 提供给 LEC tool。
 

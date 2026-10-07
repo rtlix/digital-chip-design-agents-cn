@@ -40,9 +40,9 @@ allowed-tools: Read, Write, Bash
 - **Python estimation scripts**（`python3 estimate.py`）—— 自定义 PPA 模型
 
 ### Proprietary
-- **Synopsys Platform Architect** —— IP 级 performance/power exploration
-- **ARM Performance Models** —— cycle-accurate ARM subsystem model
-- **Cadence VSP** —— SoC 级 virtual prototyping
+- **Synopsys Platform Architect** （命令方言 `synopsys`） — IP 级性能与功耗探索
+- **ARM Performance Models** （命令方言 `arm`） — 周期精确的 ARM 子系统模型
+- **Cadence Virtual System Platform (VSP)** （命令方言 `cadence`） — SoC 级虚拟原型验证
 
 ---
 
@@ -103,6 +103,7 @@ allowed-tools: Read, Write, Bash
 - 全部候选的 trade-off matrix
 - 推荐 candidate 与量化理由
 - 每个 candidate 的 assumption/risk summary
+- 相同矩阵持久化到 design_state.architecture.candidates[]，每候选一项，包括被拒绝者及 rejection_reason，供下游细化恢复（架构行为规则 10）
 
 ---
 
@@ -116,6 +117,7 @@ allowed-tools: Read, Write, Bash
 5. 使用 use-case list 中具有代表性的 workload 验证。
 6. 覆盖 best/typical/worst case。
 7. 未验证的 model assumption 必须标记。
+8. 细化模式（architecture.refinement_needed 已设置时从此进入）：refinement_request.measured 的下游实测替代选中候选的模型估计。校准模型使其能复现实测，再用校准模型重新评分所有持久化候选，然后选择。仍预测旧估计的模型未经校准，其评分不构成证据。
 
 ### QoR Metrics to Evaluate
 - Throughput：至少比 target 高 10% margin
@@ -166,8 +168,8 @@ allowed-tools: Read, Write, Bash
 | gem5 | 开源 | 提取 workload activity factor |
 | CACTI | 开源 | Memory clock power estimate |
 | Yosys + ABC | 开源 | Post-synth switching activity cross-check（可选） |
-| Synopsys PrimePower | 商业 | RTL-level power sign-off（可选） |
-| Cadence Joules RTL | 商业 | RTL power analysis（可选） |
+| Synopsys PrimePower | 商业工具，命令方言 `synopsys` | RTL-level power sign-off (optional) |
+| Cadence Joules RTL | 商业工具，命令方言 `cadence` | RTL power analysis (optional) |
 
 ### QoR Metrics to Evaluate
 - Area estimate：< `design_state.constraints.area.area_um2` 的 80%

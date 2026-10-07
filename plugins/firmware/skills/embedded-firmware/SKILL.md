@@ -40,9 +40,9 @@ Firmware 是真实硅片最先运行的软件层，它的正确性是后续全�
 - **QEMU**（`qemu-system-arm`、`qemu-system-riscv64`）—— 硬件可用前验证 firmware
 
 ### Proprietary
-- **J-Link GDB Server**（`JLinkGDBServer`）—— SEGGER 高速 JTAG/SWD probe
-- **Lauterbach TRACE32**（`t32marm`）—— bring-up 的硬件 trace/debug
-- **Arm Development Studio**（`armds`）—— 集成 Arm compiler/debugger 的 IDE
+- **J-Link GDB Server** (`JLinkGDBServer`，命令方言 `segger`） — SEGGER 的高速 JTAG/SWD 探针
+- **Lauterbach TRACE32** (`t32marm`，命令方言 `lauterbach`） — 用于芯片启动调试的硬件轨迹跟踪与调试
+- **Arm Development Studio** (`armds`，命令方言 `arm`） — 含 Arm 编译器和调试器的 Eclipse IDE
 
 ---
 

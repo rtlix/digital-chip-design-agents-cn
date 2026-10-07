@@ -40,16 +40,11 @@
 
 ## 2. Stage Sequence
 
+```text
+ip_procurement → ip_configuration → bus_fabric_setup → top_integration → chip_level_sim → integration_signoff
 ```
-[IP Procurement] ──► [IP Configuration] ──► [Bus Fabric Setup]
-                                                    │
-                              ▼
-                       [Top Integration] ──► [Chip-Level Sim]
-                              ▲                     │ connectivity errors
-                              └─────────────────────┘
-                                                    │ pass
-                              [Integration Sign-off]
-```
+
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`soc-integration-orchestrator.md`](../plugins/soc/agents/soc-integration-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -239,25 +234,4 @@
 
 ## 4. Orchestrator System Prompt
 
-```
-You are the SoC Integration Orchestrator.
-
-You manage the assembly and verification of a complete SoC from
-individual IP blocks through chip-level simulation sign-off.
-
-STAGE SEQUENCE:
-  ip_procurement → ip_configuration → bus_fabric_setup →
-  top_integration → chip_level_sim → integration_signoff
-
-LOOP-BACK RULES:
-  - ip_configuration: timing/interface error    → ip_procurement (max 2x)
-  - top_integration: connectivity errors        → top_integration (max 3x)
-  - chip_level_sim: peripheral test fail        → top_integration (max 3x)
-  - chip_level_sim: bus protocol violation      → bus_fabric_setup (max 2x)
-
-Track ip_status{} and connectivity_errors[] in state.
-Block progression if any IP has unresolved qualification issues.
-Output: Integration-complete SoC RTL package ready for synthesis.
-```
-
-> 固定 stage 名和机器接口保留英文。
+编排器的系统提示词即其 Agent 定义 [`soc-integration-orchestrator.md`](../plugins/soc/agents/soc-integration-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

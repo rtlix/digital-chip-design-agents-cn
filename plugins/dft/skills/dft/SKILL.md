@@ -40,22 +40,22 @@ allowed-tools: Read, Write, Bash
 
 ---
 
-## 支持的 EDA 工具
+## Supported EDA Tools（支持的 EDA 工具）
 
-### 开源
+### Open-Source（开源）
 - **Yosys DFT plugins**（`yosys`）—— 用于开源流程的基础 scan insertion
 - **OpenROAD DFT utilities**（`openroad`）—— 在 OpenROAD/ORFS 流程中进行 scan insertion
 
-### 商业
-- **Synopsys TetraMAX ATPG**（`tmax`）—— 测试 pattern 生成、fault simulation 和压缩
-- **Cadence Modus Test**（`modus`）—— ATPG、scan DRC 和 diagnosis
-- **Siemens Tessent**（`tessent`）—— 完整 DFT 工具套件：scan、ATPG、MBIST、IJTAG
+### Proprietary（商业）
+- **Synopsys TetraMAX ATPG** (`tmax`，命令方言 `synopsys`） — 测试向量生成、故障仿真及压缩
+- **Cadence Modus Test** (`modus`，命令方言 `cadence`） — ATPG、扫描 DRC 及诊断
+- **Siemens Tessent** (`tessent`，命令方言 `siemens`） — 完整 DFT 套件：扫描、ATPG、MBIST、IJTAG
 
 ---
 
 ## Stage: dft_architecture
 
-## Domain Rules（领域规则）
+### Domain Rules（领域规则）
 1. Scan 架构：ASIC 优先 full-scan，尽可能覆盖全部 sequential element
 2. Scan chain 数量：经验值可取总 flip-flop 数的平方根，在 ATE 测试时间与布线之间权衡
 3. Chain length 平衡：所有 chain 相对目标长度偏差控制在 ±5%
@@ -65,6 +65,22 @@ allowed-tools: Read, Write, Bash
 7. At-speed test：选择 LOC（launch-on-capture）或 LOS（launch-on-shift），并与 test team 确认
 8. Test mode：`scan_mode`、`mbist_mode`、`jtag_mode` 必须互斥
 9. Power domain：scan 结构必须遵守 UPF power-domain 边界
+10. 规划扫描链前对输入设计执行下方扫描就绪审查。在此发现阻碍只需修改 RTL，等到 Scan DRC 才发现则浪费一次插入迭代。
+
+11. 以 RTL 交付而非工具插入的 DFT 逻辑（TAP 控制器、BIST 控制器、测试模式 mux、Wrapper）属于可综合 RTL；遵守 rtl-design Skill 编码规则，集成前 lint 必须为 0 错误。
+
+### Scan-Readiness Audit (before insertion)
+插入前检查 RTL 或 DFT 前网表中阻碍扫描测试的结构。这些问题由 RTL 流程负责，扫描链插入无法代为修复：
+- RTL 生成的时钟（`assign gclk = clk & en;`）：其后的触发器在扫描模式下不可达
+- 时钟门控单元的使能未与测试使能（`test_en` / `scan_en`）进行 OR 合并
+- 内部逻辑驱动的异步置位/复位缺少测试模式旁路：扫描移位时无法保持无效
+- 非有意设计的锁存器（lockup latch 与时钟门控单元内部锁存器除外）
+- 组合反馈环：ATPG 无法建模
+- 片上三态总线：争用无法测试
+- 既无旁路路径也无 BIST Wrapper 的存储器（FIFO 的存储阵列也属于存储器）
+- 未定义测试模式行为的黑盒与模拟接口
+
+每项发现都必须指出实例及违反的上述规则。插入可修复的发现（测试点、工具插入的复位或时钟 mux）纳入 `scan_insertion`；需要修改 RTL 的发现交回 RTL 流程，不得在此修改 RTL。
 
 ### 必需的 DFT IO 信号
 - `scan_en`（SE）：primary input，ATE 必须可控
@@ -72,13 +88,15 @@ allowed-tools: Read, Write, Bash
 - `scan_out[]`（SDO）：每条 chain 一个
 - `test_clk`：独立于 functional clock，或使用其 gated 版本
 
-## QoR Metrics（QoR 指标）
+### QoR Metrics to Evaluate（QoR 指标）
 - DFT spec 完整：insertion 前已定义全部元素
+- 扫描就绪审查：需要修改 RTL 的未关闭发现为 0
 - 预计 fault coverage：解析估算 ≥ 目标
 - 预计 test time：不超过 ATE budget
 
-## Output Required（必须输出）
+### Output Required（必须输出）
 - DFT architecture 文档
+- 扫描就绪审查报告（发现、实例、责任方：插入或 RTL）
 - Scan chain 规划（数量、预计长度、IO）
 - Test mode 定义
 
@@ -86,7 +104,7 @@ allowed-tools: Read, Write, Bash
 
 ## Stage: scan_insertion
 
-### 领域规则
+### Domain Rules（领域规则）
 1. 将标准 FF 替换为对应 scan cell（SDFF、SDFFRQ 等）
 2. Scan 排除项：memory-mapped register、MBIST controller、JTAG cell
 3. 以下位置不应直接插 scan：clock-gating enable、async set/reset path（除非使用专用 care cell）
@@ -94,6 +112,9 @@ allowed-tools: Read, Write, Bash
 5. Lockup latch：跨 clock-domain 的 chain 之间插入
 6. Scan re-ordering：尽量降低 routing wirelength，优先 placement-aware reorder
 7. Test point：对低覆盖率 net 增加 controllability/observability point
+8. 重试前按责任方分类每个 Scan DRC 错误。插入可修复的错误（链连接、测试点、工具插入的复位/时钟 mux、lockup latch）在此重试。设计本身导致的错误——生成时钟、不可控异步复位、非预期锁存器、组合环——无法通过重新插入改变；停止，并将实例与规则交回 RTL 流程。
+
+9. 不能以覆盖率换取干净报告。不得排除有问题的触发器来消除 Scan DRC 错误，也不得把故障重分类为不可测试来提高 ATPG 覆盖率，除非有合理且已记录的排除理由。
 
 ### Scan DRC 规则（进入 ATPG 前全部通过）
 - Clock signal 不得进入 scan data path
@@ -101,12 +122,12 @@ allowed-tools: Read, Write, Bash
 - Functional mode 下 scan enable 必须 glitch-free
 - 所有 scan FF 的 SI/SE 连接正确
 
-### QoR 指标
+### QoR Metrics to Evaluate（QoR 指标）
 - Scan FF count：除明确排除项外，覆盖 100% sequential element
 - Chain count/length：符合架构规格，偏差 ±5%
 - Scan DRC：0 error
 
-### 必须输出
+### Output Required（必须输出）
 - Scan-inserted netlist
 - Scan chain definition file（.scandef）
 - Scan DRC report
@@ -125,7 +146,7 @@ allowed-tools: Read, Write, Bash
 | Bridging | ≥ `design_state.constraints.dft.bridging_coverage_pct`%（默认 90%） |
 | Path Delay | 仅关键路径 |
 
-### 领域规则
+### Domain Rules（领域规则）
 1. 在多个 capture clock 条件下运行 ATPG；transition test 同时覆盖慢速和快速条件
 2. 使用 X-bounding 提升 pattern 质量
 3. Untestable fault 分类为 Redundant 或 ATPG-Untestable，并全部记录
@@ -133,13 +154,13 @@ allowed-tools: Read, Write, Bash
 5. At-speed pattern 在 sign-off 前必须通过 STA 检查 capture timing
 6. 所有 pattern 必须做 good-machine simulation；允许失败数为 0
 
-### QoR 指标
+### QoR Metrics to Evaluate（QoR 指标）
 - SAF coverage：≥ `constraints.dft.saf_coverage_pct`，默认 99%
 - Transition coverage：≥ `constraints.dft.transition_coverage_pct`，默认 95%
 - Pattern count：尽量减少，ATE 时间直接影响测试成本
 - Good-machine simulation：0 failure
 
-### 必须输出
+### Output Required（必须输出）
 - Test pattern file（STIL 或 WGL）
 - Fault report（各 fault model 的 coverage）
 - Untestable fault 列表及分类
@@ -160,13 +181,13 @@ allowed-tools: Read, Write, Bash
 2. Alias probability 目标 < 1e-10
 3. LBIST clock 与 functional clock 分离，通常使用分频时钟
 
-### QoR 指标
+### QoR Metrics to Evaluate（QoR 指标）
 - MBIST：覆盖所有 memory instance
 - MBIST fault coverage：≥ `design_state.constraints.dft.mbist_coverage_pct`%（默认 99%）
 - BIST power：测试期间满足 IR-drop budget
 - LBIST alias probability：满足目标（如适用）
 
-### 必须输出
+### Output Required（必须输出）
 - BIST-inserted netlist
 - BIST controller connection report
 - MBIST fault coverage report
@@ -176,7 +197,7 @@ allowed-tools: Read, Write, Bash
 
 ## Stage: jtag_setup
 
-### 领域规则
+### Domain Rules（领域规则）
 1. TAP pin：TCK、TMS、TDI、TDO、TRST_N，需要专用 pad
 2. Boundary scan cell：所有 digital IO pin 都必须有 BSR cell
 3. 必需 instruction：BYPASS、IDCODE、SAMPLE/PRELOAD、EXTEST
@@ -184,13 +205,13 @@ allowed-tools: Read, Write, Bash
 5. Core 处于 reset 时 TAP 仍应可访问
 6. Security：量产芯片提供基于 OTP/fuse 的 JTAG lockout 机制
 
-### QoR 指标
+### QoR Metrics to Evaluate（QoR 指标）
 - TAP DRC：全部必需 instruction 已实现
 - Boundary scan chain：所有 IO 均已包含
 - JTAG connectivity simulation：PASS
 - IDCODE：唯一且格式正确
 
-### 必须输出
+### Output Required（必须输出）
 - JTAG-inserted netlist
 - BSDL file
 - TAP connectivity report
@@ -208,7 +229,7 @@ allowed-tools: Read, Write, Bash
 - [ ] JTAG：BSDL 已生成并验证
 - [ ] DFT netlist：与 pre-DFT netlist 做 LEC，结果 EQUIVALENT
 
-### 必须输出
+### Output Required（必须输出）
 - DFT sign-off report
 - 最终 test pattern files
 - BSDL file

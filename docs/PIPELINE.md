@@ -13,11 +13,7 @@ floorplan → placement → CTS → routing →
 timing_opt → power_opt → area_opt → signoff
 ```
 
-如果 routing DRC 失败 → 重新执行 routing（最多 3 次）。  
-如果 signoff timing 失败 → 回退到 timing_opt（最多 2 次）。  
-如果任何循环超过上限 → 携带完整状态和建议升级给用户处理。
-
-全部 14 个领域 Orchestrator 都采用相同模式，只是各领域使用不同的阶段和通过标准。
+全部 14 个领域编排器采用相同模式，具体阶段和标准因领域而异。上方规则仅为示例；各流程的阶段顺序和回退规则以 `plugins/<domain>/agents/*-orchestrator.md` 为准。
 
 ## 端到端流水线
 

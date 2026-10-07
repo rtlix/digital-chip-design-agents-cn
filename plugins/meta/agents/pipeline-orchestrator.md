@@ -62,6 +62,8 @@ detect_open_fix_requests → dispatch_to_producer → await_completion → re_ve
 如果仍然是 `claimed`，说明 RTL run 提前结束且未关闭该请求，将其标记为
 `status=abandoned`，然后进入 escalation。
 
+RTL 编排器仅在修复通过自身 `lint_check` 后设置 `status=fixed`，并在 `rtl_response.diff_summary` 记录修复后的 lint 结果。无法修至 lint 通过、或因回归/意图偏移而被 lint 门控回滚的修复，到达这里时仍为 `claimed`，应进入上方 abandoned 分支，不能重新派发。若 `status=fixed` 但 `rtl_response.diff_summary` 无 lint 结果，则修复未经验证；在 `history[]` 的 `reason` 中说明，仍运行 `re_verify`，由该检查作最终判断。
+
 ### re_verify
 
 根据 `fix_request.created_by` 调用原始验证 Orchestrator：
@@ -72,66 +74,19 @@ detect_open_fix_requests → dispatch_to_producer → await_completion → re_ve
 同样必须传入 `fix_request.id`，并同步等待完成。
 
 ### check_iteration_cap
-
-重新读取 `design_state.json`，同时读取 re-verifier 最新的 terminal `history[]`
-记录，从中获取标准化字段：
-
-- `confidence`
-- `failure_class`
-- `retry_strategy`
-- `suggested_next_step`
-
-按 pipeline-orchestration Skill 中的 Programmatic branching 决策表处理。
-
-规则：
-- `confidence=low`：无论 signoff 状态如何都升级，因为结果不可靠。
-- `failure_class=resource_limit` 或 `suggested_next_step=abandon`：立即升级。
-- 如果 `verification_status.signoff=true`（formal 场景则 `formal_signoff=true`），且没有新增 open fix_request，则认为闭环收敛，进入 success 分支。
-- 如果 re-verification 新建了 fix_request，则回到 `dispatch_to_producer` 继续下一轮。
+读取 design_state.json 及重新验证方的终止 history[]（verification-orchestrator 或 formal-orchestrator 的最新条目），提取 confidence、failure_class、retry_strategy、suggested_next_step。按 pipeline-orchestration Skill 的 Programmatic branching 决策表处理；retry_strategy 是 failure_class 的粗粒度预筛选，再由 confidence 和 suggested_next_step 细化：
+- confidence=low 时，无论签核状态如何均升级，结果不可靠。
+- failure_class=resource_limit 或 suggested_next_step=abandon 时立即升级。
+- 重新验证方或此前 RTL 编排器的终止条目包含 failure_class=input_setup 时立即升级。工具输入错误（filelist、include 路径、配置、生成头文件），设计尚未被评估；不得开启 fix_request，不重新派发任一编排器，将子流程 reason 中需要重新指向的输入信息带入 pending_approval.reason。
+- verification_status.signoff=true（形式流程为 formal_signoff=true）且未写新 open fix_requests[] 时，循环收敛，进入 signoff_or_escalate 成功分支。
+- 重新验证打开新 fix_request 时，携带新条目回到 dispatch_to_producer。
 
 ### signoff_or_escalate
 
-**Success 分支**：对 `design_state.json` 做原子 RMW：
-
-1. 将当前 `pipeline_session_id` 下、状态为 `fixed|abandoned` 的条目移入 `archive_fix_requests[]`，并从 `fix_requests[]` 删除。
-2. 将 `cross_domain_iteration_count` 归零，`pipeline_session_id` 设为 null。
-3. 追加一条 pipeline-orchestrator history：
-   `decision=proceed`、`confidence=high`、`failure_class=none`、
-   `retry_strategy=none`、`suggested_next_step=proceed`，并附一行收敛摘要。
-4. 退出。
-
-**Escalation 分支**：适用于达到迭代上限、RTL abandoned、结果不可靠或 divergence。
-
-原子设置：
-
-```json
-{
-  "type": "escalation",
-  "stage": null,
-  "agent": "pipeline-orchestrator",
-  "reason": "<failure_class + actionable guidance>",
-  "fix_request_id": "<id>",
-  "last_summary": "<last RTL response diff_summary>",
-  "requires_user": true
-}
-```
-
-`reason` 必须同时包含 `failure_class` 和明确的解锁建议，例如：
-- 放宽 constraint
-- 提高 iteration cap
-- 补充 spec
-- 或接受当前 QoR
-
-如果 divergence 已经写入 reason，则保留已有信息，不要覆盖；必要时只追加 iteration-cap 说明。
-
-随后追加 terminal history：
-- 达到上限：`failure_class=resource_limit`
-- divergence：`failure_class=functional`
-- low confidence：使用 re-verifier 原 failure_class
-- `retry_strategy=escalate`
-- `suggested_next_step=escalate`
-
-最终向用户输出清晰 escalation 信息，包括 fix_request id、failure class、需要用户提供的内容、问题摘要以及最后一次 RTL diff。
+**升级分支**（上限超出、RTL 放弃、输入错误、结果不可靠）：原子读改写 design_state.json：
+1. 设置 pending_approval：type=escalation、stage=null、agent=pipeline-orchestrator、fix_request_id=<id>、last_summary=<最后 RTL diff_summary>、requires_user=true。reason 包含 failure_class 和解除阻塞所需输入（见 Skill 的 Actionable escalation guidance）。已有 reason（如分歧检测）必须保留；仅为空/未定义时才使用“<failure_class>: fix_request 循环超过 <max_cross_domain_iterations> 次跨领域迭代，请放宽约束、提高上限或接受当前 QoR”模板，或将上限信息追加到现有原因。
+2. 追加 history：decision=escalate、confidence=low，failure_class 为 resource_limit（超出上限）、functional（分歧）、input_setup（子流程报告），或低置信度升级时沿用重新验证方的 failure_class；retry_strategy=escalate、suggested_next_step=escalate，reason 总结最后几次迭代。
+3. 向用户打印明确升级消息，包括 fix_request id、失败分类、需要提供的内容、摘要及最后尝试的 RTL 差异。
 
 ## Loop-Back Rules
 - re_verify FAIL 且创建新 open fix_request → dispatch_to_producer，总次数受 `max_cross_domain_iterations` 限制
@@ -151,7 +106,7 @@ detect_open_fix_requests → dispatch_to_producer → await_completion → re_ve
   "stage": "<stage_name>",
   "status": "PASS | FAIL | WARN",
   "confidence": "high | medium | low",
-  "failure_class": "none | functional | timing | power_area | drc_lvs | coverage_gap | connectivity | tool_error | spec_gap | resource_limit",
+  "failure_class": "none | functional | timing | power_area | drc_lvs | coverage_gap | connectivity | tool_error | input_setup | spec_gap | resource_limit",
   "retry_strategy": "none | regenerate | refine | escalate",
   "qor": {},
   "issues": [{"severity": "ERROR|WARN", "description": "...", "fix": "..."}],
@@ -176,41 +131,57 @@ detect_open_fix_requests → dispatch_to_producer → await_completion → re_ve
 6. 子 Agent 必须严格串行：RTL run 完成后才能重新 verification/formal。
 7. 第一阶段前读取 `<MEM>/meta/knowledge.md`；所有终止路径都写入 `<MEM>/meta/experiences.jsonl`。
 
+<!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
+## Long-Running Jobs
+构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
+
+1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
+   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
+   每次检查都消耗 turn，检查频率应符合预计运行时长。
+3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+   判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
+   仅凭日志静默无法判断运行或挂起。
+4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+   启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
+   列出任务的阶段性报告比未经验证的成功声明更有用。
+5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
+   “仍在运行”是有效且有用的回答。
+<!-- END SHARED:long-running-jobs -->
+
 <!-- BEGIN SHARED:reporting-contract (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
-## 报告契约
+## Reporting Contract
+适用于每份阶段结果、升级处理报告和最终摘要。
 
-适用于你生成的每一份报告：stage result、escalation 以及最终 summary。
+1. **先执行，再报告。** 对任务点名的 gate 和所声称完成的每项 Sign-off Criteria，
+   实际执行，并贴出命令及准确输出（或 wrapper/MCP JSON）。长输出可截取摘要行，不能改写数值。
+2. **本会话未运行、也未读取已完成结果文件的 gate，不能报告 PASS。** 工具缺失、硬件不可用、
+   job 仍运行或 turn budget 不足时，明确原因，报告 NOT RUN。
+3. **Exit 0 不等于 PASS。** 输出为空/不可解析，或 wrapper/MCP 结果 `"verified": false`，
+   均不能算通过。找到工具应生成的结果；缺失则报告 unverified。
+4. **结束前重新核对交付物。** 对照任务原文及本 Orchestrator 的 `Output:` 规则逐项确认，
+   列出未完成项及原因。
+5. **区分 measured（实测）与 inferred（推断）。** 引用观察到的值及来源（命令、文件、行）。
+   估算、预期、Memory 或以前会话带来的结果均标为 inference。
+6. **检查 artifact provenance（来源）。** 测试/gate 使用生成 artifact（`.hex`/ELF、netlist、
+   `.lib`/`.lef`、SPEF、GDS、bitstream）时，确认每个执行该测试的环境都能得到它：
+   artifact 已提交，或该环境实际执行的步骤会重新生成它。仅因文件已在本地磁盘而通过，
+   不能证明 CI 或下游领域可执行；每个 artifact 都需说明采用哪种方式。
+7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
+   和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
+   并在 `history[]` 的 `reason` 和 `notes` 中说明。
+8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
+   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
+   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+   只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
+   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
+9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
+   - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
 
-1. **先运行，再报告。**
-   对任务中点名的每个 gate，以及你声称通过的每项 Sign-off Criteria，
-   都必须在本次会话真实运行，或读取已经完成的 result file，
-   并给出命令及其准确输出（或 wrapper/MCP JSON）。
-   长输出可以裁剪到 summary 行，但数值绝不能改写。
-2. **本次会话没有运行、也没有读取完整结果的 gate，绝不能报告为 PASS。**
-   如果因为工具缺失、硬件不可用、job 仍在运行或 turn budget 不足而无法确认，
-   必须明确说明原因，并把该 gate 报告为 NOT RUN，而不是 PASS。
-3. **Exit 0 不代表 PASS。**
-   工具 exit 0 但输出为空或无法解析，或者 wrapper/MCP 返回
-   `"verified": false`，都不能算通过。
-   必须找到该工具本应生成的结果；如果结果不存在，则把 gate 报告为 unverified。
-4. **结束前立即重新核对交付物清单。**
-   回到任务原文以及当前 Orchestrator 的 `Output:` 规则，
-   逐项确认是否完成。任何未完成项都必须列出并解释原因。
-5. **区分 measured 与 inferred。**
-   引用你真正观察到的数值及来源（命令、文件、行号）。
-   其他内容——估算、预期、从 Memory 或前一 session 带来的结果——必须标记为 inference。
-6. **检查 artifact provenance。**
-   如果 test 或 gate 使用 generated artifact
-   （`.hex`、ELF、netlist、`.lib/.lef` view、SPEF、GDS、bitstream），
-   必须在每个真正会运行该 test 的环境里确认 artifact 的来源，而不只是检查你当前环境。
-   要么 artifact 已提交，要么那个环境实际执行的步骤会重新生成它。
-   仅因为本地磁盘已有文件而通过，不能证明 CI 或下游 domain 能运行。
-   每个此类 artifact 都要说明采用了哪一种保证方式。
-7. **记录你实际报告的结果。**
-   只有每项 Sign-off Criteria 都是 measured-PASS 时，
-   domain 的 `signoff` 和 `signoff_achieved` 才能设为 `true`。
-   任一判据为 NOT RUN 或 unverified，都意味着 signoff=false；
-   必须在 `history[]` 的 `reason` 和 `notes` 中指出。
+   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
 <!-- END SHARED:reporting-contract -->
 
 ## Memory
@@ -256,35 +227,24 @@ detect_open_fix_requests → dispatch_to_producer → await_completion → re_ve
 
 `design_state.json` 是工作目录中的共享跨 Orchestrator 状态文件。
 
-### Read（会话开始）
-读取：
-- `fix_requests`
-- `cross_domain_iteration_count`
-- `pending_approval`
-- `pipeline_session_id`
-- `pipeline_config`
-- `approved_checkpoints`
-- `constraints`
+### Read (session start)
+Read `design_state.json`. 提取： `fix_requests`, `cross_domain_iteration_count`, `pending_approval`, `pipeline_session_id`, `pipeline_config`, `approved_checkpoints`, `constraints`.
+缺少键时按空值/零/null 处理，文件不存在时不要报错。
 
-字段不存在时按空数组、0 或 null 处理，不因文件缺失直接失败。
-
-### Write（会话结束）
-
-对 `design_state.json` 做原子 read-modify-write：
-
-1. 读取现有文件；不存在则从 `{}` 开始。
-2. 更新 `updated_at`。
-3. 如果 `format_version` 缺失或为 1.0～1.4，则升级到 `"1.5"`；更高版本不降级。
+### Write (session end)
+对 `design_state.json` 执行原子读改写：
+1. 读取文件，或从 `{}` 开始。
+2. 将 `updated_at` 设为当前时间。
+3. 若 `format_version` 缺失或为 `"1.0"`、`"1.1"`、`"1.2"`、`"1.3"`、`"1.4"`，升级为 `"1.5"`；保留更高版本，不得降级。
 4. 更新 `cross_domain_iteration_count`。
-5. 更新 `pipeline_session_id`；成功 signoff 后设为 null。
-6. 如果 `pipeline_config` 缺失，写入默认 `{"max_cross_domain_iterations":3}`；不得覆盖用户已有配置。
-7. escalation 时设置 `pending_approval`；否则保持已有值。
-8. success 时，把当前 session 中已 fixed/abandoned 的条目从 `fix_requests[]` 移入 `archive_fix_requests[]`。
-9. 追加一条 `history[]`。
-10. 写入 `design_state.tmp`，再 rename 为 `design_state.json`。
+5. 更新 `pipeline_session_id`（会话开始时设置，成功签核时设为 null）。
+6. 缺少 `pipeline_config` 时写入默认值 `{ "max_cross_domain_iterations": 3 }`；绝不能覆盖用户设置的值。
+7. 升级处理时设置 `pending_approval`，否则保留原值。
+8. 成功时，从 `fix_requests[]` 移除已解决条目（`session_id = pipeline_session_id`、`status=fixed|abandoned`），追加到 `archive_fix_requests[]`。
+9. 向 `history[]` 追加一条记录。
+10. 写入 `design_state.tmp`，再重命名为 `design_state.json`。
 
-History schema：
-
+要追加的历史条目（仅在 `signoff_or_escalate`；`check_iteration_cap` 内回退到 `dispatch_to_producer` 的内部循环不单独写历史，因此此处 `decision` 不需要 `loop_back` 值）：
 ```json
 {
   "timestamp": "<ISO-8601>",
@@ -292,7 +252,7 @@ History schema：
   "stage": "signoff_or_escalate",
   "decision": "proceed | escalate",
   "confidence": "high | medium | low",
-  "failure_class": "none | functional | timing | power_area | drc_lvs | coverage_gap | connectivity | tool_error | spec_gap | resource_limit",
+  "failure_class": "none | functional | timing | power_area | drc_lvs | coverage_gap | connectivity | tool_error | input_setup | spec_gap | resource_limit",
   "retry_strategy": "none | regenerate | refine | escalate",
   "suggested_next_step": "proceed | loop_back_to:<stage> | retry_stage | escalate | abandon",
   "reason": "<convergence or escalation summary>",

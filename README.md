@@ -5,8 +5,9 @@
 
 > 翻译自 [`rtlix/digital-chip-design-agents`](https://github.com/rtlix/digital-chip-design-agents)。
 > This repository is the Chinese translation of [rtlix/digital-chip-design-agents](https://github.com/rtlix/digital-chip-design-agents). For the original project README, see the [English README](https://github.com/rtlix/digital-chip-design-agents/blob/master/README.md).
+> 本译本已同步至英文仓库 [`38736b1`](https://github.com/rtlix/digital-chip-design-agents/commit/38736b1)（v1.9.1，2026-10-07）。
 
-[![Validate](https://github.com/chuanseng-ng/digital-chip-design-agents/actions/workflows/validate.yml/badge.svg)](https://github.com/chuanseng-ng/digital-chip-design-agents/actions/workflows/validate.yml)
+[![Validate](https://github.com/hdl-tools/digital-chip-design-agents/actions/workflows/validate.yml/badge.svg)](https://github.com/hdl-tools/digital-chip-design-agents/actions/workflows/validate.yml)
 
 ---
 
@@ -54,6 +55,8 @@ Claude 会在执行前自动加载正确的 Skill。
 | `chip-design-fpga` | FPGA 原型/仿真 | ASIC 移植到 FPGA、硬件 bring-up、原型机软件验证 |
 | `chip-design-infrastructure` | 基础设施与 Memory | EDA 工具检测、wrapper 部署、MCP Server 配置、领域经验蒸馏 |
 | `chip-design-meta` | 流水线编排 | 驱动验证↔RTL 闭环、管理 fix_requests、限制迭代次数 |
+
+**可选配套工具：** [`hdl-rtl-skill`](https://github.com/hdl-tools/hdl-rtl-skill) 提供基于 slang 的逐次写入 lint 钩子、标准 RTL 模板和反模式目录（仅支持 Claude Code）。本项目中编写 RTL 的插件（`rtl`、`fpga`、`soc`、`memory-ip`、`hls`）在安装该工具后会使用它；未安装时，各插件自身仍包含相同的 lint 规则。
 
 ---
 

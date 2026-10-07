@@ -5,7 +5,7 @@
     "1. 将 args 中两处 '/absolute/path/to' 替换为本仓库根目录的绝对路径（例如 /home/user/digital-chip-design-agents）。",
     "2. 将 env 中的 PDK_ROOT 设置为已安装 PDK 的目录（例如 /home/user/pdk 或 $PDKPATH）。",
     "PLATFORM 和 TOOL_TIMEOUT_S 可以保持默认，也可以按 design 覆盖。",
-    "请先运行 'bash install.sh' —— 安装脚本会复制此模板，并可自动完成路径替换。"
+    "No installer applies these substitutions. The infrastructure orchestrator's mcp_configuration stage resolves the paths; otherwise replace them by hand."
   ],
   "mcpServers": {
     "openroad": {
@@ -13,9 +13,12 @@
       "command": "python3",
       "args": [
         "/absolute/path/to/plugins/infrastructure/tools/mcp-adapter.py",
-        "--wrapper", "/absolute/path/to/plugins/infrastructure/tools/wrap-openroad.sh",
-        "--tool", "openroad",
-        "--description", "运行单个 OpenROAD stage 并返回紧凑 JSON：wns_ns、tns_ns、drc_violations、最后 5 条 progress message"
+        "--wrapper",
+        "/absolute/path/to/plugins/infrastructure/tools/wrap-openroad.sh",
+        "--tool",
+        "openroad",
+        "--description",
+        "运行单个 OpenROAD stage 并返回紧凑 JSON：wns_ns、tns_ns、drc_violations、最后 5 条 progress message"
       ],
       "env": {
         "PDK_ROOT": "/path/to/pdks",

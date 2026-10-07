@@ -61,24 +61,13 @@ verification 所需 behavioral model。
 
 ---
 
-## Stage Sequence 与 Loop-Back
+## Stage Sequence
 
 ```text
-memory_requirements → macro_selection → array_architecture → redundancy_repair →
-view_generation → integration_prep → memory_signoff
+memory_requirements → macro_selection → array_architecture → redundancy_repair → view_generation → integration_prep → memory_signoff
 ```
 
-| 失败 stage | 条件 | 回退到 | 最大次数 |
-|---|---|---|---:|
-| `macro_selection` | 无候选满足 access time | `memory_requirements` | 2× |
-| `array_architecture` | area >120% budget | `macro_selection` | 3× |
-| `array_architecture` | bandwidth < target | `memory_requirements` | 1× |
-| `redundancy_repair` | projected yield < target | `array_architecture` | 2× |
-| `view_generation` | view QA error >0 | `macro_selection` | 2× |
-| `integration_prep` | placement/channel 不可行 | `array_architecture` | 2× |
-| `memory_signoff` | Vmin margin 不足 | `array_architecture` | 1× |
-
-### Sign-off criteria（机器可检查 gate）
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`memory-ip-orchestrator.md`](../plugins/memory-ip/agents/memory-ip-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 - `view_qa_errors: 0`
 - `all_corners_characterized: true`

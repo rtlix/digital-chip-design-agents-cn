@@ -45,7 +45,7 @@ allowed-tools: Read, Write, Bash
 ```json
 {
   "name": "chip-design-<new-domain>",
-  "source": { "source": "github", "repo": "chuanseng-ng/digital-chip-design-agents" },
+  "source": { "source": "github", "repo": "hdl-tools/digital-chip-design-agents" },
   "description": "One-line description",
   "category": "engineering",
   "keywords": ["keyword1", "keyword2"]
@@ -72,7 +72,7 @@ skills:
 stage_1 → stage_2 → stage_3
 
 ## Loop-Back Rules
-- stage_2 FAIL (condition)  → stage_1  (max N×)
+- stage_2 FAIL (condition)  → stage_1  （最多 N×）
 
 ## Sign-off Criteria
 - metric_name: value
@@ -81,10 +81,7 @@ stage_1 → stage_2 → stage_3
 1. ...
 ```
 
-4. 添加共享章节。每个 Orchestrator 都需要携带一组完全一致的 guard
-   （stage gating、escalation，以及当该领域没有 MCP server 时的 execution note）。
-   这些内容**不要手工复制**：
-
+4. 添加共享章节。每个编排器都原样包含一组防护规则；运行下面的 `--list` 可查看各规则块对应的目标位置。这些内容通过工具生成：
 ```bash
 python3 tools/sync_agent_sections.py          # 将共享区块写入各 Agent
 python3 tools/sync_agent_sections.py --list   # 显示每个区块会同步到哪里
@@ -151,8 +148,8 @@ python3 -m pytest tests/ -q
 
 ```json
 "author":     { "name": "chuanseng-ng", "url": "https://github.com/chuanseng-ng" },
-"homepage":   "https://github.com/chuanseng-ng/digital-chip-design-agents",
-"repository": "https://github.com/chuanseng-ng/digital-chip-design-agents",
+"homepage":   "https://github.com/hdl-tools/digital-chip-design-agents",
+"repository": "https://github.com/hdl-tools/digital-chip-design-agents",
 "license":    "MIT"
 ```
 

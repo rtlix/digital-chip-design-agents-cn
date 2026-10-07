@@ -46,9 +46,9 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 - **UVVM** —— VHDL 验证方法学库
 
 ### 商业工具
-- **Synopsys VCS**（`vcs`）—— 主流 SystemVerilog/UVM 仿真器
-- **Cadence Xcelium**（`xrun`）—— 支持多语言及覆盖率引擎的仿真器
-- **Siemens Questa**（`vsim` / `vlog` / `vcom`）—— 支持 UVM 的混合语言仿真器
+- **Synopsys VCS** (`vcs`，命令方言 `synopsys`） — industry-standard SV/UVM simulator
+- **Cadence Xcelium** (`xrun`，命令方言 `cadence`） — multi-language simulator with coverage engine
+- **Siemens Questa** (`vsim` / `vlog` / `vcom`，命令方言 `siemens`） — mixed-language simulation with UVM support
 
 ---
 
@@ -98,6 +98,16 @@ uvm_test
 6. Back-pressure：必须测试 flow-control 条件
 7. Reset：包括运行中的 reset、active transaction 期间的 reset
 8. 在编写测试前先定义 covergroup
+9. 为定向测试难以覆盖的边界情况逐一建立 V-plan 条目：
+   - 同时事件：load 与 increment、空时读写、flush 与 enable、设置与清除
+   - 退出复位后的首周期
+   - 持续背压（`ready` 多周期为低）与无间隙最大速率输入
+   - 每个计数器在最大值附近的边界、回绕与饱和
+   - 多时钟模块两端极限时钟比
+
+10. 测试边界参数值，而非仅默认配置：`WIDTH=1`、`DEPTH=1` 和 `2`、`N=1` 及非 2 次幂值。对于 RTL 应拒绝的值，测试其确实拒绝 elaboration。
+
+11. 使用 RTL 交接输入：`design_state.rtl.unverified[]` 每项（RTL 未运行工具便作出的声明）对应测试，或标为分配给形式验证。`cdc`、`reset` 无法由功能仿真闭环，应记录为需要 CDC/RDC 工具运行，不能记为已覆盖。
 
 ### V-Plan 条目模板（每项功能）
 ```
@@ -129,9 +139,22 @@ priority:     P0
 3. Sequence library：注册全部 sequence，用于随机选择
 4. 不得硬编码数值，应使用随机字段与 constraint
 
+### Domain Rules — Testbench Coding
+测试平台不受 RTL 综合规则约束，initial、#delay、阻塞赋值在此均正确；但仍须在每个仿真器中以相同方式完成 SystemVerilog elaboration。
+1. 每个测试平台、interface、bind 文件顶部写 `` `default_nettype none ``，末尾恢复 `` `default_nettype wire ``，避免影响后续编译库代码。DUT 连接拼写错误必须报错，不能形成隐式一位网络。
+
+2. DUT 实例使用命名端口连接与命名参数覆盖（`#(.WIDTH(8))`），禁止位置连接，避免端口列表改变时静默误接。
+
+3. 每个参数和常量显式定型（`int unsigned`、`logic [W-1:0]`）。无类型参数及对裸字面量的尺寸转换（`WIDTH'(1)`）是有符号的，在 scoreboard 比较最高位为 1 的值时会导致假通过或假不匹配。
+
+4. 期望值与实际值使用相同位宽、相同符号性，以 `!==` 比较，使 DUT 输出 X/Z 形成不匹配，不能静默通过。
+
+5. 注释说明原因：对 DUT 的每项假设、每项豁免、每个有意非法的激励都要说明理由。
+
 ### 领域规则——Driver
 1. 按协议规范进行 cycle-accurate 信号驱动
-2. 正确处理 back-pressure，并检查 ready/valid
+2. 按 ready/valid 合约处理背压。源端无需等待 `ready` 就应拉高 `valid`，随后保持 `valid` 与载荷稳定，直到该拍被接受。接收端 `ready` 可以依赖 `valid`。先等待 ready 才拉高 valid 的驱动器会与等待 valid 的 DUT 死锁，并掩盖仅在背压下暴露的 DUT 缺陷。
+
 3. Driver 中增加协议 assertion，尽早捕获非法 stimulus
 
 ### 领域规则——Scoreboard
@@ -143,6 +166,7 @@ priority:     P0
 1. 协议 assertion：放在 interface bind 中，不修改 DUT
 2. 功能 assertion：放在 checker 或 bind module 中
 3. 所有 assertion 都应有清晰名称和明确的失败消息
+4. 每个 ready/valid 接口都以断言表达合约：仅 `valid && ready` 时传输；接受前不得撤回 `valid`；`valid && !ready` 时载荷稳定；复位时 `valid`、`ready` 无效且不能为 X。
 
 ### 要评估的 QoR 指标
 - TB compile：0 error、0 warning
@@ -166,6 +190,19 @@ priority:     P0
 5. 每个接口至少包含一次 active transaction 期间 reset 的测试
 6. 所有 P0 测试通过后，才能进入 constrained-random 阶段
 7. 如果 directed test 发现 DUT bug：按 verification-orchestrator 的 Design State schema 向 `design_state.fix_requests[]` 写入 `fix_request`，并以 `decision=escalate` 结束当前运行。RTL 的重新调用由 pipeline-orchestrator（`chip-design-meta`）负责，本域不得自行循环修 RTL，也不要等待用户确认后再处理。
+8. 提交前分类为 DUT 缺陷或测试平台缺陷，并指出机制而非只报位置；现象不一定是缺陷本身。仅在波形中将不匹配追踪到该信号时设置 `suspected_rtl.basis=traced`，否则为 `hypothesis`。从现象开始：
+   | 现象 | 优先检查的机制 |
+   |---|---|
+   | 间歇出现，发生率随时钟比变化 | 跨时钟域 |
+   | 启动时失败，稳定运行后正常 | 复位释放与复位值 |
+   | 一直挂起直到复位 | 无出口的 FSM 状态、协议等待环 |
+   | 仅大值错误 | 位宽截断、算术溢出 |
+   | 仅负值错误 | 有符号/无符号混用 |
+   | 仅持续负载下失败 | 仲裁公平性、撤回 valid、载荷不稳定 |
+   | RTL 仿真通过、门级仿真失败 | 时钟块阻塞赋值、不完整敏感列表、X 乐观传播 |
+   | 长时间运行逐渐退化 | credit 或 token 泄漏 |
+
+9. 不能弱化检查使失败测试通过：不得放宽 scoreboard 比较、禁用/豁免断言，或约束激励绕开失败情况，除非激励按规格确属非法。修改测试平台后，其他所有测试的检查都必须至少与原先一样严格。
 
 ### 要评估的 QoR 指标
 - 所有 V-plan feature 至少被一个 directed test 覆盖
@@ -187,7 +224,8 @@ priority:     P0
 3. 评估覆盖率前至少使用 10 个不同 seed
 4. 全程启用 scoreboard，每个 transaction 都与 reference model 对比
 5. 出现任何 UVM FATAL 时立即停止，不跨 seed 累积错误
-6. 出现任何 scoreboard mismatch 时，继续之前必须先判断是 DUT bug 还是 testbench bug
+6. 任何 scoreboard 不匹配，都必须按 `directed_tests` 规则 8 的现象表分类为 DUT 或测试平台缺陷后才能继续。
+
 7. 持续运行直到覆盖率目标达到，或 seed budget 耗尽
 
 ### 要评估的 QoR 指标
@@ -252,7 +290,7 @@ priority:     P0
 
 ### 要评估的 QoR 指标
 - 所有 property 为 PROVEN 或明确 UNREACHABLE
-- 不允许 vacuous proof
+- 不允许 空洞证明（vacuous proof）
 - 相比仿真 baseline，应关闭额外 coverage bin
 
 ### 必须输出

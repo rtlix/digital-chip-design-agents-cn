@@ -45,6 +45,7 @@
   "stages": {
     "module_planning":   { "status": "pending", "output": {} },
     "rtl_coding":        { "status": "pending", "output": {} },
+    "design_input_check": { "status": "pending", "output": {} },
     "lint_check":        { "status": "pending", "output": {} },
     "cdc_rdc_analysis":  { "status": "pending", "output": {} },
     "synth_check":       { "status": "pending", "output": {} },
@@ -59,39 +60,13 @@
 
 ---
 
-## 3. Stage Sequence 与 Loop-Back
+## 3. Stage Sequence
 
-```
-[Module Planning] ──► [RTL Coding] ──► [Lint Check]
-                           ▲                 │ fail
-                           └─────────────────┘
-                                             │ pass
-                              ▼
-                       [CDC/RDC Analysis]
-                           ▲      │ violations
-                           └──────┘
-                                  │ pass
-                              ▼
-                       [Synth Check]
-                           ▲      │ fail (timing/area)
-                           └──────┘
-                                  │ pass
-                              ▼
-                       [RTL Sign-off]
-                              │ fail → RTL Coding
-                              ▼ pass
-                    [Synthesis-Ready RTL Package]
+```text
+module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc_analysis → synth_check → rtl_signoff
 ```
 
-### Loop-Back Rules
-
-| 失败条件 | 回退到 | 最大次数 |
-|---|---|---:|
-| Lint error >0 | RTL Coding | 5 |
-| 未 waive 的 CDC violation | RTL Coding | 3 |
-| Synth timing 比 target margin 差 >20% | RTL Coding | 2 |
-| Synth area > estimate 120% | RTL Coding | 2 |
-| Sign-off 缺失模块/coverage | Module Planning | 1 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`rtl-design-orchestrator.md`](../plugins/rtl-design/agents/rtl-design-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -171,8 +146,11 @@
 
 ## Synthesis Constraints
 1. RTL 中禁止 #delay
-2. ASIC RTL 不使用 initial block
-3. 避免 casez/casex，优先 unique case
+2. No initial blocks for logic (FPGA exception); elaboration-time parameter
+   assertions are allowed inside `// synthesis translate_off` / `translate_on`
+3. No casex; casez only with a written justification. FSMs: plain case with a
+   default recovery arm, or unique case without default plus a recovery assertion
+   — never unique case together with default
 4. Fanout >32 时必须有 buffering intent
 5. Pipeline register 用 _q 标识
 6. 禁止 combinational loop
@@ -341,25 +319,4 @@
 
 ## 5. Orchestrator System Prompt
 
-```
-You are the RTL Design Orchestrator for SystemVerilog chip design.
-
-You take a microarchitecture document and guide RTL development through
-module planning, coding, lint, CDC analysis, synthesis check, and sign-off.
-
-STAGE SEQUENCE:
-  module_planning → rtl_coding → lint_check → cdc_rdc_analysis →
-  synth_check → rtl_signoff
-
-LOOP-BACK RULES:
-  - lint_check FAIL               → rtl_coding (max 5x)
-  - cdc_rdc_analysis FAIL         → rtl_coding (max 3x)
-  - synth_check FAIL (timing)     → rtl_coding (max 2x)
-  - synth_check FAIL (area)       → rtl_coding or module_planning (max 2x)
-  - rtl_signoff FAIL (missing)    → module_planning (max 1x)
-  - rtl_signoff FAIL (quality)    → rtl_coding (max 2x)
-
-Output: Synthesis-ready RTL package with sign-off report.
-```
-
-> 固定 stage 名、枚举和机器接口保留英文。
+编排器的系统提示词即其 Agent 定义 [`rtl-design-orchestrator.md`](../plugins/rtl-design/agents/rtl-design-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

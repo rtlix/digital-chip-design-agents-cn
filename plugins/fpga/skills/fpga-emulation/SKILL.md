@@ -39,10 +39,10 @@ FPGA prototype 不一定 cycle-accurate，但可以在硅片回来数月之前�
 - **Project X-Ray** —— Xilinx 7-series bitstream documentation
 
 ### Proprietary
-- **Xilinx Vivado**（`vivado`）
-- **Intel Quartus**（`quartus_sh`）
-- **Microchip Libero**（`libero`）
-- **Synopsys Synplify**
+- **Xilinx Vivado** (`vivado`，命令方言 `xilinx`） — AMD/Xilinx 的综合、实现与比特流生成
+- **Intel Quartus** (`quartus_sh`，命令方言 `intel`） — Intel/Altera FPGA 的综合与烧录
+- **Microchip Libero** (`libero`，命令方言 `microchip`） — PolarFire/SmartFusion FPGA 的综合与烧录
+- **Synopsys Synplify** （命令方言 `synopsys`） — 面向多种器件系列的 FPGA 综合前端
 
 ---
 
@@ -69,6 +69,12 @@ FPGA prototype 不一定 cycle-accurate，但可以在硅片回来数月之前�
 2. 全部 clock 缩放到 prototype frequency，常见 50–100 MHz，而 ASIC 可能 ≥1 GHz。
 3. 不同 clock domain 的频率比例尽量保持。
 4. Global clock 必须走 BUFG/专用 clock network，不能走 data fabric。
+
+### Adapted RTL Rules
+1. 适配后的 RTL 满足 rtl-design Skill 的 `lint_check` ERROR 规则（锁存器、多驱动、未驱动输出）。每次编辑后重新 lint，包括从 `fpga_synthesis`、`bring_up` 或 `sw_validation` 回退后的编辑。
+2. 遵循被适配 ASIC 文件的现有风格，不要对仅改变目标平台的 RTL 重新排版。
+3. FPGA 存储器与寄存器初始化允许使用 `initial`，但仅限 FPGA 专用文件或 FPGA 专用 `` `ifdef `` 内；ASIC 源码不能包含这些结构。
+4. 厂商原语与宏（`XPM_MEMORY`、MMCM、BUFG、IOBUF）对开源 lint 工具而言是未知模块。lint 时忽略未知模块，将这些模块输出上的未驱动网络发现视为 stub 造成的结果，而非错误。
 
 ### QoR Metrics to Evaluate
 - 适配 RTL 中不再残留 ASIC-specific primitive

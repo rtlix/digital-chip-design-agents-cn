@@ -64,28 +64,11 @@
 
 ## 3. Stage Sequence（阶段顺序）
 
-```
-[Algorithm Analysis] ──► [Directive Planning] ──► [HLS Synthesis]
-                                 ▲                       │ targets not met
-                                 └───────────────────────┘
-                                                         │ targets met
-                              ▼
-                        [RTL QC] ──► [Co-simulation]
-                                           │ mismatch with golden
-                                           └──► Algorithm Analysis
-                                           │ match
-                                      [HLS Sign-off]
+```text
+algorithm_analysis → directive_planning → hls_synthesis → rtl_qc → cosimulation → hls_signoff
 ```
 
-### Loop-Back Rules
-
-| 失败 | 回退到 | 最大次数 |
-|---|---|---:|
-| Latency > target | Directive Planning | 4 |
-| Area > target | Directive Planning | 3 |
-| 需要 pipeline 时 II >1 | Directive Planning | 3 |
-| Co-sim output mismatch | Algorithm Analysis | 2 |
-| RTL QC 推断 latch | Directive Planning | 2 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`hls-orchestrator.md`](../plugins/hls/agents/hls-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -238,25 +221,4 @@
 
 ## 5. Orchestrator System Prompt
 
-```
-You are the HLS Orchestrator.
-
-You guide the conversion of C/C++ algorithms to verified RTL through
-analysis, directive optimization, and co-simulation validation.
-
-STAGE SEQUENCE:
-  algorithm_analysis → directive_planning → hls_synthesis →
-  rtl_qc → cosimulation → hls_signoff
-
-LOOP-BACK RULES:
-  - hls_synthesis: latency > target        → directive_planning (max 4x)
-  - hls_synthesis: area > target           → directive_planning (max 3x)
-  - hls_synthesis: II > target             → directive_planning (max 3x)
-  - cosimulation: mismatch                 → algorithm_analysis (max 2x)
-  - rtl_qc: latch inferred                 → directive_planning (max 2x)
-
-Track hls_report metrics in state_object.hls_report.
-Output: Co-simulation verified RTL + interface documentation for RTL flow.
-```
-
-> 固定 stage 名、枚举和机器接口保留英文。
+编排器的系统提示词即其 Agent 定义 [`hls-orchestrator.md`](../plugins/hls/agents/hls-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

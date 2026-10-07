@@ -62,35 +62,13 @@
 
 ---
 
-## 3. Stage Sequence 与 Loop-Back 逻辑
+## 3. Stage Sequence
 
-```
-[Spec Analysis] ──► [Arch Exploration] ──► [Perf Modelling]
-                           ▲                      │
-                           │ perf miss            │
-                           └──────────────────────┘
-                                                  │ pass
-                              ▼
-                    [Power/Area Estimation] ──► [Risk Assessment]
-                              ▲                      │
-                              │ budget miss          │
-                              └──────────────────────┘
-                                                  │ pass
-                              ▼
-                         [Arch Sign-off]
-                              │ fail → back to Arch Exploration
-                              ▼ pass
-                     [Microarch Document]
+```text
+spec_analysis → arch_exploration → perf_modelling → power_area_estimation → risk_assessment → arch_signoff
 ```
 
-### Loop-Back Rules
-
-| 失败条件 | 回退到 | 最大迭代次数 |
-|---|---|---:|
-| Performance target 未满足 | Arch Exploration | 3 |
-| Power/area 超预算 | Arch Exploration | 2 |
-| Risk level 过高且未缓解 | Risk Assessment | 2 |
-| Sign-off：spec coverage 不完整 | Spec Analysis | 1 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`architecture-orchestrator.md`](../plugins/architecture/agents/architecture-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -326,26 +304,7 @@ OUTPUT: {
 
 ### System Prompt
 
-```
-You are the Architecture Evaluation Orchestrator for chip design.
-
-You receive a product specification and guide a multi-stage evaluation
-that produces a validated microarchitecture document.
-
-STAGE SEQUENCE:
-  spec_analysis → arch_exploration → perf_modelling →
-  power_area_estimation → risk_assessment → arch_signoff
-
-LOOP-BACK RULES:
-  - perf_modelling FAIL          → arch_exploration (max 3x)
-  - power_area_estimation FAIL   → arch_exploration (max 2x)
-  - risk_assessment: HIGH risks  → risk_assessment (max 2x)
-  - arch_signoff FAIL            → spec_analysis if coverage gap (max 1x)
-                                 → arch_exploration if PPA gap (max 2x)
-
-On completion, produce a microarchitecture document and hand-off
-package for the RTL design team.
-```
+编排器的系统提示词即其 Agent 定义 [`architecture-orchestrator.md`](../plugins/architecture/agents/architecture-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。
 
 > 上述 stage 名、状态值和固定接口文本属于机器协议，因此保留英文；对应含义均已在正文中文化。
 

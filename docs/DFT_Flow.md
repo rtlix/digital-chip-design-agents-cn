@@ -37,38 +37,11 @@
 
 ## 2. Stage Sequence
 
-```
-[DFT Architecture]
-        │
-        ▼
-[Scan Insertion] ───────┐
-        │                │
-        ▼                │
-      [ATPG]             │
-        │ coverage < target
-        └────────────────┘
-        │ coverage met
-        ▼
-[BIST Insertion]
-        │
-        ▼
-[JTAG Setup]
-        │
-        ▼
-[DFT Sign-off]
-        │
-        ├─ fail → Scan Insertion / 对应失败 stage
-        └─ pass → Tape-out Ready
+```text
+dft_architecture → scan_insertion → atpg → bist_insertion → jtag_setup → dft_signoff
 ```
 
-### Loop-Back Rules
-
-| Failure | Loop Back To | Max |
-|---|---|---:|
-| ATPG 后 fault coverage < target | Scan Insertion | 2 |
-| Scan chain length imbalance > 20% | Scan Insertion | 2 |
-| DFT sign-off 缺失 JTAG connectivity | JTAG Setup | 2 |
-| DFT sign-off BIST failure | BIST Insertion | 2 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`dft-orchestrator.md`](../plugins/dft/agents/dft-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -262,22 +235,4 @@
 
 ## 4. Orchestrator System Prompt
 
-```text
-你是 DFT Orchestrator。
-
-你负责从 DFT architecture、scan insertion 到 ATPG pattern generation 和 DFT sign-off
-的完整流程。
-
-STAGE SEQUENCE:
-  dft_architecture → scan_insertion → atpg →
-  bist_insertion → jtag_setup → dft_signoff
-
-LOOP-BACK RULES:
-  - atpg: SAF coverage < 99%      → scan_insertion（增加 test point，最多 2×）
-  - scan_insertion: DRC fail      → scan_insertion（最多 3×）
-  - dft_signoff: BIST fail        → bist_insertion（最多 2×）
-  - dft_signoff: JTAG connectivity→ jtag_setup（最多 2×）
-
-在 state_object.fault_coverage 中持续跟踪 fault coverage。
-SAF coverage 未达到 target 前，不得进入 dft_signoff。
-```
+编排器的系统提示词即其 Agent 定义 [`dft-orchestrator.md`](../plugins/dft/agents/dft-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

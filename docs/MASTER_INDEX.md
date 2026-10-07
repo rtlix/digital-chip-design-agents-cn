@@ -78,7 +78,7 @@
 
 | # | 文档 | 说明 | 输入 | 输出 |
 |---|---|---|---|---|
-| 0 | `Infrastructure_Setup_Flow.md` | EDA 工具检测、wrapper 部署、MCP 配置 | Host environment | tool-manifest.json、wrapper、MCP snippet |
+| 0 | `Infrastructure_Setup_Flow.md` | EDA 工具检测、Wrapper 部署、MCP 配置 | 主机环境 | tool-status.json, module-status.json, tool-manifest.json, wrappers, MCP snippets |
 | 1 | `Architecture_Evaluation_Flow.md` | 微架构探索、PPA estimate、risk | Product spec | Microarch doc |
 | 2 | `RTL_Design_Flow.md` | SV RTL、lint、CDC、synth check | Microarch doc | Synthesis-ready RTL |
 | 3 | `HLS_Flow.md` | Algorithm C/C++ → RTL | C source + TB | Verified RTL |
@@ -93,6 +93,8 @@
 | 12 | `Compiler_Toolchain_Flow.md` | 自定义 ISA 的 LLVM/GCC backend | ISA spec | Validated toolchain |
 | 13 | `Embedded_Firmware_Flow.md` | BSP、driver、RTOS、validation | Chip datasheet | Validated firmware |
 | 14 | `FPGA_Emulation_Flow.md` | FPGA port、bring-up、SW validation | ASIC RTL | FPGA prototype + SW |
+
+各流程的阶段顺序、回退规则、阶段门控及升级处理以 `plugins/<domain>/agents/*-orchestrator.md` 为准。上方流程文档介绍架构、共享状态及 Skill 内容，通过链接引用 Agent 规则，不重复这些规则；若重复，`tests/test_agent_contract.py` 会失败。
 
 ---
 
@@ -236,7 +238,7 @@
     "stage": "string",
     "status": "PASS | FAIL | WARN",
     "confidence": "high | medium | low",
-    "failure_class": "none | functional | timing | power_area | drc_lvs | coverage_gap | connectivity | tool_error | spec_gap | resource_limit",
+    "failure_class": "none | functional | timing | power_area | drc_lvs | coverage_gap | connectivity | tool_error | input_setup | spec_gap | resource_limit",
     "qor": "object — metrics per skill definition",
     "issues": "array — [{severity, description, fix}]",
     "suggested_next_step": "proceed | loop_back_to:<stage> | retry_stage | escalate | abandon",
@@ -247,33 +249,29 @@
 
 上述 JSON 中字段名、enum 和固定 prompt 属于机器接口，保持英文。
 
-### Output 字段语义
+**`confidence`**：编排器对结果可靠性的自评：
+- `high`：确定性结果，工具证据干净，无豁免或估计，全部签核标准满足。
+- `medium`：结果成立，但依赖豁免、估计、假设或工具回退路径。
+- `low`：依赖未经验证假设、不完整数据或工具错误，建议人工审查。
 
-**`confidence`** — Orchestrator 对结果可靠性的自评：
+**`failure_class`** — 跨领域失败分类，status=PASS 时为 `none`；与验证/形式验证专用根因的 `fix_request.failure_class` 不同：
+- `functional` — logic or behavioral incorrectness
+- `timing` — setup/hold/WNS violations
+- `power_area` — 功耗或面积超出预算
+- `drc_lvs` — 物理验证失败（DRC、LVS、天线效应）
+- `coverage_gap` — verification coverage shortfall
+- `connectivity` — CDC/RDC、协议或接口不匹配
+- `tool_error` — EDA 工具崩溃、许可证或基础设施问题
+- `input_setup` — 工具正常运行但输入错误（filelist、include 路径、配置、生成头文件、库视图）；始终升级处理，不重试、不回退
+- `spec_gap` — 规格/需求缺失或不明确
+- `resource_limit` — 超出最大迭代、最大轮数或计算预算
 
-- `high`：结果确定，有直接工具证据，无 waiver/estimate，sign-off criteria 全满足
-- `medium`：结果成立，但依赖 waiver、estimate、assumption 或 fallback tool path
-- `low`：依赖未验证 assumption、partial data 或 tool error，需要人工 review
-
-**`failure_class`** — 跨 domain 统一失败分类：
-
-- `functional`：逻辑/行为错误
-- `timing`：setup/hold/WNS violation
-- `power_area`：power 或 area 超 budget
-- `drc_lvs`：DRC/LVS/antenna 等 physical verification failure
-- `coverage_gap`：coverage 不足
-- `connectivity`：CDC/RDC、protocol 或 interface mismatch
-- `tool_error`：EDA crash、license、infrastructure failure
-- `spec_gap`：spec 缺失/歧义
-- `resource_limit`：max iteration/turn/compute budget 用尽
-
-**`suggested_next_step`**：
-
-- `proceed`：进入下一 stage/downstream Orchestrator
-- `loop_back_to:<stage>`：回到指定 stage
-- `retry_stage`：重跑当前 stage
-- `escalate`：停止并请求人工决策
-- `abandon`：不可恢复，终止流程
+**`suggested_next_step`** — 建议接收方操作；`loop_back_to:<stage>` 必须指向编排器 Stage Sequence 中的阶段：
+- `proceed` — 前进到下一阶段或交接给下游编排器
+- `loop_back_to:<stage>` — 返回之前指定的阶段
+- `retry_stage` — 重新运行当前阶段（暂时性 tool_error）
+- `escalate` — 停止并要求人工决策
+- `abandon` — unrecoverable; terminate the flow
 
 ---
 

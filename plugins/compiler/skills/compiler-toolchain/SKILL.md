@@ -45,9 +45,9 @@ Orchestrator 负责强制执行下文定义的 stage sequence、loop-back 和 si
 - **QEMU**（`qemu-system-*`）—— 无硬件时用于 toolchain validation 的 instruction-accurate ISA emulation
 
 ### Proprietary
-- **Green Hills MULTI** —— 面向安全关键应用的 compiler/debugger IDE
-- **IAR Embedded Workbench** —— ARM/RISC-V 认证编译器
-- **Arm Compiler 6**（`armcc`）—— 基于 LLVM 的 Arm compiler
+- **Green Hills MULTI** （命令方言 `greenhills`） — 安全关键编译器与调试 IDE
+- **IAR Embedded Workbench** （命令方言 `iar`） — 用于 ARM/RISC-V 的认证编译器
+- **Arm Compiler 6** (`armcc`，命令方言 `arm`） — 面向 Arm 的 LLVM 编译器
 
 ---
 

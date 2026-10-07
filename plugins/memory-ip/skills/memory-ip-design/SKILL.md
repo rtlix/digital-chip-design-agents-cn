@@ -54,10 +54,10 @@ Liberty view、behavioral model 等。
 - **OpenSTA** (`sta`) — `.lib` load/timing arc sanity check
 
 ### Proprietary
-- ARM Artisan memory compiler
-- Synopsys memory compiler + SiliconSmart
-- Cadence Liberate
-- Siemens Tessent MBIST/BISR（只作为 repair/BISR 架构参考，插入属于 DFT）
+- **ARM Artisan memory compilers** (`artisan`，命令方言 `arm`） — 生产级 SRAM/寄存器文件/ROM 编译器
+- **Synopsys memory compilers + SiliconSmart** (`siliconsmart`，命令方言 `synopsys`） — 存储器编译与 Liberty 特性表征
+- **Cadence Liberate** (`liberate`，命令方言 `cadence`） — 跨 PVT 角的 Liberty 特性表征
+- **Siemens Tessent MBIST/BISR** (`tessent`，命令方言 `siemens`） — 修复寄存器与 BISR 架构参考（插入由 DFT 负责）
 
 ---
 
@@ -131,6 +131,7 @@ Liberty view、behavioral model 等。
 5. ECC 使用时定义 scrub interval，保证同一 word 累积第二个 bit flip 的概率满足 FIT target。
 6. 定义 Vmin 与 read/write assist requirement。
 7. 最终 architecture 重新核对 memory_requirements 阶段 bandwidth。
+8. Wrapper 以 RTL 交付而非仅定义规格时（byte-enable 解码、流水、ECC 编解码），属于可综合 RTL；遵守 rtl-design 编码规则，lint 为 0 错误。实例化的宏在 lint 中是 stub，其输出未驱动发现不属于 Wrapper 缺陷。
 
 ### QoR Metrics to Evaluate
 - Bandwidth achieved vs target
@@ -179,7 +180,8 @@ Liberty view、behavioral model 等。
 3. 所有 port 的 setup/hold、clock-to-Q timing arc 必须完整。
 4. Corner 数量必须与 required PVT list 一致；只有 typical 不可 sign-off。
 5. LEF obstruction layer 必须完整。
-6. Behavioral model timing check 与 collision policy 必须和 timing model/array_architecture 一致。
+6. 确认行为模型匹配时序模型：通过 timing check 实施相同 setup/hold，并按 array_architecture 确定的读写碰撞策略传播 X。宽松模型会将缺陷掩盖到芯片阶段。行为模型仅用于仿真，其中 initial、#delay、timing check 均正确，RTL 综合安全规则和 lint 门控不适用。
+
 7. 对实际生成 layout 的 flow 运行 macro DRC/LVS；vendor pre-hardened macro 可跳过。
 
 ### QoR Metrics to Evaluate

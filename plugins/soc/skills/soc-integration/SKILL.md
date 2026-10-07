@@ -37,9 +37,9 @@ allowed-tools: Read, Write, Bash
 - Edalize — FuseSoC 的 EDA abstraction layer
 
 ### Proprietary
-- Synopsys VCS (`vcs`)
-- Cadence Xcelium (`xrun`)
-- Siemens Questa (`vsim`)
+- **Synopsys VCS** (`vcs`，命令方言 `synopsys`） — 含覆盖率统计的芯片级仿真
+- **Cadence Xcelium** (`xrun`，命令方言 `cadence`） — 多语言芯片级仿真
+- **Siemens Questa** (`vsim`，命令方言 `siemens`） — 芯片级仿真与协议检查
 
 ---
 
@@ -135,19 +135,42 @@ allowed-tools: Read, Write, Bash
 ## Stage: top_integration
 
 ### Domain Rules
-1. Top-level 只做结构连接，不放功能逻辑。
-2. 每个 IP port 必须显式连接或显式 tie-off。
-3. Clock/reset/power/test signal 命名和 polarity 一致。
-4. 对全部 interface 做 width/type/connectivity static check。
-5. Interrupt 汇总、DMA request、debug/JTAG 路径必须完整。
-6. Memory macro 使用 Memory-IP qualification view，不重新定义。
-7. 对 unused output/optional feature 做明确 waiver，不能靠 warning 淹没。
+1. 先跑 boot/smoke，再跑 peripheral、bus stress 和 error injection。
+2. 每个 IP 至少一个基本功能 test。
+3. AXI/APB 等 bus protocol checker 全程启用。
+4. 测试 multi-master contention、back-pressure、maximum outstanding。
+5. Reset during traffic、clock-domain reset sequence 必须测试。
+6. 所有 memory region 做 read/write/alias test。
+7. 对 CPU-based SoC，执行 minimal firmware boot 与 interrupt test。
+8. Scoreboard/assertion mismatch 必须分类，不能只靠最终软件输出判断。
+9. 每个 IP 都使用按名称的端口连接；位置连接在 IP 修订重新排序端口后会静默误接。
 
-### QoR Metrics to Evaluate
-- Unconnected required port = 0
-- Width mismatch = 0
-- Multiple driver = 0
-- Connectivity error = 0
+10. 在完整 SoC filelist 上下文中，将整个列表作为一个单元编译并 lint `soc_top.sv`。单独 lint 时每个 IP 都是未知模块，端口位宽不匹配未被检查。
+
+11. 有意黑盒化的 IP（硬宏、模拟模块、加密 IP）为 stub；其输出上的未驱动网络发现不属于连接错误。将其记为信息并指出 stub，避免真正未连接端口淹没其中。必须能指出它代表的宏/IP 才可认为无害；本仓库有自有 RTL 定义的未知模块属于缺失 filelist 条目（规则 12）。
+
+12. 每个工具源列表都能看到 IP/模块才算集成完成。仿真、lint、综合、PD、形式验证通常读取独立列表，常存于 Makefile 变量；缺少模块时，sv2v/yosys 可能无错误地黑盒化，而读取其他列表的芯片级回归仍通过。枚举全部列表，确认每个新增文件均在其中，或注明未加入理由。`.f` 列表运行 `plugins/rtl-design/skills/rtl-design/check_design_inputs.py <filelist.f> --rtl-dir <rtl> --list <name>=<file> ...`。
+
+13. 下游综合前转换 RTL（sv2v、Surelog/UHDM）时，对 SoC filelist 转换并使用消费工具解析输出（`sv2v <files> > out.v && yosys -q -p 'read_verilog out.v; hierarchy -check -top soc_top'`）。SystemVerilog 合法而 Verilog-2005 非法的结构会通过 lint 和芯片级仿真，仅在此失败。
+
+### Integration Checklist (per IP)
+- [ ] Correct module name and parameters
+- [ ] All active ports connected
+- [ ] Clock: correct domain
+- [ ] Reset: correct domain and polarity
+- [ ] Power ports: correct UPF domain
+- [ ] Scan: SI/SO connected
+- [ ] 源文件已注册到每个工具源列表（仿真、lint、综合、PD、形式验证）
+
+### Common Integration Bugs
+| Bug | Consequence |
+|-----|------------|
+| 错误时钟域 | 芯片中出现亚稳态 |
+| 复位极性反转 | 模块始终无法退出复位 |
+| valid/enable 未连接 | 模块失控运行或始终不运行 |
+| AXI 地址偏移错误 | 外设位于错误基地址 |
+| 模块缺少于综合或 PD 源列表 | 静默黑盒化：仿真回归通过但网表错误 |
+| 转换器无法降低的 SV 结构 | 综合/PD 前端语法错误，lint/仿真无法发现 |
 
 ### Output Required
 - Integrated top RTL
@@ -195,6 +218,8 @@ allowed-tools: Read, Write, Bash
 - [ ] Protocol violation = 0
 - [ ] Memory access test PASS
 - [ ] P0/P1 integration bug 全关闭
+- [ ] 每个模块对每个工具源列表可见，豁免注明理由
+- [ ] 转换后 RTL 在各下游前端解析通过，或检查报告 NOT RUN
 
 ### Output Required
 - Integrated SoC RTL package

@@ -1,6 +1,6 @@
 {
   "name": "digital-chip-design-agents",
-  "version": "1.8.0",
+  "version": "1.9.1",
   "description": "完整数字芯片设计流水线——16 个 Claude Code 插件覆盖 15 个领域，从基础设施配置、设计实现到流片与固件，并支持 Verification↔RTL 闭环反馈。",
   "type": "module",
   "bin": {
@@ -31,13 +31,13 @@
     "vlsi",
     "agents"
   ],
-  "homepage": "https://github.com/chuanseng-ng/digital-chip-design-agents#readme",
+  "homepage": "https://github.com/hdl-tools/digital-chip-design-agents#readme",
   "bugs": {
-    "url": "https://github.com/chuanseng-ng/digital-chip-design-agents/issues"
+    "url": "https://github.com/hdl-tools/digital-chip-design-agents/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/chuanseng-ng/digital-chip-design-agents.git"
+    "url": "git+https://github.com/hdl-tools/digital-chip-design-agents.git"
   },
   "author": {
     "name": "chuanseng-ng",

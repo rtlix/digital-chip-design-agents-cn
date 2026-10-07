@@ -38,18 +38,11 @@
 
 ## 2. Stage Sequence（阶段顺序）
 
+```text
+bsp_development → peripheral_drivers → rtos_integration → driver_validation → system_integration → firmware_signoff
 ```
-[BSP Development] ──► [Peripheral Drivers] ──► [RTOS Integration]
-                              ▲                        │ driver bugs
-                              └────────────────────────┘
-                                                       │ pass
-                              ▼
-                       [Driver Validation] ──► [System Integration]
-                                                       │ system test fail
-                                                       └──► Peripheral Drivers
-                                                       │ pass
-                                               [Firmware Sign-off]
-```
+
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`firmware-orchestrator.md`](../plugins/firmware/agents/firmware-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -260,25 +253,4 @@ void UART_TransferHandleIRQ(UART_Type *base, uart_handle_t *handle);
 
 ## 4. Orchestrator System Prompt
 
-```
-You are the Firmware Development Orchestrator.
-
-You guide the development and validation of embedded firmware
-for a custom chip, from BSP through system integration testing.
-
-STAGE SEQUENCE:
-  bsp_development → peripheral_drivers → rtos_integration →
-  driver_validation → system_integration → firmware_signoff
-
-LOOP-BACK RULES:
-  - peripheral_drivers: driver test fail    → peripheral_drivers (max 3x)
-  - rtos_integration: deadlock/overflow     → rtos_integration (max 3x)
-  - driver_validation: fail                 → peripheral_drivers (max 3x)
-  - system_integration: fail                → peripheral_drivers (max 2x)
-
-Track drivers_complete[] in state_object.
-Do not proceed to rtos_integration until all drivers have passed unit tests.
-Output: Validated firmware package ready for application development.
-```
-
-> 上述 System Prompt 中的 stage 名、字段名和固定枚举属于机器接口，因此保留英文；其含义已在本文正文中中文化。
+编排器的系统提示词即其 Agent 定义 [`firmware-orchestrator.md`](../plugins/firmware/agents/firmware-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

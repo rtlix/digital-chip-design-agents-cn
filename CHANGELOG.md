@@ -1,15 +1,480 @@
 # 变更记录
 
-## [Unreleased] — feat/reporting-contract 分支
+## [Unreleased]
 
-### 新增
+### Issue #35：保存架构候选并按下游差距进行细化
+
+#### 新增
+
+- **持久化 architecture.candidates[]。** 过去候选仅保存在会话上下文，schema 字段一直为 []。架构行为规则 10 在 arch_exploration 保存完整权衡矩阵，包括拒绝/不可行候选、PPA 估计、风险、status、rejection_reason，按 name 新建或更新。
+- **综合、PD、STA 的细化请求。** 新共享 Architecture Refinement Request 同步到三者，是“不得修改其他领域状态”的有限例外。故障位于微架构时，仅设置 architecture.refinement_needed 和 refinement_request（请求方、timing/power_area、约束、实测值、原因、证据），不覆盖未关闭请求，随后仍升级。Stage Gating 第 4 项引用此规则。
+- **架构细化模式。** 标志已设且候选已保存时，跳过 spec_analysis/arch_exploration，从 perf_modelling 开始。下游实测覆盖模型估计，重新评分全部候选；只有 arch_signoff 通过才将请求移入 refinement_history[]。没有保存候选时回退完整流程。
+- **经验记录** key_metrics 新增 candidates_evaluated、winning_candidate_profile、refinement_of。
+- **Schema** 定义 architecture、archCandidate、archRefinementRequest；refinement_needed=true 必须有未关闭请求。字段均可选且为增量添加，不提高 format_version。新增有效/无效候选 fixture。
+
+#### 保持的行为
+
+- pipeline-orchestrator 尚不根据标志自动派发架构阶段，重新进入仍由用户手工触发，属于 V2 扩展点。
+
+## [1.9.1] — 2026-10-04
+
+修正编排器检查与报告的正确性（#126–#129）：
+
+- RTL Lint Gate 检查下游实际读取的转换文件，并确认每个工具列表都能看到新增模块。
+- Reporting Contract 第 8、9 项要求运行变更触发的所有 CI job，即使不签核也交接本次已确认内容。
+- RTL 关闭修复请求时重跑全部受影响门控，逐阶段建立未经验证声明列表。
+
+### Issue #129：未签核的运行仍须交接已确认内容
+
+#### 修复
+
+- **rtl.unverified[] 原先仅由 rtl_signoff 生成。** 正确因 CDC 工具缺失或门控 NOT RUN 而拒绝签核的运行无法到达此阶段，下游只能读到“RTL 未报告”。全部 16 个编排器的 Reporting Contract 第 9 项要求每条终止路径都合并本次实际确认的领域字段：列表由已运行阶段完整写入，未测状态为 false/null 并说明原因，交接列表在生成每项的阶段逐步建立。拒绝签核不能导致拒绝交接；IDE 防护也包含精简规则。
+- **rtl-design 逐阶段建立列表。** rtl_coding、lint_check、cdc_rdc_analysis 及时追加 UNVERIFIED 结论，rtl_signoff 补全。CDC 工具缺失时阶段 NOT RUN，每个推理分析跨域成为 cdc 声明。rtl.files[] 为当前完整文件集合，lint_clean/cdc_clean 仅本次实测干净才为 true。规则加入 Reporting Contract，不重新编号行为规则。
+
+### Issue #128：报告变更触发的所有门控
+
+#### 修复
+
+- **原 Reporting Contract 第 1 项只约束任务点名门控及声称满足的标准。** 第 8 项现要求全部 16 个编排器在报告完成或向有 CI 的仓库推送前，读取工作流路径过滤器，确定变更触发的所有 job，在本地运行每个 job 的步骤，不能只运行上次失败步骤；无法运行时列出步骤和原因。Codex、Gemini、Copilot 防护同样更新。
+- **rtl-design 行为规则 10 原先仅靠 lint_check 关闭 fix_request。** 现在运行编辑影响的全部门控，始终包括 lint 和前端检查；跨域、同步器、复位路径重跑 CDC/RDC；逻辑深度、状态或新增模块重跑 synth_check。status=fixed 要求 lint 与前端检查通过；其他受影响门控通过或明确 NOT RUN，diff_summary 记录各项结果。
+
+### Issues #126、#127：检查转换后的 RTL 和全部源文件列表
+
+#### 修复
+
+- **#126：sv2v 无法降低的合法 SystemVerilog 曾通过全部门控。** 函数结果直接部分选择 f(x)[N-1:0] 可通过 Verilator、slang、仿真回归，但 sv2v 原样输出，yosys 拒绝。五个 RTL 编写编排器新增 RTL Lint Gate 第 8 项“前端检查”：下游有 sv2v、Surelog/UHDM 或厂商转换时，运行转换，并用实际消费工具解析（yosys read_verilog; hierarchy -check），作为独立门控报告。rtl-design 中对应 lint_check 规则 15、签核标准和修复请求门控。synth_check 区分前端失败与 QoR 回退，并使用下游前端；记忆不再推荐无法发现该问题的 Surelog 前端或用 iverilog 解析 sv2v 输出。
+- **#127：某工具列表缺失模块曾被静默黑盒化。** RTL Lint Gate 第 9 项要求新增模块对仿真、lint、综合、PD、形式验证的每个列表可见才算集成。stub 例外仅限能指出库/宏/IP 的情况，自有模块未知表示缺少列表项。同步到 design_input_check 规则 8、lint_check 规则 8、SoC top_integration 规则 11–13、逐 IP 清单与签核。新增仅注册列表的 design_input_check 回退，不改 RTL。综合 netlist_qc 黑盒行以 input_setup 升级，compile_explore 增加前端解析失败行。
+
+#### 新增
+
+- check_design_inputs.py 支持 `--rtl-dir DIR --list NAME=FILELIST [--exempt [LIST:]MODULE]`，遍历自有 RTL，逐项 ERROR 指出磁盘上存在但某列表缺失的模块、列表和文件。跳过测试平台，-y 库目录视为可见。Makefile 变量可先导出列表。
+
+## [1.9.0] — 2026-10-01
+
+主要修正编排器规则正确性：
+
+- 新增 input_setup 分类与 design_input_check，输入失败直接升级。
+- 移除无法成功的回退，失败回退新增 decision 值，迭代还须取得进展。
+- 基础设施完善专有版本/角色/方言、模块探测与版本选择、关键命令键、Verilator MCP lint、Wrapper 冒烟检查、MCP 配置、custom 警告、modulefile 根变量、QoR 所有权。
+- 新增跨轮次长任务、报告合约与阶段门控共享规则。
+- 流程文档引用 Agent 权威规则，新建基础设施流程文档。
+- 仓库迁移到 hdl-tools/digital-chip-design-agents，包与插件 URL 同步。
+
+### Issues #99、#103、#104：安装规则与 QoR 所有权
+
+#### 修复
+
+- **#99：custom 模块系统曾收到经典 TCL modulefile 而无警告。** 规则 8 与 modulefile 下的提示原先仅警告 none。现在 custom 与 none 各有 WARN，custom 说明 TCL 格式假设并指向 module_system_detail；生成仍无条件。规则 9 的 MODULEPATH 注册仅用于 tclmod；custom 参考站点机制，none 待安装 Environment Modules 后使用。tclmod 输出不变。
+- **#103：modulefile 根变量表曾按产品名匹配。** LLVM 无法匹配 llvm-config，遗漏 LLVM_DIR。现在按命令为键、产品名放括号。cocotb 按包名匹配，而非 cocotb-config。Common Issues 中 openroad、bambu-hls 同样修正。
+- **#104：QoR 指标未声明或由错误阶段声明。** tool_installation 和 environment_validation 曾无 QoR 章节；dialect_conflicts 由 tool_discovery 声明却由 validation 计算。现在安装声明 install_scripts_generated，方言冲突移到 validation，Agent qor 新增 proprietary_found 与 install_scripts_generated，恰好覆盖阶段指标。各阶段只返回自身键，省略其他键，不能填占位 0/null。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py`
+- `test_every_infrastructure_qor_key_is_declared_by_the_stage_that_computes_it`
+- `test_modulefile_root_vars_are_keyed_by_command`
+- `test_custom_module_system_is_warned_about_tcl_modulefiles`
+
+### 仓库迁移到 hdl-tools
+
+#### 变更
+
+- package.json、全部 plugin.json、README、INSTALL、CONTRIBUTING、schema $id、发布说明的仓库 URL 改为 hdl-tools/digital-chip-design-agents。GitHub 虽重定向旧 URL，但 npm trusted publishing 与 provenance 绑定实际运行 release workflow 的仓库，保留 chuanseng-ng 会导致下一次发布被拒绝。author 和 marketplace owner 是人名，保持不变；历史日志保留旧名称。
+- 发布说明加入 Codex CLI（bash install.sh --ide codex）。
+
+#### 新增
+
+- tests/test_repo_identity.py 检查 package.json 指向当前仓库，除历史 CHANGELOG 外无文件引用旧仓库。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_repo_identity.py`
+
+### Issue #118：流程文档重复规则已与编排器偏离
+
+各 docs/*Flow*.md 最多重复三次规则：带回退箭头的阶段图、Loop-Back 表、系统提示词。#86、#102、#113、#83 修正 Agent 后文档未更新，13 个中 8 个与 Agent 不符，包括无法成功的 LEC、FPV、定向测试、扫描 DRC 回退，以及错误目标、上限、阈值或单侧新增行。
+
+#### 变更
+
+- 全部 14 个流程文档（含 Memory IP、PD）阶段章节保留 Agent 阶段顺序并链接其 Loop-Back Rules，移除重复表与回退箭头；系统提示词链接 Agent，因为 Agent 本身即提示词。PD Failure Escalation 及 §7 构建步骤同样引用 Agent。概览、共享状态、Skill 定义保持不变。
+- MASTER_INDEX 明确 Agent 对阶段顺序、回退、门控、升级具有权威性。
+- 新建此前只在索引列出、从未写入的 Infrastructure_Setup_Flow.md：共享状态及写入方、各阶段概述、调用层级、添加工具清单、交接说明（目前无领域编排器读取 environment.signoff）。纳入 FLOW_DOCS 检查。
+
+#### 修复
+
+- tool-manifest 中 wrappers.expected 曾为 8，实际为 9；加入 lint Wrapper 时未更新。数量检查原先只匹配说明文字，现在也匹配 JSON 字段，MCP 检查匹配 snippets_expected/mcp_target。PIPELINE 将 PD 示例标为示例并链接 Agent。
+
+#### 新增
+
+- 参数化检查全部 14 个文档的 Agent 映射、不得重复旧形式回退规则、Agent 链接与阶段顺序。原 RTL 专用阶段顺序检查由参数化检查覆盖。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py`
+- `test_every_flow_doc_is_mapped_to_its_agent`
+- `test_flow_docs_do_not_restate_loop_back_rules`
+- `test_flow_doc_stage_sequence_matches_the_agent`
+- `test_rtl_flow_doc_and_knowledge_follow_the_agent`
+
+### Issue #117：MCP 配置文字与磁盘文件互相矛盾
+
+#### 修复
+
+- **mcp_configuration 模板把 Wrapper 当 MCP 服务器。** command=wrap-<tool>.sh 违反规则 2；Wrapper 打印一个 JSON 后退出，无法完成 MCP initialize，还会覆盖现有正常配置。现在从磁盘配置提供三种模板：批处理 python3 mcp-adapter.py --wrapper/--tool、会话 mcp-session-adapter.py --tool、记忆 mcp-memory.py。
+- **mcp-openroad.json 曾声称 bash install.sh 会复制模板并替换路径。** 实际任何安装器都未这样做。_setup 改为 infrastructure 的 mcp_configuration 或手工替换，规则 4 同样明确。
+- **可选 mcp-memory.json 曾未纳入路径解析。** 它是目录第 11 个文件，但阶段只列十个，导致 absolute/path 占位保留，语义查询不能工作。规则 1 与 Output Required 现在列出可选且不计数的记忆配置，与其他路径一起解析。指标、validation 规则 4、签核清单、Agent 行为规则 5 明确为“10 个工具服务器”，不能误读成全部 11 文件；memory README 链接该阶段。
+
+#### 新增
+
+- 检查所有 mcpServers 使用 python3 加真实 MCP 服务器脚本，不能使用 Wrapper；不得声称安装器处理配置；阶段列出全部配置且数量等于实际工具服务器数。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py`
+- `test_mcp_configs_run_a_server_script_not_a_wrapper`
+- `test_no_mcp_config_credits_an_installer`
+- `test_stated_mcp_count_matches_the_mcp_directory`
+
+### Issue #83：输入集合失败不应触发 RTL 编辑
+
+原 lint 只有 errors>0 回退 rtl_coding 五次，未检查工具输入。实际陈旧寄存器头文件树位于 include 首位，遮蔽当前版本，产生 19 个重复声明/未声明标识符 fatal 并中止规则检查；只需改一行 filelist。若派到 RTL 编辑，容易误删真实端口。
+
+#### 新增
+
+- input_setup → escalate：工具正确运行但输入（filelist、include、项目/配置、生成头文件、库视图）错误。不是会 regenerate 的 tool_error，也不是从未评估过产物的 functional。加入权威表、决策表、15 个共享块、schema enum/allOf 映射、全部 16 Agent 枚举、MASTER_INDEX 和 memory README。format_version 仍 1.5；旧读取方会按保守规则升级。
+- Loop-Back Rules 不能覆盖 input_setup。它与 Stage Gating 第 4、7 项一样，凭证据立即停止循环，不能因还有迭代次数继续。
+- rtl_coding 与 lint_check 间新增 design_input_check：打印 filelist/配置绝对路径和有序 include；同名不同内容为 ERROR，标出同级版本树、根目录外路径、生成树早于源。FAIL 升级且不修改文件。行为规则 11 在首次 lint、输入改变后及修复请求模式下运行。
+- 纯标准库、只读 check_design_inputs.py 支持 .f 的 -f/-F、+incdir+、-I、-y、$VAR，输出 JSON，FAIL 退出 1。厂商项目文件按相同规则手工检查。
+- lint_check 规则 12–14：中止意味着零规则，数量为 null 而非 0，绝不分类 functional。编辑前归因全部 fatal；混代头文件、同文件双路径、缺 include、非本次写入文件 fatal 为 input_setup。先按输入、库模型噪声、RTL 归因，再看严重级别。Wrapper 非零不等于 lint 失败。
+- 五个 RTL 编写 Agent 的 RTL Lint Gate 第 7 项覆盖中止运行，IDE header 精简加入；可选 hdl-rtl-skill 项移至 8。
+- RTL 记忆增加陈旧头文件、中止 lint、用户覆盖目录绕过管理配置三种模式。已有记忆根仅在文件缺失时复制种子，因此不会自动得到这些新增模式。
+- 新增有效 input_setup 与无效 input_setup_regenerate fixture；19 个文件输入测试检查同名路径、无文件修改、正常设计、嵌套列表、变量、同级版本树及非版本编号实例。
+
+#### 变更
+
+- lint 行拆为四类：输入检查 FAIL 和输入导致/无法归因的中止升级；仅本次写入 RTL 的解析错误且输入检查通过时，以 tool_error 回退，不能为 functional；原 errors>0 行仅用于完整规则检查。这有意偏离 issue “绝不回退 RTL”字面标准，因为 Verilator 会对任何语法错误中止，完全禁止会把每个新代码拼写错误都升级给用户。
+- pipeline 遇子流程 input_setup 直接升级，不开 fix_request，不再派发。
+- RTL 流程文档的阶段列表、图、回退与提示词同步。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_design_inputs.py`
+- `tests/test_agent_contract.py`
+- `test_input_setup_always_escalates`
+- `test_no_loop_back_row_overrides_input_setup`
+- `test_failure_class_enum_lists_input_setup`
+- `test_rtl_design_checks_its_inputs_before_linting_them`
+- `test_rtl_skill_defines_the_input_check_and_aborted_run_rules`
+- `test_rtl_lint_gate_covers_an_aborted_run`
+- `test_rtl_flow_doc_and_knowledge_follow_the_agent`
+
+### Issue #112：修复 Verilator MCP 的 lint 模式
+
+#### 修复
+
+- mode=lint 原先将 --lint-only 交给期望仿真二进制的 wrap-verilator-sim.sh，报告找不到名为 --lint-only 的 binary，根本未调用 Verilator。RTL/SoC 无法使用结构化 lint，只能直接执行。现在调用所配置 sim Wrapper 同目录的 wrap-verilator-lint.sh，旧 MCP 配置无需修改。
+- 缺可执行位的 Wrapper 曾抛出未捕获 PermissionError 并结束服务器循环，现在返回 FAIL 与 chmod +x 指引；旧安装在第九个 Wrapper 出现前已执行过 chmod，因而会遇到此问题。
+- RTL、SoC 曾将 sim Wrapper 用于 lint，mcp-verilator 描述也承诺无法产生的 lint 计数，现已修正。
+
+#### 新增
+
+- wrap-verilator-lint.sh 运行 verilator --lint-only（未提供时补上），统计 %Error、%Warning-<CODE> 为 error_count、warning_count、warnings_by_code。结束汇总 %Error: Exiting due to N 不计发现，记 exited_on=errors/warnings；Verilator 默认警告也退出非零，不能误计一个错误。
+- 干净 lint 无输出；仅至少一个参数指向实际存在设计文件时，才 PASS/verified=true。--version 或全部输入缺失为 WARN/false。
+- Wrapper 与端到端 MCP 测试使用 PATH 上假 Verilator，覆盖干净、警告、错误、警告致命、版本、输入缺失、工具缺失；新增检查确保每个 Wrapper 都有测试。
+
+#### 变更
+
+- Wrapper 数量 8→9，MCP 仍为 10，因为通过现有 Verilator 服务器访问。数量检查将声明与实际 wrap-*.sh 比较。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_wrappers.py::test_lint_*`
+- `tests/test_mcp_adapter.py::test_lint_mode_end_to_end_*`
+- `tests/test_wrappers.py::test_every_wrapper_script_is_exercised_here`
+- `tests/test_agent_contract.py::test_stated_wrapper_count_matches_the_tools_directory`
+
+### Issue #95：区分正常仿真 Wrapper 与错误调用
+
+#### 修复
+
+- wrap-verilator-sim.sh --version 曾把选项当 binary 路径，返回与损坏 Wrapper 相同的 FAIL。现在自行处理 --version、--help、-h，输出用法及 WARN/verified=false，与其他 Wrapper 版本检查一致；不存在或不可执行的实际路径仍 FAIL。部署规则 4 明确该行为，并新增相应测试。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_wrappers.py::test_verilator_sim_answers_version_and_help_itself`
+- `::test_verilator_sim_still_fails_on_a_missing_binary`
+- `tests/test_agent_contract.py::test_smoke_test_rule_covers_the_wrapper_that_takes_a_binary`
+
+### #107 后续：回退次数上限也须约束收敛
+
+#### 新增
+
+- Stage Gating 第 7 项“重试必须朝同一目标取得可测进展”同步到除 pipeline 外的 15 个 Agent（pipeline 自有跨领域分歧检查）及 IDE header。次数上限无法处理结果更差、完全不变或改变检查目标而通过的情况；原先仅 RTL Lint Gate 和 verification/formal/dft 有防护，架构、综合、STA、PD、编译器、固件、基础设施没有。FPGA sw_validation 两行与 STA path_analysis 甚至不限次数。
+- 每次回退比较实测：回归则恢复前一产物，仍计一次；连续两次相同则无进展，提前升级；通过放宽约束、加豁免/例外、弱化检查、改行为压下工具而得到的“通过”不算通过。仅目标本身错误且引用来源、记录原因时可改目标，不能修改其他领域所有的目标。
+- 防护优先于行中剩余迭代：上限是最多尝试，不是必须花完。Failure Classification 明确 Stage Gating 第 4、7 项凭证据停止循环。
+- 提前停止记录实测 failure_class，不是未达到上限的 resource_limit；无需新增 enum/schema。新增测试保护关键条款。
+
+#### 变更
+
+- RTL Lint Gate 第 6 项成为第 7 项的 RTL 实例，不再把无进展路由到上限耗尽流程而误记 resource_limit。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_progress_guard_present_in_stage_gating`
+
+### #107 后续：DFT、验证、形式验证的编码与 RTL 交接规则
+
+#107 将这三个领域另行处理。它们不属于可综合 RTL 编写 Agent，所以不加 RTL Lint Gate，但仍会写/审查代码，并接收 RTL 未证明事项。
+
+#### 修复
+
+- formal Skill 曾要求“修 RTL 后重跑 FPV”，而 Agent 要求 fix_request、不本地重试；仅加载 Skill 的 IDE 会擅自改 RTL。cex_analysis 与结果表现在交回 RTL 流程。
+- DFT 单条扫描 DRC 回退曾覆盖生成时钟、不可控异步复位等插入无法修复的问题；拆为可插入修复者重试，设计问题升级 RTL。
+- rtl-design Skill 明确测试平台不在范围，不能只依赖 Agent 豁免，因为 Copilot 将 Skill 应用于所有 .sv。
+- 假定正确的形式属性不再计结果，记 UNVERIFIED，不计 PROVEN，P0 未验证阻止签核。
+
+#### 新增
+
+- rtl.unverified[] 交接，结构为 module/category/claim，包括依赖恢复断言的每个 FSM；Agent 写入 design_state，formal property_planning 与 verification test_planning 必须逐项对应属性、测试或说明理由。缺失键为未报告，非无需检查。
+- fix_request 可选 suspected_rtl.basis=traced/hypothesis，兼容 schema。猜测或未提供依据时，RTL 修改前先证实原因。
+- verification：测试平台 default_nettype、命名连接、参数类型、带符号字面量陷阱、!== 对 X 比较；ready/valid 驱动及断言合约；困难边界、参数边界、DUT/测试平台现象排查表。
+- formal：lint 不能证明的 ready/valid、FSM 可达/退出/非法恢复、仲裁、FIFO、算术范围、复位、死锁目标表，及边界参数证明规则。
+- DFT：插入前扫描就绪审查，RTL 交付逻辑遵守 rtl-design 规则；RTL 增加对应扫描就绪规则。
+- 各域禁止弱化检查取得通过：不放宽 scoreboard/豁免断言，不排除合法激励，不通过排除扫描触发器清 DRC。
+- 新增合约与 schema 测试。大多数内容来自 hdl-rtl-skill 的审查、自评、调试流程；!== 和测试平台末尾恢复 default_nettype wire 为本次新增。
+
+**相关测试标识（保留原名）：**
+
+- `test_planning`
+- `tests/test_agent_contract.py`
+- `::test_formal_skill_hands_rtl_bugs_to_the_rtl_flow`
+- `::test_scan_drc_design_fault_escalates_instead_of_retrying_insertion`
+- `::test_rtl_unverified_handoff_has_a_producer_and_consumers`
+- `::test_suspected_rtl_schema_carries_basis`
+- `::test_rtl_design_scopes_out_testbenches`
+
+### Issue #107：安全 FSM 恢复与 slang 完整检查
+
+#### 修复
+
+- 综合安全规则 3 原先强制 unique case，无法与 FSM default 恢复分支一致：unique 声称非法状态不出现，default 则恢复非法状态，slang 报 -Wcase-redundant-default。现在禁止 casex、无理由 casez、full_case/parallel_case；规则 7 默认普通 case+default 恢复，或无 default 的 unique case 配恢复断言，不能同时用两者。
+- ASIC initial 禁令新增唯一例外：translate_off/on 内 initial+$fatal 的 elaboration 参数断言，用于拒绝非法配置，如深度 12 的 Gray FIFO。
+- slang 原无完整调用，记忆命令缺 Weverything。lint-only 跳过 elaboration，漏掉 ERROR 级锁存器及多驱动；Wall 也非 slang 选项。Skill、Agent、记忆统一 slang -Weverything --ignore-unknown-modules，禁止 lint-only。依据 #107 记录及 hdl-rtl-skill 生成警告表，本次未重跑验证这两个工具行为。
+- HLS 生成 RTL 只检查正确性，不强制命名风格，不手改生成代码；锁存器检查必须 slang 完整 elaboration。
+- fix_request 关闭前必须 lint 通过并在 diff_summary 记录；pipeline 说明缺 lint 结果时如何处理。
+
+#### 新增
+
+- 共享 RTL Lint Gate 同步到 rtl-design、fpga、soc、memory-ip、hls；除 RTL 外四者不加载 RTL Skill，此前仅有“lint 干净”目标而无规则。覆盖 slang、filelist、stub、证据层级及回归/无进展/意图偏移。
+- lint_check 规则 6–11 供仅加载 Skill 的 IDE 使用，BLOCKER/HIGH→ERROR、MEDIUM→WARNING，保持 lint_waivers 有效。
+- 新 RTL 用项目风格，已有文件按其风格；_i/_o 可选，默认约定不变。
+- FPGA 编辑后重新 lint，initial 仅 FPGA 文件，原语为 stub；SoC 命名端口、完整列表、黑盒 IP 为 stub；memory Wrapper RTL 遵守规则，仿真行为模型豁免。
+- hdl-rtl-skill 为可选配套，不是依赖。其仅 Claude Code 且需 symlink/手工 hook，强依赖会使其他 IDE 无规则。规则吸收到本项目，可用时使用 runner、模板、目录，不可用时静默跳过。
+- 新增 slang 调用、五个 Agent 门控、FSM/参数安全规则回归检查。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_slang_is_never_invoked_with_lint_only_or_wall`
+- `::test_rtl_lint_gate_present_in_rtl_authoring_agents`
+- `::test_rtl_design_rules_do_not_contradict_safe_fsm_recovery`
+
+### Issue #76：跨轮次长任务的运行与交接
+
+#### 新增
+
+- 全部 16 Agent 及 IDE header 新增共享 Long-Running Jobs。此前仅 PD 说明 ORFS/LibreLane 完成后读哪些文件，没有后台、轮询、区分慢与卡死、超出轮次预算的交接规则。固件 Agent 实测忙等后台构建耗费约 250k token，未完成验证却交付失败套件，而其签核标准要求 24 小时压力测试。另一实例 Verilated SoC 编译约 20 分钟日志不变但 cc1plus CPU 为 99.9%，说明静默不等于挂起。
+- 后台启动并记录任务 ID/日志，按任务时间尺度轮询，先查存活再判断静默日志卡死；超预算则交接任务 ID、日志、调用方式及剩余阶段；未读取结果不能报告。刻意不提高 maxTurns，因为缺等待协议只会延长阻塞。新增关键条款测试。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_long_running_jobs_guidance_present`
+
+### Issue #102：LEC 不再回退到无法修复网表的阶段
+
+#### 修复
+
+- lec_run 只比较 RTL/golden 与综合网表，不重新生成任何一方。unmatched points 曾回退 lec_run 三次，输入不变必然重复失败。这与 #86 一样，虽共享规则要求上游故障交回，但原行仍授予三次迭代，按优先级必须花完。现立即升级，指出不匹配及须由综合产生修复网表。
+
+#### 新增
+
+- 新增检查防止该行再次回退 lec_run。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_lec_mismatch_escalates_instead_of_looping_back_to_lec_run`
+
+### Issue #94：回退失败具有独立 decision 值
+
+#### 修复
+
+- history decision 原只有 proceed/escalate/abandoned/await_approval，无“失败后回退”的常见非终止结果。每阶段必须写记录，原只能错误地选 proceed，与实际相反。参考主机两次 validation 因关键工具缺失回退安装，两次均记 proceed；pipeline 无法区分干净通过与此类失败。
+- 全部 15 个领域 Agent 枚举新增 loop_back。pipeline 保持较窄 proceed/escalate，说明其只在 signoff_or_escalate 的两个终止分支写记录，内部 check_iteration_cap 回退不单独写。
+- failure-classification 共享块明确何时写 loop_back 而非 proceed。
+
+#### 新增
+
+- 对所有含 Loop-Back Rules 的 Agent 参数化检查 decision 枚举包含 loop_back。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_decision_enum_lists_loop_back_for_agents_with_loop_back_rules`
+
+### Issue #98：模块版本选择
+
+#### 修复
+
+- tool_discovery 步骤 A c 和 module_discovery 规则 9 原称“最高 semver/字典序”，把不同排序当相同。13 版本 Python 树中最新为 3.14.6，字典序最大却为第四旧的 3.9.7，因为第二段 9>1。步骤 A 优先于 PATH，曾将主机 3.12.2 替成旧模块并保持后续五阶段；load-modules 也选错。现在两处引用唯一 Module version selection。
+- module avail 的 default 注释原被丢弃；3813 项中 372 项有注释，现在捕获并优先采用站点默认。
+- dev/test/debug/rc/alpha/beta/snapshot/nightly 任一片段标记为非发布版本，有发布版时不自动选，但保留候选。3.12.2.R10 和 3.9.7n 等站点修订/补丁仍属发布版。
+
+#### 变更
+
+- 结果是“主机应使用的版本”，不保证最新；站点默认通常是经过验证的旧版，参考主机所有检查工具均如此。
+- module-status 逐工具记录 selected、selected_basis（site_default/highest_release/highest_prerelease）、candidates，使选择可审计；highest_prerelease 应少见。
+- load-modules 行末注明 selected 依据与 alternatives，摘要打印依据/候选数。
+- 记忆建议仅在站点默认不适合具体流程时固定版本，不再常规弥补字典序错误。
+
+#### 新增
+
+- 四项经变异检查的断言：调用点不能字典序排序、规则唯一且双方引用、默认优先且列全非发布标记、schema 有三个选择字段。
+- 实测校验修正比较器：额外非数字段若排低会错误认为 3.12.2.R10<3.12.2。5.24 优于 5.24-dev 已由非发布排除解决，发布池剩余附加段是修订，故共同段相等时更多段更高，可用普通 tuple 比较。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_module_version_selection_is_specified`
+
+### Issues #91、#90：环境验证基线与 Python 检测
+
+#### 修复
+
+- #91：tool-manifest 有五处引用，却无 schema/创建方。不是最初遗漏，而是 f1124c5 重写模块支持时删除了创建规则与 Output Required，仍保留“比较/已写/已更新”的引用，导致两次运行编造不兼容结构。现在明确创建方及 schema。
+- 规则 2 曾与同阶段自身输出比较，任何运行都无基线。现与 tool_discovery 写入、module_discovery 原地更新的唯一 tool-status 比较，明确不比较自身输出；分歧 WARN 不降级，保持 tool-status 只读。
+- #90：声称与 discovery Python 检测相同，实则去掉 cocotb/uv 的 bin_dir→PATH 回退，并在 system 类型构造 discovery 从不使用的 bin_dir 路径。现在完全遵循规则 3；openlane 原无回退，保持不变。
+
+#### 变更
+
+- tool-manifest 是验证凭据，不重复 tool-status 已有逐工具字段及 python_env。只记录 Python 存活、Wrapper 可执行位、MCP 存在性、方言冲突及成员、签核结论；tool_status_source 引用原文件。记录模块可能已卸载或 exec 不再匹配。
+- 有意不恢复原安装规则 6，因为它依赖执行单一安装脚本再调查，现在只生成逐工具脚本、从不执行。
+- MASTER_INDEX 基础设施产物补 tool-status、module-status。
+
+#### 新增
+
+- custom/module 的包从 PATH 回退解析、位于当前解释器 bin 之外时 WARN，可能解释器不匹配；system 不警告。manifest 的 python_packages.resolved_via 使其可审计。issue 提议警告或镜像检测链，两者互补。没有 Wrapper/MCP 使用 PYTHON_BIN_DIR、uv、cocotb-config、openlane，因此不能以“Wrapper 找不到”为理由；真实风险是解释器不匹配。uv 独立安装器常装在另一前缀，参考主机如此，旧规则误报缺失，新规则 FOUND/path 并 WARN。
+- 四项变异检查：承诺 JSON 产物必须定义/schema；不得比较自身产物（否定语句不误报）；不得禁止 discovery 已支持的 PATH 回退；manifest 不重复逐工具字段。
+
+#### 后续范围
+
+- #104 的 QoR 声明问题独立处理；另行记录索引指向不存在基础设施文档的问题。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_environment_validation_artifacts_are_defined`
+
+### Issues #92、#86：按命令匹配关键工具，移除无效回退
+
+#### 修复
+
+- #92：关键工具集合曾按 Yosys/Verilator/OpenROAD/OpenSTA 产品名匹配，但条目按命令为键，OpenSTA 是 sta。找不到条目不等于工具缺失，导致签核静默通过。现在在 validation 顶部统一定义 yosys/verilator/openroad/sta，三处规则均引用命令；#87 曾增加第三处副本，故须单一规则。
+- tool 与 command 原未解释，现在明确二者都是可执行命令名。仅针对两个 status 文件；Wrapper 的 tool 有意为 opensta/verilator-sim 标签，用于识别记录生成方，不能改为命令。
+- Formality 主命令 #82 已改 fm_shell，但模块映射和 Agent 仍为旧 formality，导致模块升级静默遗漏。现在键改 fm_shell，仍匹配产品命名 formality、synopsys/formality。七个专有主命令复查仅此不一致。
+- #86：validation 因缺关键工具回退安装两次永远无效，安装仅生成脚本而不运行，MISSING 输入也不改变。现立即升级，说明脚本位置、重跑步骤及为何重试无效，防止再被改回循环。与 python3 缺失及需 module load 两行一致；pending_approval 不设置，按 Stage Gating 只用于门控。
+
+#### 变更
+
+- validation 规则 5 不只写 FAIL，也写完整升级操作及理由，避免 Skill 与 Agent 各持一半合约。
+
+#### 新增与后续
+
+- 四项变异检查覆盖集合命令键、表中存在、缺工具不能回退安装、专有主命令均有模块映射。
+- 回退 failure_class 标注留给 #93，当时所有 83 行尚无 history 分类，不能单独创造第三种格式。LEC 同类无效回退、LLVM 产品名变量键、validation 无 QoR 分别另立问题。历史 #87 产品名记录保留，检查仅限 plugins。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_critical_path_tools_are_keyed_by_command`
+
+### Issue #87：模块系统检测与列表来源
+
+#### 修复
+
+- 原 `$MODULESHOME` 已设或 modulecmd 在 PATH 就一律 tclmod，仅有 tclmod/none 枚举，站点 Wrapper 被误标。现在需 modulecmd 才初判 tclmod，只有 MODULESHOME 则 custom，并记录 module_system_detail。
+- 空 tools_via_modules 与列表未运行无法区分。module 常为 Shell 函数，非交互 bash 实测返回 127；两次运行误记 tclmod/[]，静默丢失仅模块提供的七工具（verilator、iverilog、klayout、vsim、innovus、pt_shell、formality），随后错误 FAIL。现在 module_listing 记录是否获得列表；只有 LISTED 时空列表才表示没有。
+- 分类仅为初始推断，成功调用可升级：init/bash 获得列表证明 tclmod，即使 modulecmd 未在 PATH。由探测而非变量决定。
+- load-modules.sh 省略条件由 module_system=none 改为“无工具符合”，none 只是其中一种情况。
+- 映射不能任意子串匹配。3812 项实测误匹配以 slang 结尾的优化工具，以及版本含 python2、名称含 python3 的 GUI 包；后者可能取代解释器并保持全程。现在只匹配完整 / token，含 / 模式须连续匹配，排除两类误报，留下 12 个真实工具。
+- 条目不只 name/version，可为 klayout/adi/0.29.0 或带 adi default 注释。去末尾注释后取最后 / 段为版本，保留完整模块名，不能误把 adi 当版本。
+
+#### 新增
+
+- 五级调用阶梯：自身 Shell、modulecmd bash avail、init/bash、module.sh、直接 Wrapper；成功调用原样记 module_invocation。参考主机第 4 级 159.5 秒返回 0、3813 项，真正找回七工具。
+- 成功须退出 0 且至少一条条目格式行。第 5 级实测退出 1，用法中也有 modulename/scope 等形似条目，单看形状会误报三个模块；退出 0 无列表同样失败。
+- timeout 包 Shell 而非函数，300 秒预算；timeout 60 module avail 返回 127。每级用 timeout 300 bash -c，并 stdin=/dev/null，避免提示阻塞。遍历 NFS modulefile 可耗 159.5 秒并有陈旧路径噪声，短超时会误判。
+- WARN 区分无模块系统与检测到但无法列出，后者给出分类/证据/失败及 bash module.sh 或 tcsh module.csh 指引。后者且关键工具仍 MISSING 时，以 tool_error 在本阶段升级，不能数阶段后误报工具未安装。
+- 新 module_listing_ok；custom 也计 module_system_detected，只有列表成功时 tools_found_via_modules=0 有意义。新增 enum、记忆副本、schema、空列表语义检查。
+
+#### 变更
+
+- Python 步骤 A 引用相同检测与阶梯，UNAVAILABLE 时明确回退 PATH，但不压下 module_discovery WARN。
+- 摘要打印分类/证据/获胜调用；未调查工具数打印 not surveyed 而非 0。
+- 发现的字典序版本问题另立 #98，custom 收到 TCL modulefile 却无警告另立 #99。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_module_system_records_a_custom_wrapper_and_a_listing_status`
+
+### Issue #85：每个编排器都能读取重试映射
+
+#### 修复
+
+- 16 个编排器中的 15 个行为规则曾要求从 pipeline-orchestration Skill 推导 retry_strategy，却未声明该 Skill，仅 meta 所有者可读。1.5 要求每个 history 包含策略，pipeline 依此选择重试/跨域/升级，靠每次推测会静默漂移且违反源读取合约。
+
+#### 变更
+
+- failure-classification 共享块同步到 15 个领域 Agent，含当时 10 行映射及 regenerate/refine/escalate/none 含义。行为规则改指向本地表。没有将 494 行 meta Skill 加载到每个 Agent，因为只需一张表，且其中 pipeline 专属 escalation 所有权会引起混淆。
+
+#### 新增
+
+- 检查共享表与权威 Skill 表一致（sync --check 本身只比较 Agent 与共享文件）；检查写策略的 Agent 必须携带表或声明 Skill，未声明不能引用。后一检查发现 verification 中不同措辞的重复陈旧引用。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_retry_strategy_mapping_matches_the_authoritative_table`
+- `tests/test_agent_contract.py::test_retry_strategy_mapping_is_reachable_by_the_agent`
+
+### Issue #82：专有工具版本与命令方言模型
+
+#### 新增
+
+- tool-status 每项增加 role/dialect：功能分组与接受的命令/源语言词汇。开源/专有均记录；无同角色同类工具时为 null，不能编造而造成假冲突。module_discovery 原样保留。
+- 实际安装上测量免许可证版本探测：vcs -ID（只取 Compiler version，绝不存 FLEXlm host ID）、xrun -version、dc_shell -version、pt_shell -version、fm_shell -version，1–26 秒、退出 0、有指定行、无许可证队列。Questa/Innovus 保留 UNVERIFIED，不能猜选项而启动交互或占许可证；参考主机分别缺 libXext 与构建授权过期。
+- 超时 60 秒：Cadence Common UI 启完整 Shell，genus 实测冷 26 秒、热 12 秒，10 秒会误判。
+- 退出 0 但无指定行仍空 version 并 WARN：innovus 授权过期、voltus 平台损坏、vsim 共享库失败均退出 0 无版本。只有真正找到行才记录。
+- Formality 主命令 fm_shell，formality 为近期安装缺失的旧 GUI 备用命令。
+- validation 对同 role 不同 dialect 且至少一个 PROPRIETARY_ONLY 的组，仅每角色一条 WARN，列出所有成员；dialect_conflicts 计角色而非工具对。此检查可提前发现 Xcelium 编译行误用于 VCS、静默丢弃八开关和 access 再失败的问题；限制专有工具参与以免普通双开源仿真器遍地产生警告。
+- 增加 proprietary_versioned、dialect_conflicts 指标及合约测试，防止专有工具缺角色/方言、已验证探测丢命令或 schema 丢字段。
+
+#### 变更
+
+- discovery 规则 6 从仅 FOUND 版本扩展到 PATH 中有已验证探测的 PROPRIETARY_ONLY，避免该类 version 永远空。
+- 基础设施记忆 tool_versions 从仅 FOUND 扩展到所有非空 version 的 FOUND/FOUND_PREFER_MODULE/PROPRIETARY_ONLY，后续可按精确构建查询选项。
+
+#### 后续范围
+
+- 主动启用编译冒烟检查另立 #88，专有编译 Wrapper 另立 #89。当时 Wrapper 仍 8、MCP 10；扩展原七工具及验证本机无法验证的 Questa/Innovus 选项另立 #84。
+
+**相关测试标识（保留原名）：**
+
+- `tests/test_agent_contract.py::test_proprietary_tools_carry_role_and_dialect`
+
+### feat/reporting-contract branch
+
+#### 新增
 
 - **全部 16 个 Orchestrator**：新增 `## Reporting Contract` 章节（issues #75、#78），内容统一从 `tools/agent_shared_sections.md` 同步。过去 sign-off 判据只是声明式属性，没有规则要求这些判据必须经过实际观测，而不是由 Agent 自行声称。新契约要求：运行任务中点名的每个 gate 并引用其准确输出；本次会话没有实际运行的 gate 绝不能报告为通过（应报告 NOT RUN 并说明原因）；exit code 为 0 但输出为空或无法解析不能算 PASS；结束前重新核对交付物清单；明确区分 measured value 与 inference；对测试依赖的所有 generated artifact，在每个实际运行环境中验证其来源；只有全部判据都是 measured-PASS 时，才能把 `signoff` / `signoff_achieved` 设置为 true。
 - **Codex、Gemini、Copilot header**：在 `## Verification and Reporting` 中加入上述契约的 5 条精简规则。
 - **Wrapper JSON 的 `verified` 字段**：当 `status` 基于工具输出中成功解析出的结果，或明确失败证据时为 `true`；当工具 exit 0 但没有可识别结果，或工具根本没有运行时为 `false`。Infrastructure Skill 的 wrapper schema 已补充说明。
 - **测试**：`tests/test_wrappers.py` 通过 bash 使用 fake tool 运行每个真实 wrapper（Windows 默认跳过，除非 `RUN_WRAPPER_TESTS=1`）；`tests/test_mcp_adapter.py` 覆盖 adapter 对 wrapper 输出的解释逻辑。
 
-### 变更
+#### 变更
 
 - **行为变化——8 个 EDA wrapper 不再在缺乏证据时报告 `PASS`。** 过去状态只根据 exit code 和 ERROR/WARNING 行计算，因此工具 exit 0 且输出中没有 wrapper 认识的内容时也会被判为 `PASS`。现在 wrapper 必须从输出中解析出有效结果，否则返回 `WARN`、`verified:false`，并在第一条 warning 中明确说明。证据仍使用 wrapper 已有的字段，不新增 log marker。安静运行，例如 `yosys -q` 或仅执行 `--version` 的 smoke test，过去返回 PASS，现在返回 WARN。exit code 本身仍原样透传。
   - `wrap-verilator-sim.sh`：只有出现 `TEST PASSED` 才能判定 `PASS`。exit 0 时即使出现 ERROR 行也只给 `WARN` 而不是 `FAIL`，因为仿真日志中可能出现诸如 “Error count: 0”。
@@ -17,9 +482,9 @@
 - **行为变化——`mcp-adapter.py`**：过去 exit 0 时，空 wrapper 输出会被判 PASS，非 JSON 输出判 WARN，无合法 `status` 的 JSON 也会继续透传。现在这三类情况全部返回 `FAIL` 且 `verified:false`，因为 wrapper contract 要求每次运行都必须输出 JSON。合法 wrapper JSON 仍保持原样透传。只有 `status == "FAIL"` 时 `isError` 才为 true。
 - **`mcp-session-adapter.py`**：`query_drc` 在无法解析 count 时返回 `drc_total:null`，不再返回 0。
 
-## [Unreleased] — feat/shared-orchestrator-guards 分支
+### feat/shared-orchestrator-guards branch
 
-### 新增
+#### 新增
 
 - **共享 Orchestrator 章节，从单一源同步**（issue #77）。`tools/agent_shared_sections.md` 保存所有 Orchestrator 必须逐字一致的共享规则；`tools/sync_agent_sections.py` 将内容写入每个目标文件的 `BEGIN SHARED` / `END SHARED` 标记之间。`--check` 用于检测 drift 并在 CI 中运行；`--list` 显示每个共享 block 应写入哪些文件。脚本会保留原文件换行风格，因此 CRLF 工作区和 LF CI 环境可以得到一致结果。对应测试位于 `tests/test_sync_agent_sections.py`。
 - **15 个 Orchestrator**：新增 `## Stage Gating and Escalation`。规则包括：给 stage 设置状态前必须先读取工具真实结果；遇到 FAIL 必须应用 loop-back，不能直接越过；loop cap 用尽后必须停止并携带状态/根因升级；如果故障来自上游 artifact，则停止本域循环并交回。过去这些 guard 只零散存在于 `pd`、`rtl-design`、`memory-ip`、`architecture`、`infrastructure` 的一两个规则中，另外十个 domain Orchestrator 对达到最大迭代次数完全没有统一规则。由于 `pipeline-orchestrator` 本身负责 dispatch，并拥有 `pending_approval` 的 `escalation` 类型，因此不包含该共享段。
@@ -27,7 +492,7 @@
 - **Codex、Gemini、Copilot header**：增加精简版 `## Verification and Reporting`。Copilot/Codex 安装只接收 Skill，不会安装 Agent 文件。
 - **`.gitattributes`**：加入 `* text=auto` 和 `*.sh text eol=lf`，保证 Windows checkout 后 shell script 仍可正常运行。
 
-### 变更
+#### 变更
 
 - **统一 `pending_approval` 所有权。** Pipeline Skill 一度规定 domain Orchestrator 只能设置 `type:"checkpoint"`，但又要求 constraint validation 使用 `type:"constraint_gap"`；同时 15 个 Orchestrator 里还有一句话暗示任何 escalation 都可设置 `pending_approval`。现在 domain Orchestrator 只在两个 gate 使用它：checkpoint 和 constraint validation。loop cap 耗尽或上游 fault 的 escalation 只写 terminal `history[]`，其 `reason` 必须包含 `failure_class` 和用户需要补充的内容。`type:"escalation"` 仍由 `pipeline-orchestrator` 独占。Schema 不变。
 - `pd`、`architecture`、`infrastructure`、`rtl-design`、`memory-ip` 中已有的一次性 guard 保留原 rule number，现在改为引用共享章节。
@@ -35,15 +500,15 @@
 - **`CONTRIBUTING.md`**：补充同步步骤；修正 “Adding a New Skill” 和本地校验示例中的错误路径（过去误写成不存在的根目录 `skills/`）；修正数量约束，Skill 数可以大于 Agent 数。
 - 修正 `CONTRIBUTING.md`、`docs/MASTER_INDEX.md`、`memory/README.md`、`FUTURE_WORK.md` 中过时的数量统计。
 
-## [Unreleased] — fix/signoff-achieved-template 分支
+### fix/signoff-achieved-template branch
 
-### 修复
+#### 修复
 
 - **13 个 Orchestrator**：`experiences.jsonl` 模板原来写死 `"signoff_achieved": true`，但外围规则又要求 escalation/abandonment 时也写该记录（issue #74）。`distill.py` 使用 `is True` 统计 sign-off，因此默认 true 会把失败 run 错记成成功。模板现统一默认 false，与 `pd` 和 `infrastructure` 保持一致，并在模板下直接说明什么时候才允许改为 true（`soc` 过去没有该说明）。使用 literal `false`，而不是 `"<true|false>"` 字符串，因为字符串永远不会满足 `is True`。`memory/README.md` 的 canonical schema 也同步修正。
 - **8 个 Orchestrator**（`dft`、`firmware`、`fpga`、`memory-ip`、`rtl-design`、`sta`、`synthesis`、`verification`）：过去写着 “append one JSON line”，同时模板又没有 `run_id`，与 `memory/README.md` 及各自 Skill 自相矛盾。现在统一按 `run_id` upsert。`fpga` Skill 曾有一套独立 append-only schema（`stage`、`outcomes`、`metrics`、`tools`），`distill.py` 无法从中读取 metrics，现在改为引用共享 record schema。README 也不再称该文件为 append-only。
 - **6 个 Orchestrator**（`architecture`、`dft`、`firmware`、`formal`、`fpga`、`hls`）：history 中 `decision` enum 漏了 checkpoint gate 实际会写入的 `await_approval`，现已补齐。
 
-### 新增
+#### 新增
 
 - **`tests/test_agent_contract.py`**：对 Agent/Skill Markdown 进行静态检查——禁止硬编码 `"signoff_achieved": true`、禁止 append-only 表述、每个 experience 模板都必须包含 `run_id`，以及任何会写 `await_approval` 的 Agent，其 `decision` enum 都必须列出该值。
 
@@ -67,7 +532,7 @@
 - `distill.py`、`tools/qor_trends.py`、`memory/README.md`、`memory-keeper/SKILL.md` 注册新 domain；`projected_repair_yield_pct` 加入 `HIGHER_IS_BETTER`。
 - 安装器更新：`install.sh`、`install.ps1`（plugin list、dir map、`enabledPlugins`、OpenCode mode map、completion message）以及 `bin/install.mjs`（`OPENCODE_MODE_DISPLAY`）。
 
-## [Unreleased] — feat/semantic-experience-search 分支
+## [1.7.0] — feat/semantic-experience-search branch
 
 ### 新增
 
@@ -84,8 +549,7 @@
 
 ### 新增
 
-- **自动检测已安装的 AI coding Agent**：安装器不带 `--ide` 时，会检测 5 类支持的 Agent（Claude Code、OpenAI Codex、OpenCode、Gemini、GitHub Copilot），打印检测结果和每个目标的写入位置，确认后安装。如果对应 CLI 在 `PATH` 中，或者其配置目录存在（`~/.claude`、`~/.codex`、`~/.config/opencode`、`~/.gemini`），就视为已安装；Copilot 为 project-scoped，通过 `gh` / `copilot` CLI 检测。新增 `bin/detect.mjs` 作为检测规则的单一来源。
-- 增加 `--yes` / `-y`（sh、mjs）和 `-Yes`（ps1），可跳过确认；在非交互 shell（CI、pipe）中也会自动继续。
+## [1.5.11] — feat/agent-auto-detect branch
 
 ### 变更
 
@@ -97,13 +561,7 @@
 
 ### 新增
 
-- **`failure_class → retry_strategy` 映射**（FUTURE_WORK item 10）：每个 failure 都映射为恢复策略 `regenerate | refine | escalate`，使 retry 行为由结构化字段决定，而不是解析 prose。权威映射定义在 `plugins/meta/skills/pipeline-orchestration/SKILL.md` 的 `### Failure Classification & Retry Strategy`，继续复用已有 10-value `failure_class` enum，不引入新 taxonomy。早期草案中的 4 类（`invalid_rtl | verification_failure | interface_mismatch | incomplete_spec`）被记录为 alias。
-  - **`regenerate`**：丢弃错误 artifact，从干净状态重新运行生成 stage（`drc_lvs`、`connectivity`、`tool_error`）。
-  - **`refine`**：保留 artifact，针对已识别的具体 defect 携带详细反馈重新运行（`functional`、`timing`、`power_area`、`coverage_gap`）。
-  - **`escalate`**：停止并请求人工输入（`spec_gap`、`resource_limit`）；`none` 表示无需 retry。
-- **`retry_strategy` history 字段（`format_version "1.5"`）**：每个 `history[]` entry 都带有由 `failure_class` 确定的 `retry_strategy`。pipeline-orchestrator 决策表增加该列，并把它作为粗粒度 pre-filter；原有 `confidence` / `suggested_next_step` 优先级仍保留，`resource_limit` 和 low confidence 始终升级。
-- **可执行 escalation guidance**：当策略为 `escalate` 或达到最大迭代上限时，`pending_approval.reason` 必须包含 `failure_class` 以及用户需要提供什么才能解锁流程。
-- **更新示例 fixture**：`design_state.checkpoint.json` 和 `design_state.fix_request.json` 升级到 `"1.5"`，所有 history entry 增加 `retry_strategy`；checkpoint fixture 还增加一个 `timing/refine` 的 `synth_check` loop-back 示例，用于覆盖非 none 路径。
+## [1.5.3] — feat/structured-failure-handling branch
 
 ### 变更
 
@@ -116,11 +574,7 @@
 
 ### 新增
 
-- **Infrastructure Orchestrator Memory**（FUTURE_WORK item 4）：在 `memory/infrastructure/` 下以 opt-in、environment-keyed 方式持久记录 tool version 和 setup 配置，继续使用 `knowledge.md + experiences.jsonl` 两级 Memory。
-  - **Opt-in，默认关闭**：只有 `design_state.pipeline_config.track_infrastructure == true` 或调用时带 `--track-memory`，infrastructure-orchestrator 才读写 `memory/infrastructure/`。未设置时完全不做 I/O，保持过去 memory-free 行为。这符合原来暂缓的理由：infra state 强依赖具体环境，而 lockfile 仍是版本的主要 source of truth。
-  - **Environment-keyed record**：每条 experience 携带环境 fingerprint（`host`、`os`、`os_version`、`arch`）以及 `environment_validation` 阶段采集的 `key_metrics.tool_versions`。价值在于跨 session 定位重复 version mismatch。Record 按环境区分，而不是设计，`design_name` 通常为 null。
-  - **初始化 `memory/infrastructure/knowledge.md`**：Tier-2 summary 预置环境不匹配失败模式，例如 Verilator <5.0 不支持 `--timing`、OpenROAD nightly 与 release ABI drift、module-unload 后 python3 fallback，以及常用 flag/install note 和工具 quirks。
-  - **完整接入 memory-keeper**：`infrastructure` 已注册到 `distill.py` 的 `VALID_DOMAINS`、`METRIC_FIELDS`（`tools_detected`、`tools_missing`、`wrappers_deployed`、`mcp_servers_configured`）以及 memory-keeper Skill Domains 表，可通过 `/chip-design-infrastructure:memory-keeper --domain infrastructure` 将环境经验蒸馏到 `knowledge.md`。
+## [1.5.3] — feat/infrastructure-memory branch
 
 ### 变更
 
@@ -131,12 +585,7 @@
 
 ### 新增
 
-- **从 `design_state.constraints` 动态加载 constraint**（FUTURE_WORK item 8）：`design_state.constraints` 现在是设计约束的唯一可信来源，包括 clock target、area/power budget、WNS/TNS、utilization、IR-drop、leakage、coverage、fault coverage、HLS II/latency 和 FPGA resource limit。11 个 constraint-bearing domain Skill 都改为引用具体 key，而不是硬编码 literal；原 literal 只作为 backward-compatible 默认值保留。
-- **完整 `constraints` schema（`format_version "1.4"`）**：权威 schema 统一定义于 `plugins/meta/skills/pipeline-orchestration/SKILL.md` 的 `### Constraints Schema`，分类包括 `clock`、`pvt_corners[]`、`timing`、`area`、`power`、`coverage`、`dft`、`hls`、`fpga`。所有非 null 默认值都与过去 Skill 中的 literal 一致。
-- **Stage-entry constraint validation**：每个需要 constraint 的 Orchestrator 在第一个消费约束的 stage 读取 `design_state.constraints`；若其 required subset 中某 key 缺失或为 null，则原子设置 `pending_approval.type="constraint_gap"` 并停止。Optional constraint 缺失时采用 schema default，同时写 WARN history。Required subset：`clock.clk_mhz`（architecture、rtl-design、synthesis、sta、pd、soc、fpga）；`area.area_um2 + power.power_mw`（architecture、synthesis、pd）；`pvt_corners` 至少一项 V/T 非 null（sta、pd）；HLS 至少 `hls.target_ii` / `hls.target_latency_cycles` 之一非 null。
-- **`pending_approval.type:"constraint_gap"`**：扩展现有 pending_approval，用于 constraint 缺失；pipeline-orchestrator 会输出类型专属提示，让用户补齐 constraint 并清空 pending_approval 后继续。
-- **`constraint_ref` tagging**：`history[]` entry 会标出 QoR 判断使用的 dot-path key，例如 `timing.wns_ns_target`、`power.power_mw`、`clock.clk_mhz`，使每次 stage decision 都能追溯到对应 constraint。
-- **更新 `design_state.checkpoint.json` 示例**：升级到 format_version 1.4，为 `example_dsp_core` 加入完整 constraints（500 MHz、28nm），并在 `perf_modelling`、`power_area_estimation`、`module_planning`、`synth_check` history 中使用真实 dot-path `constraint_ref`。
+## [1.5.2] — feat/central-constraint-handling branch
 
 ### 变更
 
@@ -148,7 +597,7 @@
 
 ---
 
-## [Unreleased] — feat/approval-gates-traceability 分支
+## [1.5.1] — feat/approval-gates-traceability branch
 
 ### 新增
 
@@ -169,7 +618,7 @@
 
 ---
 
-## [Unreleased] — feat/rtl-verify-feedback-loop 分支
+## [1.5.0] — feat/rtl-verify-feedback-loop branch
 
 ### 新增
 
@@ -195,20 +644,19 @@
 
 ---
 
-## [Unreleased] — agent-scope-review 分支
+## [1.4.4] — agent-scope-review branch
 
 ### 新增
-
-- 所有 13 个 domain `SKILL.md` 增加 **`## Pre-run Context`**：无论从哪个入口调用，都先读取 `knowledge.md` 与 `run_state.md`，不再只在 Orchestrator session start 读取。
-- **Run-state tracking**：13 个 domain Skill 和 PD Orchestrator 在任何工具调用前第一步写 `memory/<domain>/run_state.md`；每个 stage 后更新 `last_stage`，供 wakeup-loop prompt 正确恢复。
-- **Per-stage experience write**：PD Orchestrator 与全部 domain Skill 现在每个 stage 后就 upsert `experiences.jsonl`，不再只在 session end 写；即使中断，partial run 也能保存。
-- **可选 claude-mem integration**：13 个 domain Skill 与 memory-keeper Skill 在 `mcp__plugin_ecc_memory__add_observations` 可用时把 applied fix 写为 observation；工具缺失时静默跳过，JSONL 仍是 canonical record。
-- **Architecture Skill 增加 clock-gating opportunity 分析**（`power_area_estimation`）：按 activity factor α 分类每个 clock domain，生成 `clock_power_budget` handoff 表（domain → frequency、α、estimated clock power、gating class），并加入 QoR gate：可 gating domain 中至少 70% register bit 需要被覆盖。
-- **RTL Design Skill 增加 power intent / ICG insertion 规则**（`rtl_coding`）：RTL Agent 读取 architecture handoff 中的 `clock_power_budget`，对 high/moderate gating domain 插入 ICG，并要求 `clock_gating_coverage ≥ 60%`。
-- **Architecture → RTL handoff contract** 在 `docs/MASTER_INDEX.md` 中增加 `clock_power_budget` artifact。
-- `memory/README.md` 补充 run_state、per-stage write、`run_id` schema 和可选 claude-mem index pattern。
-- `docs/Architecture_Evaluation_Flow.md`、`docs/RTL_Design_Flow.md` 同步新增 clock-gating/ICG 内容。
-- OpenROAD MCP config（`mcp-openroad.json`）注释明确标出安装时需要替换的两个 placeholder。
+- **运行前上下文（Pre-run Context）**：全部 13 个领域 SKILL.md 每次调用均读取 knowledge.md 与 run_state.md，不仅限于编排会话开始。
+- **运行状态跟踪**：全部 13 个领域 Skill 和 PD 编排器在执行工具前先写入 `memory/<domain>/run_state.md`，每阶段后更新 last_stage，使唤醒提示可正确恢复。
+- **逐阶段经验写入**：PD 编排器及全部领域 Skill 每阶段后按 run_id 更新 experiences.jsonl，中断时也保存部分运行。
+- **可选 claude-mem 集成**：13 个领域 Skill 与 memory-keeper 在 MCP 可用时向 `mcp__plugin_ecc_memory__add_observations` 写入已应用修复；不可用时静默跳过，JSONL 保持权威记录。
+- **时钟门控机会分析**：architecture 的 power_area_estimation 按活动因子 α 分类时钟域，生成 clock_power_budget 交接表（域、频率、α、估算时钟功耗、门控类别），新增 QoR 门控：可门控域至少覆盖 70% 寄存器位。
+- **电源意图与 ICG 插入规则**：rtl_coding 读取架构交接的 clock_power_budget，对高/中等门控机会域插入 ICG，要求 clock_gating_coverage ≥60%。
+- MASTER_INDEX 的 Architecture → RTL 合约增加 clock_power_budget。
+- memory/README 补充 run_state.md、逐阶段写入、run_id 字段及可选 claude-mem 索引方式。
+- 架构和 RTL 流程文档同步上述门控分析与 ICG 规则。
+- OpenROAD MCP 配置注释明确安装时必须替换的两个占位值。
 
 ---
 

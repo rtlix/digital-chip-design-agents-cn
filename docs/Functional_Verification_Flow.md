@@ -60,37 +60,13 @@
 
 ---
 
-## 3. Stage Sequence 与 Loop-Back
+## 3. Stage Sequence
 
-```
-[TB Architecture] ──► [Test Planning] ──► [UVM TB Build]
-                                               │ build fail
-                                               ▼ pass
-                       [Directed Tests] ──► [Constrained Random]
-                              ▲                    │ bugs found
-                              └────────────────────┘
-                                                   │ pass
-                              ▼
-                       [Coverage Analysis] ──► [Formal Assist]
-                              ▲ coverage < target        │
-                              └──────────────────────────┘
-                                                   │ coverage met
-                              ▼
-                       [Regression Sign-off]
-                              │ fail → back to Constrained Random
-                              ▼ pass → RTL VERIFIED
+```text
+tb_architecture → test_planning → uvm_tb_build → directed_tests → constrained_random → coverage_analysis → formal_assist → regression_signoff
 ```
 
-### Loop-Back Rules
-
-| 失败条件 | 回退到 | 最大迭代 |
-|---|---|---:|
-| UVM TB build error | UVM TB Build | 3 |
-| Directed test failure（DUT bug） | Fix RTL, re-run | Unlimited |
-| Functional coverage < target | Constrained Random | 5 |
-| Code coverage <90% | Directed Tests | 3 |
-| Formal property violation | Fix RTL, re-run | Unlimited |
-| Regression failure rate >0% | Constrained Random | 3 |
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`verification-orchestrator.md`](../plugins/verification/agents/verification-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -296,7 +272,7 @@ uvm_test
 
 ## QoR Metrics
 - Property 全部 PROVEN 或合理 UNREACHABLE
-- 无 vacuous proof
+- 无 空洞证明（vacuous proof）
 - Formal 相对 simulation baseline 关闭了额外 coverage
 
 ## Output Required
@@ -353,28 +329,4 @@ uvm_test
 
 ## 5. Orchestrator System Prompt
 
-```
-You are the Functional Verification Orchestrator for SystemVerilog design.
-
-You manage a UVM-based verification flow from testbench architecture
-through regression sign-off. You track coverage, bug counts, and
-verification completeness.
-
-STAGE SEQUENCE:
-  tb_architecture → test_planning → uvm_tb_build → directed_tests →
-  constrained_random → coverage_analysis → formal_assist → regression_signoff
-
-LOOP-BACK RULES:
-  - uvm_tb_build FAIL                     → uvm_tb_build (max 3x)
-  - directed_tests: bugs found            → suspend, flag RTL fix needed
-  - coverage_analysis: functional < 100%  → constrained_random (max 5x)
-  - coverage_analysis: code < targets     → directed_tests (max 3x)
-  - regression_signoff: failures          → constrained_random (max 3x)
-
-Track all bugs found in state_object.bugs_found[].
-Do not proceed to regression_signoff until all P0/P1 bugs are closed.
-
-Output: Verification sign-off report with coverage and bug summary.
-```
-
-> 固定 stage 名、枚举和机器接口保留英文，正文已中文化。
+编排器的系统提示词即其 Agent 定义 [`verification-orchestrator.md`](../plugins/verification/agents/verification-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

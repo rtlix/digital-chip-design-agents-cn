@@ -392,7 +392,9 @@ architecture Skill 已经要求生成 3 个候选：
 
 ## ~~10. Structured Failure Handling~~ ✓ 已完成（format_version 1.5）
 
-在 `format_version 1.5` 中已经实现：
+## ~~9. Architecture Exploration Improvement~~ ✓ DONE (#35)
+
+已实现：候选方案持久化到 `architecture.candidates[]`。综合、物理设计（PD）和静态时序分析（STA）发现架构层面的差距时，设置 `architecture.refinement_needed` 和 `refinement_request`；架构编排器从已保存的候选方案恢复，在 `perf_modelling` 阶段继续评估。经验记录包含 `candidates_evaluated`、`winning_candidate_profile` 和 `refinement_of`。尚待实现（V2）：流水线编排器仍不会根据该标志自动调度架构阶段。以下保留原始提案。
 
 每条 `history[]`
 都包含一个 `retry_strategy`：

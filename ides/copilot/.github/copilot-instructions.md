@@ -15,16 +15,24 @@ HLS、物理设计、SoC 集成、存储器 IP 设计、编译器工具链、嵌
 <!-- BEGIN SHARED:ide-guards (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## 验证与报告
 
-- 给 stage 设置状态前，先读取工具 exit code 和 report。
-- 遇到 FAIL 时必须应用该 stage 的 loop-back rule，不得直接继续。
-- 如果故障位于你不拥有的上游 artifact，停止 retry，并报告上游 domain、artifact 和证据。
-- 报告前，运行任务中点名的每个 gate，并引用其准确输出。
-  没有运行的 gate 绝不能说 PASS；应明确写 NOT RUN 并说明原因。
-- 工具 exit 0 但输出为空或不可解析，不能算 PASS。
-- 结束前重新核对交付物清单，并列出任何未完成项。
+- 设置阶段状态前，读取工具 exit code 和报告。
+- FAIL 后必须应用该阶段的 loop-back rule。
+- 故障在不拥有的上游 artifact 中时，停止重试，报告上游领域、artifact 和证据。
+- 重试须朝同一目标改善实测结果：退步则撤销，连续两次无变化则停止并报告，
+  不能通过放宽失败的约束、检查或测试取得 PASS。
+- 报告前执行任务点名的每个 gate，引用准确输出；未执行的 gate 标 NOT RUN 并说明原因。
+- 向自带 CI 的仓库推送前，读取 workflow 路径过滤，找出所改路径触发的所有 job，
+  在本地执行每个 job 的全部步骤，而非仅上次失败步骤；列出未能执行的步骤。
+- 工具 exit 0 但输出为空/不可解析，不能算通过。
+- 工具在检查设计前中止，或使用错误输入（filelist、include 路径、配置、生成头文件）时，
+  不修改设计；报告该输入并停止。
+- 结束前重读交付物清单，列出未完成项。
+- 每次停止时，无论是否 signoff，都记录本次为下一阶段建立的信息：所产文件，
+  以及未经工具运行而得出的全部结论。未声明 signoff 不意味着不交接内容。
 - 区分 measured value 与 inference。
-- 如果 test 消费 generated artifact，确认每个运行该 test 的环境都能获得它：
-  要么 artifact 已提交，要么该环境实际执行的步骤会重新构建它。
+- 测试使用 generated artifact 时，确认每个执行该测试的环境能获取它：已提交，或由该环境实际执行的步骤重建。
+- 超出单次 turn 的 job 后台运行并保存输出；按任务时长定期检查，日志安静不等于挂起。
+- 任务预计超过 turn budget 时，停止等待，报告运行内容、日志及剩余工作，不能未经验证继续等候。
 <!-- END SHARED:ide-guards -->
 
 ## 各领域专属规则

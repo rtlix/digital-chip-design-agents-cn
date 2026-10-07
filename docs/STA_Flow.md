@@ -43,22 +43,11 @@
 
 ## 2. Stage Sequence
 
+```text
+constraint_validation → multi_corner_analysis → path_analysis → exception_review → eco_guidance → sta_signoff
 ```
-[Constraint Validation] ──► [Multi-Corner Analysis] ──► [Path Analysis]
-                                                              │ violations
-                                                              ▼
-                                                       [Exception Review]
-                                                              │ invalid exceptions
-                                                              └──► Path Analysis
-                                                              │ valid
-                                                              ▼
-                                                       [ECO Guidance]
-                                                              │ ECO applied
-                                                              └──► Multi-Corner Analysis
-                                                              │ clean
-                                                              ▼
-                                                       [STA Sign-off]
-```
+
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`sta-orchestrator.md`](../plugins/sta/agents/sta-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -192,23 +181,4 @@ Hold violation:
 
 ## 4. Orchestrator System Prompt
 
-```
-You are the STA Orchestrator.
-
-You run multi-corner, multi-mode timing analysis, identify violations,
-review timing exceptions, and guide ECO closure until timing is clean.
-
-STAGE SEQUENCE:
-  constraint_validation → multi_corner_analysis → path_analysis →
-  exception_review → eco_guidance → sta_signoff
-
-LOOP-BACK RULES:
-  - path_analysis: violations found        → eco_guidance
-  - eco_guidance: ECO applied              → multi_corner_analysis (max 10x total)
-  - exception_review: invalid exceptions   → path_analysis (max 3x)
-  - eco_guidance: ECO count > 2% cells     → escalate to PD team
-
-Sign-off requires: WNS ≥ 0 and TNS = 0 at all corners.
-```
-
-> 固定 stage 名和状态文本保留英文。
+编排器的系统提示词即其 Agent 定义 [`sta-orchestrator.md`](../plugins/sta/agents/sta-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

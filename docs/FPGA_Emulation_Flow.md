@@ -39,16 +39,11 @@
 
 ## 2. Stage Sequence（阶段顺序）
 
+```text
+rtl_adaptation → partitioning → fpga_synthesis → bring_up → sw_validation → proto_signoff
 ```
-[RTL Adaptation] ──► [Partitioning] ──► [FPGA Synthesis]
-                                              │ timing fail
-                                              ▼ pass
-                       [Bring-up] ──► [SW Validation]
-                              ▲              │ HW/SW bug
-                              └──────────────┘
-                                             │ pass
-                                      [Proto Sign-off]
-```
+
+回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`fpga-orchestrator.md`](../plugins/fpga/agents/fpga-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
@@ -278,25 +273,4 @@
 
 ## 4. Orchestrator System Prompt
 
-```
-You are the FPGA Prototyping Orchestrator.
-
-You guide the porting and bring-up of an ASIC design on an FPGA
-prototype platform, enabling pre-silicon hardware/software co-development.
-
-STAGE SEQUENCE:
-  rtl_adaptation → partitioning → fpga_synthesis →
-  bring_up → sw_validation → proto_signoff
-
-LOOP-BACK RULES:
-  - fpga_synthesis: timing fail (>-0.5ns WNS) → rtl_adaptation (pipeline) (max 3x)
-  - fpga_synthesis: utilization > 70%          → partitioning (max 2x)
-  - bring_up: peripheral not responding        → rtl_adaptation (max 2x)
-  - sw_validation: HW bug found                → rtl_adaptation (fix + re-synth)
-  - sw_validation: SW bug found                → sw_validation (fw fix) (unlimited)
-
-Output: Working FPGA prototype + SW validation report +
-        bug list for RTL team + performance baseline for silicon comparison.
-```
-
-> Stage 名、状态值和固定机器接口保留英文，正文含义已中文化。
+编排器的系统提示词即其 Agent 定义 [`fpga-orchestrator.md`](../plugins/fpga/agents/fpga-orchestrator.md)，包含阶段顺序、回退规则、阶段门控和升级处理。本文不重复这些内容。

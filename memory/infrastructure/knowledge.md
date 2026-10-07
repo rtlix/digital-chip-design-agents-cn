@@ -26,8 +26,8 @@ host 匹配的经验，因为 tool version/quirk 强依赖机器。Lockfile 仍�
 
 ## PDK / Tool Quirks
 
-- **Bambu HLS 仅 Linux**：macOS/Windows 上缺失应是 WARN，不是 FAIL；把 OS 记录在 environment fingerprint，避免把正常平台差异误认为 broken install。
-- **Module version selection 是字典序**：默认取排序最高的 version string。遇到类似 `2021.01` 与 `2020.03-patch` 的异常排序时，在 `load-modules.sh` 显式 pin。
+- **Bambu HLS 仅支持 Linux**：macOS/Windows 检测结果应为 WARN，而非 FAIL。环境指纹记录 os，避免将“macOS 缺失”误认为 Linux 安装损坏。
+- **模块版本先遵循站点默认，再按发布版本比较器选择**（#98 前错误使用字典序）：module_discovery 优先 module avail 标注的系统默认，随后取最高发布版本，只有无发布版本时才选 -dev、_test、-debug 等非发布构建。站点默认经常比最新版本旧，这是预期行为；module-status.json 的 selected_basis 保留选择依据。仅某流程确实不适合站点默认时，才在 load-modules.sh 显式固定版本，不再将固定版本作为弥补普通字符串排序的常规方法。
 
 ## Notes
 
