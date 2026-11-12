@@ -336,33 +336,59 @@ priority:     P0
 
 ## Stage: coverage_analysis
 
-### 覆盖率目标
-
-| 类型 | 目标 | 优先级 |
-|------|------|----------|
+### Coverage Targets
+| Type | Target | Priority |
+|---|---:|---|
 | Functional (V-plan) | `design_state.constraints.coverage.functional_pct`%（默认 100%） | P0 |
-| Code Line | ≥ `design_state.constraints.coverage.line_pct`%（默认 95%） | P1 |
-| Code Branch | ≥ `design_state.constraints.coverage.branch_pct`%（默认 90%） | P1 |
-| Code Toggle | ≥ `design_state.constraints.coverage.toggle_pct`%（默认 85%） | P2 |
-| FSM State | `design_state.constraints.coverage.fsm_state_pct`%（默认 100%） | P0 |
-| FSM Transition | ≥ `design_state.constraints.coverage.fsm_transition_pct`%（默认 95%） | P0 |
-| Assertion triggered | `design_state.constraints.coverage.assertion_pct`%（默认 100%） | P1 |
+| Code Line | ≥ `coverage.line_pct`（默认 95%） | P1 |
+| Code Branch | ≥ `coverage.branch_pct`（默认 90%） | P1 |
+| Code Toggle | ≥ `coverage.toggle_pct`（默认 85%） | P2 |
+| FSM State | `coverage.fsm_state_pct`（默认 100%） | P0 |
+| FSM Transition | ≥ `coverage.fsm_transition_pct`（默认 95%） | P0 |
+| Assertion triggered | `coverage.assertion_pct`（默认 100%） | P1 |
 
-### 收敛策略
+### Collecting and Merging Code Coverage
+| Simulator | Compile / Run | Scope | Merge + report | Exclusion |
+|---|---|---|---|---|
+| VCS | `-cm line+cond+fsm+tgl+branch+assert`；每 test/seed 独立 `-cm_dir`、`-cm_name` | `-cm_hier`；多 testbench top 优先首行 `+filelist <rtl.f>` | `wrap-urg.sh ... -format both`；不同 top 加 `-lca -flex_merge modules` | `urg -elfile` |
+| Xcelium | `-coverage all`；run 使用 `-covworkdir/-covscope/-covtest/-covoverwrite/-covfile` | CCF select/deselect DUT/TB/model | `wrap-imc.sh -execcmd "merge ...; load ...; report -summary -metrics overall"` | vRefine |
+| Verilator | `--coverage-line --coverage-toggle`，SVA cover 用 `--coverage-user` | pragma / width filter | `verilator_coverage --write-info merged.info ...` | .info filter |
+
+`wrap-urg.sh` 依赖 `dashboard.txt`，因此生成 text/both；`wrap-imc.sh` 解析 stdout。若 infrastructure 记录 `imc` 缺失，Xcelium coverage 可收集 UCD，但 merge/report 是 NOT RUN，绝不能记 0%。
+
+### Domain Rules — Coverage mechanics
+1. **只覆盖 design。** 在 compile 阶段用 `-cm_hier` / `-covfile` 排除 testbench wrapper、bind/checker、behavioral memory/model、cocotb shim，不能等 report 后再过滤。
+2. **并行运行必须唯一 DB 名。** 每 test+seed 独立 `-cm_name`、`-covtest` 或 coverage.dat；两个 job 同名会 **overwrite silently**。
+3. **所有 per-test DB 先 merge 后 report。** 记录实际 merge DB 数，并与真实运行 test 数对账。
+4. **Exclusion 就是 waiver。** 每条 exclusion 带 reason 并审批；只为了抬 coverage 的 exclusion 属于 moved target。
+5. **多 testbench top 按 file list scope。** 每 build 的 VCS `-cm_hier` 首条用 `+filelist <design files>`，避免其他 TB wrapper 进入 denominator。
+6. **跨 testbench top 的 VCS DB 用 `urg -lca ... -flex_merge modules`。** 普通 `urg -dir` 可能保留第一份 DB 结构并静默丢掉其他 top 独有 module。
+7. **全 `--` 的 summary 不是结果。** 当 `every metric is `--`` 时，即使 urg exit 0 也记 NOT RUN；`wrap-urg.sh` 返回 unverified WARN，并核对 merged `Number of tests:`。
+8. **不同 simulator 的 hole 数不能直接继承。** VCS 会把每个 **generate-loop iteration** 的 line/branch 分开统计，也不会自动理解 Verilator pragma/waiver。比较或排名前先把 waiver 转成 `urg -elfile` / IMC vRefine，或单独标注“reference simulator 已 waive”。
+
+### Report-only mode
+用户只要求 review/audit/list coverage hole（`coverage_mode: report_only`）时：
+1. 正常 collect/merge/report，但不写 test、constraint、waiver，也不执行 functional<100% / line<95% 的 loop-back。
+2. Hole 优先级：FSM state/transition → error/default/illegal branch → reset/flush/abort → CDC/synchronizer → 其他 branch/condition/toggle/line；同类按 uncovered block 大小排序。
+3. 每 hole 给 file+line（或 FSM state/arc）、metric，以及 proposed test 或 proposed waiver justification。
+4. Coverage 低于 target 只记 WARN(`coverage_gap`)，不允许 sign-off。
+
+### Closure Strategy
 1. N 个 random seed 后识别 uncovered bin
-2. 为难以命中的 bin 编写针对性 directed test
-3. 调整 constraint，提高对 uncovered area 的命中概率
-4. 对无法到达的 bin（例如 dead code）提供理由并申请 waiver
+2. 为难命中 bin 写 targeted directed test
+3. 合法地 bias stimulus，不能改变 target
+4. 不可达 bin 仅凭 justification + approval waive
 
-### 要评估的 QoR 指标
-- Functional coverage：100%，不得存在未豁免缺口
-- Code coverage：满足上表目标
-- Waiver file：所有条目均经 verification lead 批准
+### QoR Metrics to Evaluate
+- Functional coverage：100%（无未豁免缺口）
+- Code coverage：满足上表 target
+- Waiver file：全部 entry 获批准
 
-### 必须输出
-- 合并 coverage report
-- Uncovered bin 列表及 closure plan
-- Waiver file
+### Output Required
+- 合并 coverage report，并注明 merge DB 数
+- Uncovered bin + closure plan；Report-only mode 输出 ranked hole list + proposed test/waiver
+- Closure mode 的 waiver file
+- 实际使用的 scope/exclusion 文件（`-cm_hier` / `-covfile` 等）
 
 ---
 
