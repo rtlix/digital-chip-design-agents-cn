@@ -66,7 +66,7 @@ after: ^## Behaviour Rules$
   或预算/上限已耗尽；动作是 `escalate` 或 `abandon`。
 - **none（无故障）**：仅与 `failure_class: "none"` 配对（PASS、`await_approval`）。
 
-`input_setup` 表示工具在错误输入上正确运行：filelist、include 路径、项目或配置文件、
+`input_setup` means **the tool ran correctly on the wrong inputs**（工具在错误输入上正确运行）：filelist、include 路径、项目或配置文件、
 生成的头文件或库视图解析到了错误目录树。它不是 `tool_error`，因为重试会原样重现；
 也不能作为被检查 artifact 的证据，因为该 artifact 根本没有被评估。
 当证据指向输入集合（同一文件出现两个路径、本次运行未写入的文件、检查前就中止）时，
@@ -85,8 +85,7 @@ Loop-Back Rules 将 FAIL/WARN 送回另一阶段时，记录 `decision: "loop_ba
 WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规则仍有剩余迭代次数时，
 映射的 `escalate` 也不会覆盖它。仍然记录映射出的 `retry_strategy`，让冲突在 `history[]`
 中可见，而不是静默解决。Stage Gating and Escalation 第 4、7 条性质不同：它们依据证据
-停止循环（上游故障或重试不收敛），不受规则剩余次数影响。`input_setup` 也具有该优先级：
-任何 Loop-Back Rules 行都不能覆盖它，因为回退规则会发送到修改 artifact 的阶段，
+停止循环（上游故障或重试不收敛），不受规则剩余次数影响。`input_setup` 也具有该优先级：**no Loop-Back Rules row overrides it**；任何 Loop-Back Rules 行都不能覆盖它，因为回退规则会发送到修改 artifact 的阶段，
 而此时 artifact 本身并没有问题。
 
 某个条件完全没有对应 Loop-Back Rules 行时，没有可遵循的规则，也没有可据以映射的分类。
@@ -286,7 +285,7 @@ after: ^## Behaviour Rules$
    规则未执行，计数未知而非 0，无法得出 RTL 结论。编辑任何文件前先归因各 fatal。
    重复声明伴随未声明标识符、同一文件出现两条路径、缺 include，或本次未写文件中的 fatal，
    都指向输入集合：include search 首个匹配优先，旧树排在前面会遮蔽新树。
-   记录 `input_setup`，不编辑 RTL，并携带路径升级处理。只有本次写入的文件有 parse error，
+   **Record `input_setup`, edit no RTL**；记录 `input_setup`，不编辑 RTL，并携带路径升级处理。只有本次写入的文件有 parse error，
    且输入集合已检查时，才由你修复。
 8. **Lint 不证明下游 front-end 接受 RTL。** Verilator、slang 和仿真 regression 原生读取 SystemVerilog。
    下游综合前若使用 sv2v、Surelog/UHDM 或 vendor SV-to-Verilog 转换，必须对 filelist 执行转换，
