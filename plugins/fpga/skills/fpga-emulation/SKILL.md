@@ -19,9 +19,11 @@ allowed-tools: Read, Write, Bash
   stage rule、sign-off criteria 和 loop-back guidance。
 
 ## Pre-run Context
+
+`<MEM>` 表示已经解析出的 Memory root，而不是字面量 `memory/` 目录。解析优先级为：显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库内 seed；可用 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径，最终以 Orchestrator 的 `## Memory` 章节为准。
 任何 stage 前，如存在则先读取：
-1. `memory/fpga/knowledge.md`
-2. `memory/fpga/run_state.md`
+1. `<MEM>/fpga/knowledge.md`
+2. `<MEM>/fpga/run_state.md`
 将历史 failure pattern、有效 tool flag 和 run state 应用于当前决策。
 
 ## Purpose
@@ -251,7 +253,7 @@ frequency scale-down ratio。Optional constraint：
 ## Memory
 
 ### Write on stage completion
-每 stage 完成后按 `run_id` upsert `memory/fpga/experiences.jsonl`，key_metrics 使用
+每 stage 完成后按 `run_id` upsert `<MEM>/fpga/experiences.jsonl`，key_metrics 使用
 `lut_count/fmax_mhz/timing_met`。
 `run_id = fpga_<YYYYMMDD>_<HHMMSS>_<6-char-random>`，后缀必须是一次生成并全程复用的
 6 位小写十六进制。最终 sign-off 前 `signoff_achieved:false`。
