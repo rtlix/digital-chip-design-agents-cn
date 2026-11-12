@@ -1,6 +1,6 @@
 {
   "name": "chip-design-compiler",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "编译器工具链——面向自定义 ISA 的 LLVM/GCC backend、assembler、linker 与 runtime library",
   "author": {
     "name": "chuanseng-ng",
