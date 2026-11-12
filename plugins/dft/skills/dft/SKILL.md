@@ -53,6 +53,42 @@ allowed-tools: Read, Write, Bash
 
 ---
 
+## Tool Notes: Siemens Tessent
+
+Tessent 现代流程以 **context** 为核心。旧式 `add_scan_groups` / `add_scan_chains` dofile 可能完整退出但实际一个 scan cell 都没插，因此 verdict 必须看 inserted-cell/chain 结果，不能只看 exit status。以下规则基于 Tessent 2025.4 的实测。
+
+### Running it
+- Batch：`tessent -shell -dofile <f>.do -log <f>.log -replace < /dev/null`。缺 `< /dev/null` 时，dofile 中止后 shell 可能继续等 stdin；缺 `-replace` 时旧 log 可能残留，看起来像本次结果。
+- 每次 scan insertion 前删除旧 TSDB output，防止 stale TSDB 被重新读入。
+- 每个 option 都要确认当前安装版本接受；例如 2025.4 会拒绝部分旧参数。
+- 安装目录中的 algorithm library、`share/UsageExamples` 等 licensed reference 只读；需要修改时复制进项目。
+
+### Cell library (scan insertion and ATPG)
+- `read_liberty` 只提供 cell attribute；cell 行为来自 Verilog model，经 **LibComp** 编译成 `.atpglib`：`libcomp <models.v> -dofile ... < /dev/null`。再用 `read_cell_library` 读取，并结合 `read_liberty`；最终用 `write_cell_library ... -include_created_dft_cell_selections` 生成 `.tcelllib`。
+- LibComp log 中任何 `// Error` 都是 FAIL。
+- Cell model 使用 gate primitive；裸 `assign y = a;` 的 buffer 可能被视为 wire，进而 fail buffer check。
+- 明确维护 `dft_cell_selection`；自动选择可能选中特殊低功耗 cell。Buffer、inverter、2:1 mux、lockup latch 应显式指定。
+
+### Scan insertion and ATPG
+1. `set_context dft -scan -no_rtl -design_id gate` → `read_cell_library` → read netlist → `set_current_design` → 定义 clocks → `set_scan_enable` → `set_system_mode analysis`，此处运行 Scan DRC。
+2. `add_scan_mode <name> -chain_count N -si_connections ... -so_connections ...` 绑定现有 scan port，再 `analyze_scan_chains`、`insert_test_logic`、`write_design -tsdb`。如果 port binding fail 后脚本偷偷改用 tool-created port，必须报告，因为 chain 已不再使用 architecture 指定端口。
+3. ATPG 新 session：`set_context patterns -scan`、`read_design <design> -design_id gate`、`import_scan_mode <name>`，再按 fault model 生成 pattern。
+4. Chain count 应服从项目 DFT architecture；不要为了让工具 setup 通过擅自改链数。Contract wording：**a chain count the project's DFT architecture fixes** 必须作为硬输入。
+5. 有意排除的 flop 会使 S1/S2 之类 Scan DRC rule 失败；只有 architecture 明确决定这些 flop 不进链时才能降级 severity，并记录 rule ID、instance count 与理由。**Demoting a Scan DRC rule from error to warning** 不能成为普通消错手段。
+
+### MemoryBIST
+1. `set_context dft -rtl -design_id rtl1`；读取 RTL 和每个 memory macro 的 TCD（`tcd_memory`）描述。
+2. `check_design_rules` → `create_dft_specification` → 必要时 `set_config_value` → `process_dft_specification`。
+3. `extract_icl` → `create_patterns_specification` → `process_patterns_specification`。
+4. `run_testbench_simulations -simulator vcs`（或实际 simulator）。
+5. 算法定义/示例优先参考安装目录 `lib/tools/etv/membistipg_algos/`、`share/UsageExamples/*.tgz`。
+6. TCD `LogicalPorts` 顺序为 read、write、read-write；没有 column address bit 时 `BitGrouping` 可能被强制。
+7. `DFT_C1-1`：memory clock 必须可从 primary input 追踪；手工实例化的 clock-gate 若模型未读入会被当 black box。
+8. 插入时只读 memory interface；若 simulation 又额外读 behavioral model，避免 duplicate module。
+9. Fault proof 使用 plusarg 注入 fault，并让每种 fault 的 run 使用独立 simulation 目录，避免结果混用。
+
+---
+
 ## Stage: dft_architecture
 
 ### Domain Rules（领域规则）
@@ -105,31 +141,31 @@ allowed-tools: Read, Write, Bash
 ## Stage: scan_insertion
 
 ### Domain Rules（领域规则）
-1. 将标准 FF 替换为对应 scan cell（SDFF、SDFFRQ 等）
-2. Scan 排除项：memory-mapped register、MBIST controller、JTAG cell
-3. 以下位置不应直接插 scan：clock-gating enable、async set/reset path（除非使用专用 care cell）
-4. EDT compression：FF 数超过 100K 时插入 compressor/decompressor
-5. Lockup latch：跨 clock-domain 的 chain 之间插入
-6. Scan re-ordering：尽量降低 routing wirelength，优先 placement-aware reorder
-7. Test point：对低覆盖率 net 增加 controllability/observability point
-8. 重试前按责任方分类每个 Scan DRC 错误。插入可修复的错误（链连接、测试点、工具插入的复位/时钟 mux、lockup latch）在此重试。设计本身导致的错误——生成时钟、不可控异步复位、非预期锁存器、组合环——无法通过重新插入改变；停止，并将实例与规则交回 RTL 流程。
+1. 用 scan-equivalent cell 替换标准 FF（SDFF、SDFFRQ 等）。
+2. Scan exclusion 只用于明确对象，例如 memory-mapped register、MBIST controller、JTAG cell。
+3. 不在 clock-gating enable、未经 care cell 处理的 async set/reset path 上盲目插 scan。
+4. >100K FF 时考虑 EDT compressor/decompressor。
+5. 跨 clock-domain chain 插 lockup latch。
+6. Placement-aware reorder 降低 scan wirelength。
+7. 对低 coverage net 可增加 controllability/observability test point。
+8. 每个 Scan DRC error 先按 owner 分类再 retry。Insertion 能修的 chain connection/test point/tool-inserted reset/clock mux/lockup latch 留在本阶段；由设计本身导致的 generated clock、不可控 async reset、意外 latch、combinational loop 不会靠重跑 insertion 变好，应停止并交回 RTL flow，附 instance 和 rule。
+9. 不得用“排除 offending flop”换 clean Scan DRC，也不得把 fault 改成 untestable 来抬 coverage；所有 exclusion 必须有明确设计理由。
+10. Severity 同理：**Demoting a Scan DRC rule from error to warning** 只允许 architecture 有意把某些 flop 留在 chain 外（如 TAP-clocked domain、BIST controller）时使用；报告 decision、rule ID、instance count，其他被该降级隐藏的 instance 仍算 open finding。
 
-9. 不能以覆盖率换取干净报告。不得排除有问题的触发器来消除 Scan DRC 错误，也不得把故障重分类为不可测试来提高 ATPG 覆盖率，除非有合理且已记录的排除理由。
+### Scan DRC Rules (all must pass before ATPG)
+- Scan data path 不得被 clock signal 驱动
+- Scan 中不得有 combinational feedback loop
+- Functional mode 的 scan enable 必须 glitch-free
+- 所有 scan FF 的 SI/SE connection 正确
 
-### Scan DRC 规则（进入 ATPG 前全部通过）
-- Clock signal 不得进入 scan data path
-- Scan path 中不得存在 combinational feedback loop
-- Functional mode 下 scan enable 必须 glitch-free
-- 所有 scan FF 的 SI/SE 连接正确
-
-### QoR Metrics to Evaluate（QoR 指标）
-- Scan FF count：除明确排除项外，覆盖 100% sequential element
-- Chain count/length：符合架构规格，偏差 ±5%
+### QoR Metrics to Evaluate
+- Scan FF count：全部 sequential element 减显式批准 exclusion
+- Chain count/length：按 architecture spec（约 ±5%）
 - Scan DRC：0 error
 
-### Output Required（必须输出）
+### Output Required
 - Scan-inserted netlist
-- Scan chain definition file（.scandef）
+- Scan chain definition（.scandef）
 - Scan DRC report
 
 ---
@@ -137,57 +173,61 @@ allowed-tools: Read, Write, Bash
 ## Stage: atpg
 
 ### Fault Model 目标
-
-| Fault Model | 目标覆盖率 |
-|---|---|
-| Stuck-at（SAF） | ≥ `design_state.constraints.dft.saf_coverage_pct`%（默认 99%） |
-| Transition Delay | ≥ `design_state.constraints.dft.transition_coverage_pct`%（默认 95%） |
-| Cell-Aware | ≥ `design_state.constraints.dft.cell_aware_coverage_pct`%（默认 95%） |
-| Bridging | ≥ `design_state.constraints.dft.bridging_coverage_pct`%（默认 90%） |
-| Path Delay | 仅关键路径 |
+| Fault Model | Target Coverage |
+|---|---:|
+| Stuck-at (SAF) | ≥ `design_state.constraints.dft.saf_coverage_pct`%（默认 99%） |
+| Transition Delay | ≥ `dft.transition_coverage_pct`%（默认 95%） |
+| Cell-Aware | ≥ `dft.cell_aware_coverage_pct`%（默认 95%） |
+| Bridging | ≥ `dft.bridging_coverage_pct`%（默认 90%） |
+| Path Delay | 仅 critical path |
 
 ### Domain Rules（领域规则）
-1. 在多个 capture clock 条件下运行 ATPG；transition test 同时覆盖慢速和快速条件
-2. 使用 X-bounding 提升 pattern 质量
-3. Untestable fault 分类为 Redundant 或 ATPG-Untestable，并全部记录
-4. EDT 设计使用 compressed pattern
-5. At-speed pattern 在 sign-off 前必须通过 STA 检查 capture timing
-6. 所有 pattern 必须做 good-machine simulation；允许失败数为 0
+1. Transition ATPG 至少覆盖 slow/fast capture clock。
+2. 使用 X-bounding 提高 pattern quality。
+3. Untestable fault 分类为 Redundant 或 ATPG-Untestable，并完整记录。
+4. EDT 设计使用 compressed pattern。
+5. At-speed pattern 在 sign-off 前经 STA 验证 capture timing。
+6. Good-machine simulation 跑实际 pattern 集，0 failure；只跑 subset 时明确写 “20 of 1574”，不得冒充 full set。
+7. **Prove the pattern testbench can fail.** 至少一次在 broken scan link 的 netlist（或故意翻转一个 pattern bit）上重跑，确认 testbench 报 mismatch。若 broken netlist 也 PASS，则 good-machine PASS 是 unverified。
+8. ATPG cell model 与 pattern simulation cell model 若都由同一来源派生（例如只有 Liberty、没有独立 vendor Verilog），必须说明两者并非独立证据，可能共享同一解析错误。
 
-### QoR Metrics to Evaluate（QoR 指标）
-- SAF coverage：≥ `constraints.dft.saf_coverage_pct`，默认 99%
-- Transition coverage：≥ `constraints.dft.transition_coverage_pct`，默认 95%
-- Pattern count：尽量减少，ATE 时间直接影响测试成本
-- Good-machine simulation：0 failure
+### QoR Metrics to Evaluate
+- SAF coverage ≥ target
+- Transition coverage ≥ target
+- Pattern count 尽量小（影响 ATE time/cost）
+- Good-machine simulation：0 failure，且 negative control 能 fail
 
-### Output Required（必须输出）
-- Test pattern file（STIL 或 WGL）
-- Fault report（各 fault model 的 coverage）
-- Untestable fault 列表及分类
+### Output Required
+- STIL/WGL pattern
+- 各 fault model coverage report
+- Untestable fault list + classification
 
 ---
 
 ## Stage: bist_insertion
 
 ### MBIST 规则
-1. 相同 width/depth 类别的 memory group 使用一个 MBIST controller
-2. March algorithm：MATS+、March-C，或质量规范指定算法
-3. BIST 期间 memory 必须与 functional logic 隔离
-4. 所有 memory 同时运行 BIST 时验证 IR drop
-5. 通过 JTAG TAP 或专用 BIST port 访问
+1. 相同 width/depth class 的 memory 可共享一个 MBIST controller。
+2. March algorithm 使用 MATS+、March-C 或质量规范要求的算法。
+3. BIST 期间 memory 与 functional logic 隔离。
+4. 全 memory 同时 BIST 时验证 IR drop。
+5. 访问通过 JTAG TAP 或 dedicated BIST port。
+6. **Prove detection per fault class, not by a passing run.** 对算法宣称覆盖的每类 fault 分别注入：每 bit/per-address-bit stuck-at、transition、coupling、write-mask/byte-enable stuck、address decoder，并与独立 golden model 的 expected verdict 对比；按 class 报 detected/injected。Fault-free memory PASS 只能证明“不 false-fail”，不能证明能抓 fault。
+7. Fault proof 必须覆盖 full address space。Tessent 等 generated MBIST pattern 可能默认打开 `reduced_address_count` 加速仿真；该模式的 fault proof 会漏掉 reduced range 之外的 fault。
+8. 对比 tool-generated MBIST 与现有 in-house MBIST 时，使用同一组 memory/fault，比较 per-class detection、algorithm cycle、area；multi-port memory 若每 logical port 单独跑一遍，cycle count 必须按相同口径统计。
 
 ### LBIST 规则（如需要）
-1. STUMPS 架构：PRPG + MISR + scan chain
-2. Alias probability 目标 < 1e-10
-3. LBIST clock 与 functional clock 分离，通常使用分频时钟
+1. STUMPS：PRPG + MISR + scan chains
+2. Alias probability < 1e-10
+3. LBIST clock 与 functional clock 分离，通常分频
 
-### QoR Metrics to Evaluate（QoR 指标）
-- MBIST：覆盖所有 memory instance
-- MBIST fault coverage：≥ `design_state.constraints.dft.mbist_coverage_pct`%（默认 99%）
-- BIST power：测试期间满足 IR-drop budget
-- LBIST alias probability：满足目标（如适用）
+### QoR Metrics to Evaluate
+- MBIST 覆盖全部 memory instance
+- MBIST fault coverage ≥ `dft.mbist_coverage_pct`（默认 99%）
+- BIST power 满足 IR-drop budget
+- LBIST alias probability 达标
 
-### Output Required（必须输出）
+### Output Required
 - BIST-inserted netlist
 - BIST controller connection report
 - MBIST fault coverage report
