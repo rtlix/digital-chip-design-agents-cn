@@ -283,6 +283,9 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
    **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
+
+**Experience persistence contract：**在 **at the end of every task invocation** 的含义上，仓库要求精确为：at the end of **every task invocation** 写入或按 `run_id` upsert `<MEM>/sta/experiences.jsonl`；a scoped single-stage task、report-only、analysis-only、shard、早退/中断都算一次完整 task invocation。未 sign-off 时保持 `signoff_achieved:false`。同一次 run 后续结果若推翻已记录值则更新同 record；跨 run 推翻时使用 `supersedes`，不改旧 record。
+
 ## Memory
 
 会话开始按 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → XDG 默认 → 仓库 seed
