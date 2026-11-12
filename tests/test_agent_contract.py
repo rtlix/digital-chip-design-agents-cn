@@ -1,4 +1,4 @@
-"""对 Orchestrator Agent 与 Skill Markdown 做静态 contract 检查。
+"""Static contract checks on the orchestrator agent and skill markdown.
 
 These guard wording that orchestrators copy verbatim into the records they write,
 so a defect in the template becomes a defect in every run's output.
@@ -18,8 +18,8 @@ AGENT_FILES = sorted(REPO_ROOT.glob("plugins/*/agents/*.md"))
 SKILL_FILES = sorted(REPO_ROOT.glob("plugins/*/skills/*/SKILL.md"))
 MEMORY_README = REPO_ROOT / "memory" / "README.md"
 
-# 下面匹配硬编码成功状态的 JSON 示例。规则正文中的 `signoff_achieved: true`
-#（没有 JSON 引号）只是对成功场景的说明，因此允许存在。
+# A JSON example that hardcodes success. Prose such as `signoff_achieved: true`
+# (no JSON quotes) is how the rules describe the success case and is allowed.
 HARDCODED_SIGNOFF = re.compile(r'"signoff_achieved"\s*:\s*true')
 
 
@@ -42,8 +42,8 @@ def test_agent_files_discovered():
     "path", AGENT_FILES + SKILL_FILES + [MEMORY_README], ids=_rel
 )
 def test_signoff_achieved_not_hardcoded_true(path):
-    """distill.py 使用 ``is True`` 统计 sign-off；如果模板默认 true，
-    就会把 escalated/abandoned run 错记为成功。"""
+    """distill.py counts sign-off with ``is True``; a template defaulting to true
+    records escalated and abandoned runs as successes."""
     lines = [
         f"{_rel(path)}:{n}"
         for n, line in enumerate(_read(path).splitlines(), 1)
@@ -54,8 +54,8 @@ def test_signoff_achieved_not_hardcoded_true(path):
 
 @pytest.mark.parametrize("path", AGENT_FILES + SKILL_FILES, ids=_rel)
 def test_experience_records_are_not_append_only(path):
-    """Record 按 run_id upsert（见 memory/README.md）。如果每个 stage 或
-    每次 re-run 都 append，同一个 run 会产生多条记录，而 distill.py 不会去重。"""
+    """Records are upserted by run_id (memory/README.md). An append per stage or
+    per re-run gives one run several records, and distill.py does not dedup."""
     text = _read(path)
     for phrase in ("append one JSON line", "always append"):
         assert phrase not in text, f"{_rel(path)}: append-only wording: {phrase!r}"
@@ -79,10 +79,10 @@ DECISION_ENUM = re.compile(r'"decision"\s*:\s*"([^"]*\|[^"]*)"')
 
 @pytest.mark.parametrize("path", AGENT_FILES, ids=_rel)
 def test_decision_enum_lists_every_value_the_agent_writes(path):
-    """Checkpoint gate 会写 decision "await_approval"；Agent 复制的 history-entry
-    enum 必须包含该值。"""
+    """The checkpoint gate writes decision "await_approval"; the history-entry
+    enum the agent copies from must offer it."""
     text = _read(path)
-    if not re.search(r'decision\s*:\s*"await_approval"', text):
+    if 'decision: "await_approval"' not in text:
         pytest.skip("agent has no checkpoint gate")
     enums = DECISION_ENUM.findall(text)
     assert enums, f"{_rel(path)}: no history decision enum found"
@@ -119,9 +119,9 @@ def test_decision_enum_lists_loop_back_for_agents_with_loop_back_rules(path):
 
 @pytest.mark.parametrize("path", AGENT_FILES, ids=_rel)
 def test_escalation_guidance_goes_in_history_reason(path):
-    """Domain Orchestrator 只能在自己的 gate 设置 pending_approval；
+    """Domain orchestrators set pending_approval only at their gates; type
     "escalation" belongs to the pipeline-orchestrator. A rule that puts every
-    如果 pending_approval.reason 的 escalation guidance 暗示其他用法，就是 contract 错误。"""
+    escalation's guidance in pending_approval.reason implies otherwise."""
     assert "When escalating, `pending_approval.reason` must state" not in _read(path)
 
 
@@ -195,9 +195,9 @@ def test_long_running_jobs_guidance_present(path):
         f"{_rel(path)}: missing the Long-Running Jobs section"
     )
     for clause in (
-        '不使用紧密循环忙轮询',
-        '日志安静不代表任务挂起',
-        '停止等待并交接',
+        "never busy-poll it",
+        "A quiet log is not a hung job",
+        "stop and hand it over",
     ):
         assert clause in text, (
             f"{_rel(path)}: Long-Running Jobs section is missing clause {clause!r}"
@@ -221,10 +221,10 @@ def test_progress_guard_present_in_stage_gating(path):
     # canonical text does not read as a missing clause.
     flat = " ".join(text.split())
     for clause in (
-        '并不要求耗尽次数',
-        '连续两轮结果未改善',
-        '靠改变目标获得的 PASS 无效',
-        '此时未达到上限，不记录 `resource_limit`',
+        "not a number that must be spent",
+        "two consecutive iterations",
+        "A pass obtained by changing the target is not a pass",
+        "`resource_limit` — the cap was not reached",
     ):
         assert clause in flat, (
             f"{_rel(path)}: Stage Gating item 7 is missing clause {clause!r}"
@@ -244,7 +244,7 @@ TABLE_ROW = re.compile(r"^\|(.*)\|\s*$", re.M)
 # the bold name is captured whole; command backticks are pulled out of the part
 # before ", dialect" so the dialect value's own backticks are never mistaken for
 # a command.
-DOMAIN_PROPRIETARY_BULLET = re.compile(r"^- \*\*[^*]+\*\* [（(]([^）)]*)[）)]", re.M)
+DOMAIN_PROPRIETARY_BULLET = re.compile(r"^- \*\*[^*]+\*\* \(([^)]*)\)", re.M)
 
 
 def _proprietary_rows(text: str) -> list[list[str]]:
@@ -255,7 +255,7 @@ def _proprietary_rows(text: str) -> list[list[str]]:
     drops the header and separator row so only `Tool | Command (alt) | role |
     dialect | probe` rows remain.
     """
-    section = text.split('### Proprietary（只检测', 1)[1].split("\n---", 1)[0]
+    section = text.split("### Proprietary (detect only", 1)[1].split("\n---", 1)[0]
     lines = [m.group(1) for m in TABLE_ROW.finditer(section)]
     data_lines = lines[2:]  # drop header + `|---|---|...` separator
     return [[c.strip() for c in line.split("|")] for line in data_lines]
@@ -276,9 +276,9 @@ def _domain_proprietary_commands() -> set[str]:
             continue
         section = text.split("### Proprietary", 1)[1].split("\n### ", 1)[0]
         for paren in DOMAIN_PROPRIETARY_BULLET.findall(section):
-            if paren.startswith(("dialect", "命令方言")):
+            if paren.startswith("dialect"):
                 continue  # commandless bullet: "(dialect `synopsys`)", no comma to split on
-            before_dialect = re.split(r"[,，]\s*(?:dialect|命令方言)", paren, maxsplit=1)[0]
+            before_dialect = paren.split(", dialect", 1)[0]
             commands.update(re.findall(r"`([^`]+)`", before_dialect))
     return commands
 
@@ -338,7 +338,7 @@ INFRA_AGENT = (
 )
 
 WRAPPER_COUNT = re.compile(
-    r"all (\d+) wrappers?\b|(\d+) executable wrapper scripts|全部 (\d+) 个 wrapper|(?<!\d)(\d+) 个可执行 wrapper|"
+    r"all (\d+) wrappers?\b|(\d+) executable wrapper scripts|"
     r"wrapper scripts with executable bit set \(target: (\d+)\)|"
     r'"wrappers": \{ "expected": (\d+)',
     re.I,
@@ -371,8 +371,8 @@ def test_smoke_test_rule_covers_the_wrapper_that_takes_a_binary():
         .split("\n## Stage: ", 1)[0]
     )
     flat = " ".join(stage.split())
-    assert '`wrap-verilator-sim.sh` 接收仿真可执行文件' in flat
-    assert '而非调用方式错误' in flat
+    assert "`wrap-verilator-sim.sh` takes a simulation binary" in flat
+    assert "never a mis-invocation" in flat
 
 
 INFRA_TOOLS = REPO_ROOT / "plugins" / "infrastructure" / "tools"
@@ -382,7 +382,7 @@ MCP_SERVER_SCRIPTS = frozenset({"mcp-adapter.py", "mcp-session-adapter.py", "mcp
 # The memory server is optional and is not one of the tool servers the stage counts.
 OPTIONAL_MCP_CONFIGS = frozenset({"mcp-memory.json"})
 MCP_COUNT = re.compile(
-    r"(\d+) tool-server|(\d+) tool servers|(\d+) 个工具服务器|"
+    r"(\d+) tool-server|(\d+) tool servers|"
     r"tool-server snippet files written \(target: (\d+)|"
     r'"snippets_expected": (\d+)|"mcp_target": (\d+)',
     re.I,
@@ -485,11 +485,11 @@ def test_every_infrastructure_qor_key_is_declared_by_the_stage_that_computes_it(
         "the agent's qor block and the stages' declared metrics differ"
     )
     # A stage returns only the metrics it owns, so none is obliged to invent a value.
-    assert '省略' in _flat(_read(INFRA_AGENT).split("## Stage Agent Output Format", 1)[1].split("\n## ", 1)[0])
+    assert "omit" in _flat(_read(INFRA_AGENT).split("## Stage Agent Output Format", 1)[1].split("\n## ", 1)[0])
 
 
 TOOL_COMMANDS = re.compile(r"^\| `([^`]+)` \|", re.M)
-ROOT_VAR_ROW = re.compile(r"^\s*- `([^`]+)`[：:]?\s*(?:[（(][^）)]*[）)] ?)?→ `([A-Z_]+)`", re.M)
+ROOT_VAR_ROW = re.compile(r"^\s+- `([^`]+)` \([^)]*\) → `([A-Z_]+)`", re.M)
 
 
 def test_modulefile_root_vars_are_keyed_by_command():
@@ -502,7 +502,7 @@ def test_modulefile_root_vars_are_keyed_by_command():
     unknown = set(rows) - commands
     assert not unknown, f"root-var rows keyed by something other than a command: {unknown}"
     assert rows["llvm-config"] == "LLVM_DIR"
-    assert "`cocotb-config`" in stage.split('工具特有根变量', 1)[1].split("###", 1)[0]
+    assert "`cocotb-config`" in stage.split("Tool-specific root vars", 1)[1].split("###", 1)[0]
 
 
 def test_custom_module_system_is_warned_about_tcl_modulefiles():
@@ -512,7 +512,7 @@ def test_custom_module_system_is_warned_about_tcl_modulefiles():
     flat = _flat(_stage_sections(_read(INFRA_SKILL))["tool_installation"])
     assert flat.count('module_system == "custom"') >= 2, "both guards must name custom"
     assert "TCL classic" in flat and "module_system_detail" in flat
-    assert '站点自身文档' in flat, "custom registration must not reuse $MODULEPATH"
+    assert "site's own documentation" in flat, "custom registration must not reuse $MODULEPATH"
 
 
 MODULE_SYSTEM_ENUM = frozenset({"tclmod", "custom", "none"})
@@ -556,7 +556,7 @@ def test_module_system_records_a_custom_wrapper_and_a_listing_status():
         "module-status.json schema omits module_listing - an empty tools_via_modules is "
         "then unreadable"
     )
-    assert '列表获取失败' in stage, (
+    assert "because the listing failed" in stage, (
         "module_discovery no longer states that an empty tools_via_modules may mean the "
         "listing failed rather than that no modules exist"
     )
@@ -627,7 +627,7 @@ def test_critical_path_tools_are_keyed_by_command():
     stage = skill.split("## Stage: module_discovery", 1)[1].split(
         "## Stage: tool_installation", 1
     )[0]
-    table = stage.split('#### Module-to-tool mapping', 1)[1].split('#### Rules', 1)[0]
+    table = stage.split("#### Module-to-tool mapping table", 1)[1].split("#### Rules", 1)[0]
     mapping_keys = set(MAPPING_KEY.findall(table))
     for cols in _proprietary_rows(skill):
         primary_match = PRIMARY_COMMAND.match(cols[1])
@@ -713,7 +713,7 @@ def test_rtl_lint_gate_present_in_rtl_authoring_agents(path):
     assert "## RTL Lint Gate" in text, f"{_rel(path)}: missing the RTL Lint Gate section"
     for clause in (
         "slang -Weverything --ignore-unknown-modules",
-        '不传 `--lint-only`',
+        "Never pass `--lint-only`",
         "`UNVERIFIED`",
         "intent drift",
     ):
@@ -769,7 +769,7 @@ def test_scan_drc_design_fault_escalates_instead_of_retrying_insertion():
     insertion. The single `DRC errors > 0 → scan_insertion (max 3×)` row spent three
     insertion runs on it before escalating — the unwinnable loop-back of #86/#102."""
     rows = _loop_back_rows(_read(DFT_AGENT))
-    design_rows = [r for r in rows if '设计导致' in r]
+    design_rows = [r for r in rows if "caused by the design" in r]
     assert design_rows, "no Loop-Back Rules row for a Scan DRC error caused by the design"
     for row in design_rows:
         target = row.split("→", 1)[1].strip() if "→" in row else ""
@@ -780,7 +780,7 @@ def test_scan_drc_design_fault_escalates_instead_of_retrying_insertion():
         if row.startswith("- scan_insertion FAIL") and "→" in row:
             target = row.split("→", 1)[1].strip()
             if target.startswith("scan_insertion"):
-                assert 'repairable by insertion' in row, (
+                assert "repairable by insertion" in row, (
                     "a scan_insertion retry row is not limited to errors insertion "
                     f"can repair: {row.strip()!r}"
                 )
@@ -790,7 +790,7 @@ def test_rtl_unverified_handoff_has_a_producer_and_consumers():
     """rtl-design labels conclusions no tool proved `UNVERIFIED`. Unless the list is
     written to design_state and read downstream, the label is where the claim stops:
     formal and verification never learn which claims were left for them."""
-    assert '未经验证声明列表' in _read(RTL_SKILL), (
+    assert "Unverified-claims list" in _read(RTL_SKILL), (
         "rtl-design rtl_signoff no longer outputs the unverified-claims list"
     )
     assert '"unverified"' in _read(RTL_AGENT), (
@@ -820,7 +820,7 @@ def test_rtl_design_scopes_out_testbenches():
     included. The exemption lived only in the agents' shared RTL Lint Gate, so an
     IDE loading the skill alone applied the synthesis rules to testbench code."""
     text = _read(RTL_SKILL)
-    assert '测试平台（`*_tb.sv`、`tb_*.sv`' in text, (
+    assert "Testbenches (`*_tb.sv`, `tb_*.sv`" in text, (
         "rtl-design skill does not scope testbenches out of the RTL rules"
     )
 
@@ -871,7 +871,7 @@ def test_input_setup_always_escalates():
     row = next(
         (line for line in decision_table.splitlines() if "`input_setup`" in line), ""
     )
-    assert '绝不重新派发' in row and '开启 fix_request' in row, (
+    assert "never re-dispatch" in row and "never open a `fix_request`" in row, (
         "pipeline decision table has no input_setup row that forbids a retry"
     )
 
@@ -881,8 +881,8 @@ def test_no_loop_back_row_overrides_input_setup():
     overridden by a mapped `escalate`. Left unqualified, that sentence sends
     `input_setup` straight back down the row it was created to bypass."""
     flat = _flat(_read(SHARED_SECTIONS))
-    assert '任何 Loop-Back Rules 行都不能覆盖它' in flat
-    assert '工具在错误输入上正确运行' in flat
+    assert "no Loop-Back Rules row overrides it" in flat
+    assert "the tool ran correctly on the wrong inputs" in flat
 
 
 @pytest.mark.parametrize("path", AGENT_FILES, ids=_rel)
@@ -943,9 +943,9 @@ def test_rtl_design_checks_its_inputs_before_linting_them():
     assert input_rows, "no Loop-Back Rules row for design_input_check FAIL"
     # Issue #127: a module this run added but did not register in a tool's source
     # list is the run's own omission. Its fix is a list edit, never an RTL edit.
-    registration = [r for r in input_rows if '仅注册' in r]
+    registration = [r for r in input_rows if "registration only" in r]
     assert len(registration) == 1, "no design_input_check row for an unregistered module"
-    assert '不改 RTL' in registration[0] and '最多 1×' in registration[0]
+    assert "edit no RTL" in registration[0] and "max 1×" in registration[0]
     for row in (r for r in input_rows if r not in registration):
         target = row.split("→", 1)[1].strip()
         assert target.startswith("escalate") and "input_setup" in target, (
@@ -955,43 +955,43 @@ def test_rtl_design_checks_its_inputs_before_linting_them():
     # A lint run whose rule check did not complete is not evidence about the RTL. It
     # reaches rtl_coding only as a parse error in RTL this run wrote, with the input
     # set already checked, and never as `functional`.
-    aborted = [r for r in rows if r.startswith("- lint_check FAIL") and '规则未完成' in r]
+    aborted = [r for r in rows if r.startswith("- lint_check FAIL") and "did not complete" in r]
     assert len(aborted) == 2, f"expected two aborted-lint rows, found {aborted}"
     for row in aborted:
         condition, target = (part.strip() for part in row.split("→", 1))
         if target.startswith("rtl_coding"):
-            assert '本次写入 RTL' in condition and '输入检查 PASS' in condition
-            assert '不能 `functional`' in target
+            assert "RTL this run wrote" in condition and "design_input_check PASS" in condition
+            assert "never `functional`" in target
         else:
             assert target.startswith("escalate") and "input_setup" in target
 
     completed = [
         r for r in rows
         if r.startswith("- lint_check FAIL")
-        and '规则未完成' not in r
-        and "转换后 RTL" not in r
+        and "did not complete" not in r
+        and "front-end check" not in r
     ]
     assert len(completed) == 1 and "rule check completed" in completed[0], (
         "the plain lint_check row must say it applies to a completed rule check"
     )
 
     flat = _flat(text)
-    assert '不编辑任何 .v/.sv' in flat
-    assert '绝不删除端口、信号或声明' in flat
+    assert "edit no `.v`/`.sv` file" in flat
+    assert "Never delete a port, signal or declaration" in flat
 
 
 def test_rtl_skill_defines_the_input_check_and_aborted_run_rules():
     text = _read(RTL_SKILL)
     stage = text.split("## Stage: design_input_check", 1)[1].split("\n## Stage: ", 1)[0]
-    assert text.index("## Stage: rtl_coding") < text.index("## Stage: design_input_check")\
+    assert text.index("## Stage: rtl_coding") < text.index("## Stage: design_input_check") \
         < text.index("## Stage: lint_check")
     flat = _flat(stage)
     for clause in (
-        '首个匹配',
-        '属于 **ERROR** 而非警告',
+        "first-match-wins",
+        "is an **ERROR**, not a warning",
         "check_design_inputs.py",
         '"input_setup"',
-        '绝不回退到 `rtl_coding`',
+        "Never loop back to `rtl_coding`",
     ):
         assert clause in flat, f"design_input_check stage is missing clause {clause!r}"
     for heading in ("### Domain Rules", "### QoR Metrics to Evaluate", "### Output Required"):
@@ -999,12 +999,12 @@ def test_rtl_skill_defines_the_input_check_and_aborted_run_rules():
 
     lint = _flat(text.split("## Stage: lint_check", 1)[1].split("\n## Stage: ", 1)[0])
     for clause in (
-        '实际执行了**零条**规则',
-        '不能写 `0`',
-        '不构成 RTL 证据',
-        '绝不能分类为 `functional`',
-        '重复声明和未声明标识符',
-        '退出非零不等于 lint 失败',
+        "ran **zero** rules",
+        "never `0`",
+        "not evidence about the RTL",
+        "never classified `functional`",
+        "duplicate-declaration **and** undeclared-identifier",
+        'non-zero exit is not "lint failed"',
     ):
         assert clause in lint, f"lint_check is missing clause {clause!r}"
 
@@ -1020,10 +1020,10 @@ def test_rtl_lint_gate_covers_an_aborted_run(path):
         return
     flat = _flat(_read(path))
     for clause in (
-        '中止运行不是 lint 结果',
-        '规则未执行',
-        '首个匹配',
-        '记录 `input_setup`，不编辑 RTL',
+        "An aborted run is not a lint result",
+        "zero rules ran",
+        "first-match-wins",
+        "Record `input_setup`, edit no RTL",
     ):
         assert clause in flat, f"{_rel(path)}: RTL Lint Gate is missing clause {clause!r}"
 
@@ -1039,14 +1039,14 @@ def test_rtl_lint_gate_reaches_the_converted_file_and_every_source_list(path):
         return
     flat = _flat(_read(path))
     for clause in (
-        'Lint 不证明下游 front-end 接受 RTL',
+        "Lint does not prove the downstream front-end accepts the RTL",
         "hierarchy -check",
         "`f(x)[N-1:0]`",
-        '不能直接修改转换产物',
-        '新增 module 必须进入每个工具的 source list 才算集成',
+        "never in the converted file",
+        "A new module is not integrated until every tool's source list can see it",
         "--rtl-dir",
-        '能明确说出所代表内容时才算良性 stub',
-        '不是 stub，而是缺少 filelist 条目',
+        "A stub is benign only if you can name that",
+        "is not a stub: it is a missing filelist entry",
     ):
         assert clause in flat, f"{_rel(path)}: RTL Lint Gate is missing clause {clause!r}"
 
@@ -1066,13 +1066,13 @@ def test_reporting_obliges_the_gates_a_change_triggers(path):
     that job whether or not the task named it."""
     flat = _flat(_read(path))
     if path in IDE_GUARD_FILES:
-        clauses = ('workflow 路径过滤', '而非仅上次失败步骤')
+        clauses = ("workflow path filters", "not only the step that last failed")
     else:
         clauses = (
-            '执行改动触发的 gate，而不只是任务点名的 gate',
-            '读取 workflow 和路径过滤',
-            '逐项在本地运行每个 job 的全部步骤',
-            '即使任务没有点名该 job',
+            "Run the gates your change triggers, not only the gates you were asked about",
+            "path filters, do not guess",
+            "run every step of each locally",
+            "even if the task never named that job",
         )
     for clause in clauses:
         assert clause in flat, f"{_rel(path)}: missing triggered-gates clause {clause!r}"
@@ -1085,14 +1085,14 @@ def test_hand_off_is_written_whatever_the_outcome(path):
     read the absent key as "not reported"."""
     flat = _flat(_read(path))
     if path in IDE_GUARD_FILES:
-        clauses = ('每次停止时，无论是否 signoff',)
+        clauses = ("Whenever you stop, with or without signoff",)
     else:
         clauses = (
-            '无论结果如何，都交接本次已建立的信息',
-            '所有终止路径',
-            '不能将上次结果冒充本次实测',
-            '交接清单应在产生每个条目的阶段构建',
-            '拒绝 signoff（第 7 条）不意味着拒绝交接',
+            "Hand off what you established, whatever the outcome",
+            "On every termination path",
+            "never carried over from an earlier run as if measured",
+            "Build a hand-off list in the stage that produces each entry",
+            "Withholding signoff (item 7) never means withholding the hand-off",
         )
     for clause in clauses:
         assert clause in flat, f"{_rel(path)}: missing hand-off clause {clause!r}"
@@ -1105,16 +1105,16 @@ def test_rtl_unverified_claims_accumulate_before_signoff():
     skill = _read(RTL_SKILL)
     for stage in ("rtl_coding", "lint_check", "cdc_rdc_analysis"):
         body = skill.split(f"## Stage: {stage}", 1)[1].split("\n## Stage: ", 1)[0]
-        assert '未经验证声明' in body, f"{stage} does not append unverified claims"
+        assert "Unverified-claims entries" in body, f"{stage} does not append unverified claims"
     cdc = _flat(skill.split("## Stage: cdc_rdc_analysis", 1)[1].split("\n## Stage: ", 1)[0])
-    assert 'CDC 工具不可用时，阶段为 NOT RUN，不能为 PASS' in cdc
-    assert '每条终止路径均交接' in _flat(skill)
+    assert "No CDC tool available: the stage is NOT RUN, not PASS" in cdc
+    assert "handed off on every termination path" in _flat(skill)
 
     agent = _flat(_read(RTL_AGENT))
     for clause in (
-        '每条终止路径都必须写入',
-        '`rtl.files[]` 是模块当前的完整文件集合',
-        '仅在本次运行对当前文件实际测得干净时为 `true`',
+        "Write it on every termination path",
+        "`rtl.files[]` is the block's complete current file set",
+        "`true` only when measured clean in this run",
     ):
         assert clause in agent, f"rtl-design-orchestrator is missing {clause!r}"
 
@@ -1123,14 +1123,14 @@ def test_fix_request_gate_covers_every_gate_the_edit_affects():
     """Issue #128: Behaviour Rule 10 closed a fix_request on `lint_check` alone, so a
     repair that broke a synchroniser or a timed path was marked fixed."""
     rule = next(
-        line for line in _read(RTL_AGENT).splitlines() if line.startswith('10. 修复请求门控')
+        line for line in _read(RTL_AGENT).splitlines() if line.startswith("10. Fix-request gate")
     )
     for clause in (
-        '编辑可能影响的全部门控',
-        '重跑 cdc_rdc_analysis',
-        'synth_check',
-        '前端检查',
-        '附理由报告 NOT RUN',
+        "every gate the edit could affect",
+        "re-run `cdc_rdc_analysis`",
+        "`synth_check`",
+        "front-end check",
+        "reported NOT RUN with the reason",
     ):
         assert clause in rule, f"Behaviour Rule 10 is missing {clause!r}"
 
@@ -1140,19 +1140,19 @@ def test_frontend_and_black_box_failures_have_a_route():
     no classified route back to the stage that wrote the construct. Issue #127:
     synthesis checked for black boxes but had no row for one either."""
     rtl_rows = _loop_back_rows(_read(RTL_AGENT))
-    parse = [r for r in rtl_rows if r.startswith('- synth_check FAIL（综合前端解析')]
+    parse = [r for r in rtl_rows if r.startswith("- synth_check FAIL (parse")]
     assert parse and parse[0].split("→", 1)[1].strip().startswith("rtl_coding")
-    assert any(r.startswith('- lint_check FAIL（转换后 RTL') for r in rtl_rows)
+    assert any(r.startswith("- lint_check FAIL (front-end check") for r in rtl_rows)
 
     synth_agent = REPO_ROOT / "plugins" / "synthesis" / "agents" / "synthesis-orchestrator.md"
-    black_box = [r for r in _loop_back_rows(_read(synth_agent)) if "黑盒" in r]
+    black_box = [r for r in _loop_back_rows(_read(synth_agent)) if "black box" in r]
     assert len(black_box) == 2, "synthesis needs a first-party and a missing-view black-box row"
     for row in black_box:
         assert row.split("→", 1)[1].strip().startswith("escalate") and "input_setup" in row
 
     knowledge = _flat(_read(RTL_KNOWLEDGE))
     assert "iverilog -Wall out.v" not in knowledge, "knowledge still parses sv2v output with iverilog"
-    assert 'Surelog，避免 synth_check 通过却 PD 失败' in knowledge
+    assert "a Surelog-fronted synth_check passes RTL that breaks PD" in knowledge
 
 
 def test_rtl_flow_doc_and_knowledge_follow_the_agent():
@@ -1162,7 +1162,7 @@ def test_rtl_flow_doc_and_knowledge_follow_the_agent():
     assert '"design_input_check"' in _read(RTL_FLOW_DOC)
 
     knowledge = _flat(_read(RTL_KNOWLEDGE))
-    for clause in ('首个匹配', '规则未执行', "用户覆盖配置目录"):
+    for clause in ("first-match-wins", "zero rules ran", "user-override"):
         assert clause in knowledge, f"rtl-design knowledge.md is missing {clause!r}"
 
 
@@ -1216,7 +1216,7 @@ def test_flow_docs_do_not_restate_loop_back_rules(doc):
 @pytest.mark.parametrize("doc", sorted(FLOW_DOCS))
 def test_flow_doc_stage_sequence_matches_the_agent(doc):
     text = _read(REPO_ROOT / "docs" / doc)
-    section = re.split(r"^#+ (?:\d+\. )?(?:Stage Sequence|阶段顺序)(?:（阶段顺序）)?\s*$", text, maxsplit=1, flags=re.M)
+    section = re.split(r"^#+ (?:\d+\. )?Stage Sequence\s*$", text, maxsplit=1, flags=re.M)
     assert len(section) == 2, f"docs/{doc} has no Stage Sequence heading"
     line = next(l for l in section[1].splitlines() if "→" in l)
     doc_stages = [stage.strip() for stage in line.split("→")]
@@ -1267,7 +1267,7 @@ def test_environment_validation_artifacts_are_defined():
     #    that definition must be followed by a schema. This is what f1124c5 broke.
     for stage, body in stages.items():
         for artifact in _promised_artifacts(body):
-            markers = [f"`{artifact}` schema", f"`{artifact}` is a", f"`{artifact}` 数据结构", f"`{artifact}` 是"]
+            markers = [f"`{artifact}` schema", f"`{artifact}` is a"]
             found = [m for m in markers if m in skill]
             assert found, (
                 f"{stage} promises {artifact} but the skill never defines it -- a reference "
@@ -1299,16 +1299,16 @@ def test_environment_validation_artifacts_are_defined():
     #    on real installs, silently.
     rule_2 = re.split(
         r"^3\. ", _subsection(stages["environment_validation"], "### Domain Rules")
-        .split('2. 严格按', 1)[1], maxsplit=1, flags=re.M
+        .split("2. Re-run tool presence checks", 1)[1], maxsplit=1, flags=re.M
     )[0]
-    assert '回退' in stages["tool_discovery"], "tool_discovery lost its fallback chain"
+    assert "fall back to" in stages["tool_discovery"], "tool_discovery lost its fallback chain"
     assert "do not fall back" not in rule_2.lower(), (
         "rule 2 forbids a PATH fallback that tool_discovery rule 3 performs"
     )
 
     # 4. The manifest must not restate per-tool state. Duplicating tool-status.json is
     #    what produced two incompatible invented shapes.
-    receipt = skill.split('`tool-manifest.json` 是', 1)[1].split("\n## ", 1)[0]
+    receipt = skill.split("`tool-manifest.json` is a", 1)[1].split("\n## ", 1)[0]
     schema = JSON_FENCE.search(receipt)
     assert schema, "tool-manifest.json has no JSON schema block"
     for field in TOOL_STATUS_FIELDS:
@@ -1353,8 +1353,8 @@ def test_module_version_selection_is_specified():
     #    and the annotated default differs from the newest build.
     # Scope to the numbered list: the surrounding prose also says "default", so
     # searching the whole rule cannot see the list itself being reordered.
-    assert '**选择顺序。**' in rule, "the rule states no selection order"
-    order = rule.split('**选择顺序。**', 1)[1].split("\n\n**", 1)[0]
+    assert "**Selection order.**" in rule, "the rule states no selection order"
+    order = rule.split("**Selection order.**", 1)[1].split("\n\n**", 1)[0]
     ranked = [line for line in order.splitlines() if re.match(r"^\d+\. ", line)]
     assert len(ranked) >= 2, f"selection order has {len(ranked)} ranked entries"
     assert "default" in ranked[0].lower(), (
@@ -1386,28 +1386,28 @@ def test_architecture_persists_candidates_and_resumes_from_them():
     restarted exploration from nothing. The orchestrator must persist every candidate
     and, when flagged, re-enter at perf_modelling from them."""
     text = _read(ARCH_AGENT)
-    rule = text.split('10. 候选持久化及细化模式：', 1)
+    rule = text.split("10. Candidate persistence and refinement mode:", 1)
     assert len(rule) == 2, "architecture orchestrator lost Behaviour Rule 10"
     rule = rule[1].split("\n<!-- BEGIN SHARED", 1)[0]
 
     assert "`design_state.architecture.candidates[]`" in rule
-    assert '已拒绝' in rule and '绝不清空数组' in rule, (
+    assert "rejected" in rule and "never clear the array" in rule, (
         "rejected candidates must persist, and the array is upserted, not rewritten"
     )
-    assert '从 perf_modelling 开始' in rule, "refinement mode does not enter at perf_modelling"
-    assert 'candidates[] 为空' in rule, "no fallback for a state with no persisted candidates"
+    assert "start at `perf_modelling`" in rule, "refinement mode does not enter at perf_modelling"
+    assert "candidates[]` is empty" in rule, "no fallback for a state with no persisted candidates"
     assert "refinement_history[]" in rule, "a serviced request is not archived"
     # The flag is cleared only on sign-off; an escalated refinement run must leave it set.
-    assert '仅 arch_signoff 通过' in rule
+    assert "only when `arch_signoff` passes" in rule
 
     read = text.split("## Design State", 1)[1].split("### Write", 1)[0]
     assert "`architecture`" in read, "the session-start read does not extract architecture"
 
-    merge = JSON_FENCE.findall(text.split('Domain fields to merge:', 1)[1])[0]
+    merge = JSON_FENCE.findall(text.split("Domain fields to merge:", 1)[1])[0]
     for field in ('"candidates"', '"rejection_reason"', '"refinement_request"', '"refinement_history"'):
         assert field in merge, f"design_state merge block lacks {field}"
 
-    record = next(block for block in JSON_FENCE.findall(text.split("## Memory", 1)[1]) if '"signoff_achieved"' in block)
+    record = JSON_FENCE.findall(text.split("### Write (session end)", 1)[1])[0]
     for field in ("candidates_evaluated", "winning_candidate_profile", "refinement_of"):
         assert field in record, f"experience record lacks key_metrics.{field}"
 
@@ -1419,13 +1419,13 @@ def test_downstream_refinement_request_is_narrow(domain):
     text = _read(REFINEMENT_REQUESTERS[domain])
     assert text.count(REFINEMENT_HEADING) == 1, f"{domain} lacks the refinement section"
     section = text.split(REFINEMENT_HEADING, 1)[1].split("\n## ", 1)[0]
-    assert '仅设置 `architecture` 下两个键' in section
+    assert "set only these two keys" in section
     # Collapse newlines: the forbidden list wraps across lines.
-    forbid = " ".join(section.split()).split('不修改', 1)[1].split('字段', 1)[0]
+    forbid = " ".join(section.split()).split("never touch", 1)[1].split(" field", 1)[0]
     for field in ("`candidates[]`", "`selected_candidate`", "`signoff`"):
         assert field in forbid, f"{domain} section does not forbid touching {field}"
-    assert '不覆盖尚未处理的请求' in section
-    assert '不会自动派发该 Orchestrator' in section, "the section implies automatic re-entry"
+    assert "Do not overwrite an open request" in section
+    assert "nothing dispatches it" in section, "the section implies automatic re-entry"
 
     read = text.split("## Design State", 1)[1].split("### Write", 1)[0]
     assert "`architecture`" in read, f"{domain} never reads architecture.selected_candidate"
@@ -1439,3 +1439,439 @@ def test_only_designated_domains_request_refinement():
         if path not in allowed and "refinement_needed" in _read(path)
     ]
     assert not offenders, f"refinement_needed referenced outside the designated agents: {offenders}"
+
+
+PYTHON_ENV_TYPE = re.compile(r'"type": "(module \| system \| custom[^"]*)"')
+
+
+def test_python_env_type_enum_covers_venv_and_never_selects_bundled():
+    """On the reference host the first python3 on PATH was Siemens Calibre's bundled
+    3.8.16. A selection rule that takes `which python3` installs cocotb into a vendor
+    tree. The type enum must offer `venv` everywhere it is written, and `bundled` only
+    as a rejected candidate, never as the selected interpreter's type."""
+    skill = _read(INFRA_SKILL)
+    candidates_enum = "module | system | custom | bundled"
+    assert f'"type": "{candidates_enum}"' in skill, "candidates[] lacks bundled"
+    enums = [e for e in PYTHON_ENV_TYPE.findall(skill) if e != candidates_enum]
+    assert len(enums) >= 2, f"python_env type enum not found in both schemas: {enums}"
+    for enum in enums:
+        values = {v.strip() for v in enum.split("|")}
+        assert "venv" in values, f"python_env type enum lacks venv: {values}"
+        assert "bundled" not in values, f"bundled offered as a selectable type: {values}"
+    flat = _flat(skill)
+    assert "is never selected as `PYTHON_EXEC`" in flat
+    assert "never fall back to a `bundled` one" in flat
+    assert "python3.N" in flat, "Step B does not enumerate versioned interpreters"
+
+
+VERIF_AGENT = REPO_ROOT / "plugins" / "verification" / "agents" / "verification-orchestrator.md"
+VERIF_SKILL = (
+    REPO_ROOT / "plugins" / "verification" / "skills" / "functional-verification" / "SKILL.md"
+)
+
+
+def test_verification_port_mode_is_a_defined_stage():
+    """An existing testbench moved to a new simulator had no path: every stage assumed a
+    UVM testbench built from scratch. Port mode enters at `simulator_portability`, which
+    must be a real stage with the standard sections and the rules that make a port
+    measurable."""
+    agent = _read(VERIF_AGENT)
+    port_line = next(l for l in agent.split("## Stage Sequence", 1)[1].splitlines()
+                     if l.startswith("simulator_portability →"))
+    stages = _stage_sections(_read(VERIF_SKILL))
+    for stage in (s.strip() for s in port_line.split("→")):
+        assert stage in stages, f"port-mode stage {stage} has no skill section"
+    body = stages["simulator_portability"]
+    for heading in ("### QoR Metrics to Evaluate", "### Common Issues & Fixes", "### Output Required"):
+        assert heading in body, f"simulator_portability lacks {heading}"
+    flat = _flat(body)
+    for clause in ("cmp -s", "-pvalue+", "-defparam", "never from `make`'s exit code",
+                   "Negative control", "Skips must match the reference", "fix_request",
+                   "BDDSTR", "Never set `EXTRA_ARGS` on the `make` command line",
+                   "-y <dir> +libext+.sv+.v", "9.2.2.4", "make -n -i", "COCOTB_RESULTS_FILE",
+                   "never count them as passed", "UTF-8"):
+        assert clause in flat, f"simulator_portability lacks {clause!r}"
+
+
+def test_verification_report_only_coverage_suppresses_loop_backs():
+    agent = _flat(_read(VERIF_AGENT))
+    assert "report_only" in agent
+    assert "the two `coverage_analysis` loop-backs" in agent
+    cov = _flat(_stage_sections(_read(VERIF_SKILL))["coverage_analysis"])
+    for clause in ("Report-only mode", "-cm_name", "-covtest", "overwrite silently",
+                   "wrap-urg.sh", "wrap-imc.sh", "verilator_coverage",
+                   "-flex_merge modules", "+filelist", "every metric is `--`",
+                   "generate-loop iteration"):
+        assert clause in cov, f"coverage_analysis lacks {clause!r}"
+
+
+# Orchestrators whose Behaviour Rules carry the per-run experience-record rule. meta and
+# infrastructure phrase their record rule differently and are not covered here.
+EXPERIENCE_RULE_AGENTS = [
+    p for p in AGENT_FILES
+    if p.parent.parent.name not in {"meta", "infrastructure"}
+]
+
+
+@pytest.mark.parametrize("path", EXPERIENCE_RULE_AGENTS, ids=_rel)
+def test_orchestrator_records_experience_for_every_task_invocation(path):
+    """Agents read "whenever the flow terminates" as excluding scoped single-stage
+    tasks and skipped the record."""
+    text = _read(path)
+    flat = _flat(text)
+    assert "whenever the flow terminates" not in flat
+    assert "at the end of **every task invocation**" in flat
+    assert "scoped single-stage task" in flat
+    assert '"supersedes": null' in text
+
+
+@pytest.mark.parametrize("path", AGENT_FILES, ids=_rel)
+def test_rtl_lint_gate_runs_the_ci_tool_version_on_what_ci_lints(path):
+    """A comment named Verilator 5.036; CI ran 5.048, whose new PROCASSINIT failed the -Wall
+    lint of a behavioural SRAM model the gate had exempted as simulation-only."""
+    if path.parent.parent.name not in RTL_AUTHORING_AGENTS:
+        return
+    flat = _flat(_read(path))
+    for clause in (
+        "Lint with the tool version CI runs, on everything CI lints",
+        "not from a comment or README that names a version",
+        "a CI lint target compiles is gated like RTL",
+        "report the gate NOT RUN with the version you could not run",
+    ):
+        assert clause in flat, f"{_rel(path)}: RTL Lint Gate lacks {clause!r}"
+
+
+DFT_SKILL = REPO_ROOT / "plugins" / "dft" / "skills" / "dft" / "SKILL.md"
+
+
+def test_cdc_stage_proves_the_crossing_rules_ran():
+    """SpyGlass cdc_verify_struct exited 0 with a clean-looking report while every crossing
+    rule was skipped for a missing licence feature (cdc_adv_checker); only a negative-control
+    design exposed it. String/real parameters also black-boxed the SoC top silently."""
+    flat = _flat(_read(RTL_SKILL))
+    for clause in (
+        "Prove the crossing rules ran",
+        "If the control is not flagged, the stage is NOT RUN",
+        "Negative control flagged (rule 7): must be true",
+        "request a licence feature other than the product names the licence server lists",
+        "A module the tool black-boxed got zero rules",
+        "`string`-typed or `real` parameter",
+        "Never edit the RTL to satisfy the lint tool",
+    ):
+        assert clause in flat, f"rtl-design skill lacks {clause!r}"
+
+
+def test_dft_skill_carries_tessent_flow_and_fail_capable_checks():
+    """A Tessent scan/ATPG run and a Tessent MBIST run each had to rediscover the tool flow;
+    the legacy scan path inserted nothing while exiting clean, and the skill's chain-count
+    rule contradicted the project's architecture doc."""
+    flat = _flat(_read(DFT_SKILL))
+    for clause in (
+        "## Tool Notes: Siemens Tessent",
+        "set_context dft -scan -no_rtl -design_id gate",
+        "set_context patterns -scan",
+        "import_scan_mode",
+        "< /dev/null",
+        "LibComp",
+        "dft_cell_selection",
+        "create_dft_specification",
+        "reduced_address_count",
+        "a chain count the project's DFT architecture fixes",
+        "Prove the pattern testbench can fail",
+        "Prove detection per fault class, not by a passing run",
+        "Demoting a Scan DRC rule from error to warning",
+    ):
+        assert clause in flat, f"dft skill lacks {clause!r}"
+    agent = _flat(_read(DFT_AGENT))
+    assert "A DFT check passes only once it has been shown able to fail" in agent
+
+
+@pytest.mark.parametrize(
+    "path",
+    [p for p in AGENT_FILES if p.name.endswith("-orchestrator.md")
+     and p.parent.parent.name != "infrastructure"],
+    ids=_rel,
+)
+def test_absent_knowledge_file_is_reported_not_silently_skipped(path):
+    """With CHIP_DESIGN_MEMORY_ROOT pointing at a project memory/ the resolver never ran, so
+    dft/knowledge.md was never seeded and the agent proceeded without the curated knowledge,
+    saying nothing."""
+    flat = _flat(_read(path))
+    assert "say so in the experience record's `notes`" in flat, _rel(path)
+    assert "memory_root.py --init" in flat, _rel(path)
+
+
+PD_SKILL = REPO_ROOT / "plugins" / "pd" / "skills" / "physical-design" / "SKILL.md"
+PD_AGENT = REPO_ROOT / "plugins" / "pd" / "agents" / "physical-design-orchestrator.md"
+
+
+def test_pd_flow_carries_extraction_ir_and_commercial_enablement():
+    """Commercial RTL->GDS flows on an open PDK had no extraction or IR stage, no way to
+    build the views the PDK does not ship, and sign-off criteria in the agent that
+    omitted the IR drop the skill required."""
+    stages = _stage_sequence(_read(PD_AGENT))
+    assert stages.index("routing") < stages.index("extraction") < stages.index("signoff")
+    assert "ir_em" in stages and stages.index("ir_em") < stages.index("signoff")
+    skill = _flat(_read(PD_SKILL))
+    for clause in (
+        "## Stage: extraction",
+        "## Stage: ir_em",
+        "## PDK Enablement",
+        "## Tool Notes: Cadence Innovus",
+        "## Tool Notes: Synopsys ICC2 / Fusion Compiler",
+        "including every macro's `.lib`",
+        "`grdgenxo` → `nxtgrd`",
+        "`Techgen` → `qrcTech`",
+        "Correlate",
+        "`indicative`",
+        "Magic and KLayout for DRC, Netgen for LVS",
+        "`pd.spef` (a list",
+    ):
+        assert clause.lower() in skill.lower(), f"pd skill lacks {clause!r}"
+    assert "`memory/pd/" not in _read(PD_SKILL)
+    agent = _flat(_read(PD_AGENT))
+    for clause in ("ir_drop_pct:", "em_violations: 0", "power_mw:", '"spef": [',
+                   "comparison run, no target"):
+        assert clause in agent, f"pd agent lacks {clause!r}"
+
+
+STA_SKILL = REPO_ROOT / "plugins" / "sta" / "skills" / "sta" / "SKILL.md"
+STA_AGENT = REPO_ROOT / "plugins" / "sta" / "agents" / "sta-orchestrator.md"
+
+
+def test_sta_carries_fair_cross_tool_comparison_and_annotation_gate():
+    """Comparing implementation tools by their own reports measures the judges, not the
+    implementations; and a run on unannotated parasitics reports falsely clean slack."""
+    skill = _flat(_read(STA_SKILL))
+    for clause in (
+        "## Fair Cross-Tool Comparison",
+        "Same SDC.", "md5", "Same extractor and tech.", "Same STA engine.",
+        "Same activity assumptions", "labelled `native`",
+        "## Tool Notes: Synopsys PrimeTime (multi-corner) and PrimePower",
+        "`read_parasitics`", "`report_qor`", "`report_global_timing`",
+        "**Annotation gate.**", "Tempus may be absent",
+    ):
+        assert clause in skill, f"sta skill lacks {clause!r}"
+    assert "`memory/sta/" not in _read(STA_SKILL)
+    agent = _flat(_read(STA_AGENT))
+    assert "**Fair Cross-Tool Comparison**" in agent
+    assert any("unannotated" in r and "`input_setup`" in r for r in _loop_back_rows(_read(STA_AGENT)))
+
+
+FORMAL_SKILL = REPO_ROOT / "plugins" / "formal" / "skills" / "formal-verification" / "SKILL.md"
+
+
+def test_formal_lec_names_commercial_tools_and_requires_a_negative_control():
+    skill = _flat(_read(FORMAL_SKILL))
+    for clause in ("(`fm_shell`, dialect `synopsys`)", "(`lec`, dialect `cadence`)",
+                   "Negative control before trusting EQUIVALENT", "`Verification SUCCEEDED`"):
+        assert clause in skill, f"formal skill lacks {clause!r}"
+    knowledge = _read(REPO_ROOT / "memory" / "formal" / "knowledge.md")
+    # depth/multiclock are .sby [options], not sby command-line flags.
+    assert not re.search(r"`sby [^`]*--(?:depth|vacuity|multiclock)", knowledge)
+    assert "`jg -allow_empty_cex`" not in knowledge.replace("recommended `jg -allow_empty_cex`", "")
+
+
+SYNTH_SKILL = REPO_ROOT / "plugins" / "synthesis" / "skills" / "logic-synthesis" / "SKILL.md"
+SYNTH_AGENT = REPO_ROOT / "plugins" / "synthesis" / "agents" / "synthesis-orchestrator.md"
+
+
+def test_synthesis_outlines_commercial_tools_and_allows_comparison_runs():
+    skill = _flat(_read(SYNTH_SKILL))
+    for clause in ("dc_shell -topographical_mode", "compile_ultra", "-spg", "read_mmmc",
+                   "read_physical", "syn_generic", "syn_map", "syn_opt", "compile_fusion",
+                   "comparison run, no target"):
+        assert clause in skill, f"synthesis skill lacks {clause!r}"
+    assert "`memory/synthesis/" not in _read(SYNTH_SKILL)
+    assert "comparison run, no target" in _flat(_read(SYNTH_AGENT))
+    knowledge = _read(REPO_ROOT / "memory" / "synthesis" / "knowledge.md")
+    # compile_ultra is Design Compiler's; Genus maps with syn_*, Fusion Compiler with compile_fusion.
+    assert "In Cadence Genus, `set_max_area 0`" not in knowledge
+    assert "causes Fusion Compiler to re-optimize" not in knowledge
+
+
+def _section(text: str, heading: str) -> str:
+    """The body under `heading` up to the next heading of the same or a higher level."""
+    level = len(heading) - len(heading.lstrip("#"))
+    start = re.search(r"^" + re.escape(heading) + r"\s*$", text, re.M).start()
+    nxt = re.compile(r"^#{1,%d} " % level, re.M)
+    m = nxt.search(text, start + len(heading))
+    return text[start:m.start() if m else len(text)]
+
+
+def test_synthesis_tool_notes_carry_measured_dc_and_genus_flow():
+    """A DC-topo and a Genus run on an open PDK each had to rediscover the flow: plain
+    dc_shell topo cannot read NDM, a tt-only area-recovered compile built a ripple adder
+    that lost 10.5 ns at ss, and Genus iSpatial failed without a qrcTechFile."""
+    notes = _flat(_section(_read(SYNTH_SKILL), "### Tool Notes: commercial synthesis (measured)"))
+    for clause in (
+        "X-2025.06-SP3", "23.14-s090_1",
+        "dcnxt_shell -topographical_mode", "Milkyway",
+        "set_tlu_plus_files", "check_tlu_plus_files", "`read_parasitic_tech` does not exist",
+        "extract_physical_constraints", "set_cell_location -fixed",
+        "`set_svf <file>` **before** `analyze`",
+        "compile_ultra -spg", "ripple-carry", "-10.5 ns at ss", "MCMM", "set_fix_hold",
+        "create_timing_condition", "TCLCMD-992",
+        "syn_generic -physical", "PHYS-1015", "SDC-200", "write_do_lec",
+        "read_def -incremental", "peak RSS",
+    ):
+        assert clause in notes, f"synthesis Tool Notes lack {clause!r}"
+    assert "measured notes pending" not in _read(SYNTH_SKILL)
+
+
+def test_pd_pdk_enablement_carries_the_measured_sky130_recipe():
+    """Building commercial views of Sky130 took a .tf derived from the tech LEF, a
+    multi-pane NDM, an lc_shell exit-crash workaround and an li1->met0 ICT rename before
+    any tool could load them."""
+    pdk = _flat(_section(_read(PD_SKILL), "## PDK Enablement"))
+    for clause in (
+        "### Measured on Sky130",
+        "segfaults at process exit", "LIB-007", "gapless", "DPUI-924",
+        "one pane per corner", "check_workspace -allow_missing", "PVT-030",
+        "UID-109", "grdgenxo", "-itf2TLUPlus", "LBMISC-215479",
+        "IMPEXT-6091", "IMPEXT-3548", "`li1` → `met0`",
+        "COUPLING_ABS_THRESHOLD: 0.1", "`.calibre`",
+        "TEC-011", "create_timing_condition", "TRACKS-only DEF", "SVR-4",
+    ):
+        assert clause in pdk, f"PDK Enablement lacks {clause!r}"
+    assert "recipes for each tool on Sky130 are pending" not in pdk
+
+
+def test_pd_tool_notes_carry_measured_innovus_and_icc2_gotchas():
+    """Each item cost a run: a view without -latency_file dropped the I/O clock latency,
+    create_inst and editAddRoute did nothing, the ICC2 li1 ban was soft, met4 fat-table
+    spacing to straps was not enforced, tt-only hold built weak delay chains."""
+    skill = _read(PD_SKILL)
+    inn = _flat(_section(skill, "## Tool Notes: Cadence Innovus"))
+    for clause in (
+        "23.14-s088_1", "-latency_file", "update_constraint_mode",
+        "set_ccopt_property update_io_latency false", "virtual ideal I/O clock",
+        "TCLCMD-997", "setOptMode -holdTargetSlack 0.2", "0.17 ns optimistic",
+        "activity 0.2", "set_default_switching_activity",
+        "`create_inst` returned without placing anything", "addInst", "-physical",
+        "`create_shape` does not exist", "`editAddRoute` did nothing", "add_shape",
+        "`refinePlace` before `ecoRoute`", "check_antennas", "Taps at the source",
+        "npc.2", "IMPCCOPT-2440", "IMPOPT-7027", "PIN",
+    ):
+        assert clause in inn, f"Innovus Tool Notes lack {clause!r}"
+    icc2 = _flat(_section(skill, "## Tool Notes: Synopsys ICC2 / Fusion Compiler"))
+    for clause in (
+        "X-2025.06-SP1", "30-65 min", "global_min_layer_mode", "`hard`",
+        "set_pg_via_master_rule", "set_process_number", "set_voltage", "set_temperature",
+        "-object_list", "CHF-002", "-scenarios",
+        "weak `ZBUF`/`ZINV`", "set_lib_cell_purpose -include hold",
+        "`add_buffer` drops the new cell off the row grid",
+        "fat_table", "0.1 um met4 routing blockages", "m4.5ab",
+        "set_routing_rule -min_routing_layer met3 -min_layer_mode allow_pin_connection",
+        "diode_mode 1", "drive the antenna ECO from the OpenROAD list",
+        "-case_insensitive", "write_verilog -exclude supply_statements",
+        "-merge_gds_top_cell", "copy_block",
+    ):
+        assert clause in icc2, f"ICC2 Tool Notes lack {clause!r}"
+    assert "Outline — measured notes pending" not in skill
+    assert "outline — measured notes pending" not in skill
+
+
+def test_pd_tool_notes_carry_measured_starrc_redhawk_and_magic():
+    """StarRC opened 33k nets on ICC2 via names; RedHawk silently ignored a singular
+    INSTANCE_POWER_FILE; PEAK-mode EM against DC limits flagged hundreds of false
+    violations; Magic DRC was killed by a 9 GiB watchdog."""
+    skill = _read(PD_SKILL)
+    star = _flat(_section(skill, "## Tool Notes: Synopsys StarRC"))
+    for clause in ("X-2025.06-SP1", "TOP_DEF_FILE", "SX-0271", "SX-1907", "SX-2064",
+                   "COUPLING_REL_THRESHOLD: 0", "LEF_USE_OBS: NO", "SHORTS_LIMIT"):
+        assert clause in star, f"StarRC Tool Notes lack {clause!r}"
+    rh = _flat(_section(skill, "## Tool Notes: Ansys RedHawk"))
+    for clause in ("2025 R2.2", "`INSTANCE_POWER_FILES` must be plural",
+                   "accepted silently and ignored", "escape-free", "ipfMissing",
+                   "write_rh_file -filetype irdrop", "IGNORE_DEF_ERROR 1", "ITG-016",
+                   "`.ploc`", "ENABLE_AUTO_EM 1", "**not a valid pass/fail**",
+                   "perform emcheck -mode AVG", "DECAP_CELL", "depend on decap"):
+        assert clause in rh, f"RedHawk Tool Notes lack {clause!r}"
+    mg = _flat(_section(skill, "## Tool Notes: Magic, KLayout and Netgen on a commercial GDS"))
+    for clause in ("8.3.489", "1.5.278", "0.29.4", "11 GiB", "**alone**",
+                   "inside the SRAM footprints", "`nwell.4`", "port make"):
+        assert clause in mg, f"Magic/KLayout/Netgen Tool Notes lack {clause!r}"
+
+
+def test_sta_primetime_notes_are_measured_and_gate_the_sdc_read():
+    """PrimeTime read_sdc stopped at the first unsupported command of an Innovus-exported
+    SDC and dropped the rest, producing plausible but invalid slack; PrimePower and
+    OpenSTA differ 15 % on register-output activity."""
+    skill = _read(STA_SKILL)
+    pt = _flat(_section(skill, "## Tool Notes: Synopsys PrimeTime (multi-corner) and PrimePower"))
+    for clause in (
+        "X-2025.06", "one `pt_shell` per (library corner, RC corner)", "read_parasitics -format spef",
+        "SDC md5", "virtual** clock ignores its network latency", "-pin_to_pin_nets",
+        "parasitics_command.log", "PARA-124", "report_default_significant_digits 4",
+        "No setup violations found.", "non-empty setup and hold WNS",
+        "`read_sdc` stops at the first unsupported command",
+        "Innovus-exported SDC is not PT-readable", "set_clock_latency 1.77814",
+        "power_default_toggle_rate 0.1", "15 % difference",
+        "[all_registers -output_pins]", "extrapolate",
+    ):
+        assert clause in pt, f"PrimeTime Tool Notes lack {clause!r}"
+    fair = _flat(_section(skill, "## Fair Cross-Tool Comparison"))
+    assert "Prove each judged run used the inputs it claims" in fair
+    assert "Close the implementation in the corners you judge in" in fair
+    assert "Outline — measured notes pending" not in skill
+
+
+def test_formal_lec_tool_notes_are_measured_with_structural_mutant_anchors():
+    """Formality needed DC's SVF and a reference-first read order; Genus's Conformal
+    do-file needed -xl; mutant anchors broke on flat netlists, re-routes and resizing."""
+    skill = _read(FORMAL_SKILL)
+    notes = _flat(_section(skill, "### Tool Notes: Formality and Conformal LEC (measured)"))
+    for clause in (
+        "Formality X-2025.06", "Conformal LEC 24.10-p100", "lec -nogui -xl -dofile",
+        "FM-236", "hdlin_unresolved_modules error", "A DC netlist needs DC's SVF",
+        "143 reference registers", "redirect -file", "diode-stripped",
+        "Conformal_Ultra", "`tclmode`", "vpxmode", "**direct** compare",
+        "Anchor mutants on structure, not on literal names", "`a211o_1` → `a211o_2`",
+        "fail loudly",
+    ):
+        assert clause in notes, f"formal LEC Tool Notes lack {clause!r}"
+    assert "measured notes pending" not in skill
+
+
+def test_infrastructure_carries_measured_licensed_tool_host_rules():
+    """On a 15 GB VM shared by several agents, pgrep gates raced, bare timeouts left
+    licence-holding children, and ICC2 took up to an hour to start."""
+    notes = _flat(_section(_read(INFRA_SKILL), "### Licensed tools on a small shared host (measured)"))
+    for clause in (
+        "One heavy tool at a time, enforced by a lock", "flock -x 9", "licensed_lock.sh",
+        "pgrep -x", "safe_run.sh", "MemAvailable", "MemoryMax", "**2 or fewer**",
+        "**process group**", "30-65 min", "done-marker", "`pkill -f`",
+        "result line", "ckout_test",
+    ):
+        assert clause in notes, f"infrastructure host rules lack {clause!r}"
+
+
+@pytest.mark.parametrize(
+    "path", [p for p in SKILL_FILES if p.parent.parent.parent.name != "infrastructure"], ids=_rel
+)
+def test_domain_skills_use_the_resolved_memory_root(path):
+    """A skill that names the literal `memory/<domain>/` sends the agent to the in-repo seed
+    while the orchestrator writes to the resolved root (CHIP_DESIGN_MEMORY_ROOT or the
+    central default), so curated knowledge is silently never read."""
+    text = _read(path)
+    assert not re.search(r"`memory/[a-z-]+/", text), _rel(path)
+    if "`<MEM>/" in text and "## Pre-run Context" in text:
+        assert "`<MEM>` below is the resolved memory root" in text, _rel(path)
+
+
+def test_knowledge_seeds_carry_the_measured_commercial_corrections():
+    """The seeded knowledge recommended plain dc_shell for scripted DC runs; NDM
+    topographical synthesis needs dcnxt_shell, and DC needs the SVF for Formality."""
+    synth = _read(REPO_ROOT / "memory" / "synthesis" / "knowledge.md")
+    assert "dcnxt_shell -topographical_mode" in synth
+    assert "In Cadence Genus, `set_max_area 0`" not in synth
+    pd = _read(REPO_ROOT / "memory" / "pd" / "knowledge.md")
+    for clause in ("global_min_layer_mode", "-latency_file", "INSTANCE_POWER_FILES"):
+        assert clause in pd, f"pd knowledge lacks {clause!r}"
+    sta = _read(REPO_ROOT / "memory" / "sta" / "knowledge.md")
+    assert "read_sdc" in sta and "md5" in sta
+    formal = _read(REPO_ROOT / "memory" / "formal" / "knowledge.md")
+    assert "SVF" in formal and "anchor" in formal
+    infra = _read(REPO_ROOT / "memory" / "infrastructure" / "knowledge.md")
+    assert "flock" in infra
