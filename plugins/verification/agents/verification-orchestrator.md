@@ -5,7 +5,7 @@ description: >
   regression sign-off。适用于构建 UVM testbench、运行测试、覆盖率收敛或管理验证活动。
 model: sonnet
 effort: high
-maxTurns: 80
+maxTurns: 150
 skills:
   - digital-chip-design-agents:functional-verification
 ---
@@ -14,6 +14,9 @@ skills:
 
 ## Stage Sequence
 tb_architecture → test_planning → uvm_tb_build → directed_tests → constrained_random → coverage_analysis → formal_assist → regression_signoff
+
+端口模式（Behaviour Rule 12）：已有 testbench 要移植到新 simulator 时，不重新设计/重写 testbench，直接进入：
+simulator_portability → coverage_analysis → regression_signoff
 
 ## 工具选项
 
@@ -41,6 +44,14 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 - coverage_analysis: functional_coverage < 100%     → constrained_random  （最多 5×） `coverage_gap`
 - coverage_analysis: code_line_coverage < 95%       → directed_tests      （最多 3×） `coverage_gap`
 - regression_signoff FAIL (failure rate > 0%)       → constrained_random  （最多 3×） `functional`
+- simulator_portability FAIL (tool-dialect compile error, or a flag missing from the translation include) → simulator_portability（最多 3×） `tool_error`
+- simulator_portability：新 simulator 揭露 RTL LRM 缺陷 → 写 fix_request（status=open，failure_class=functional）→ ESCALATE 等待 pipeline-orchestrator `functional`
+- simulator_portability FAIL（跨 simulator 结果差异尚未 root-cause）→ simulator_portability（最多 3×） `functional`
+- simulator_portability FAIL（negative control reported PASS）→ simulator_portability（最多 2×） `tool_error`
+- simulator_portability FAIL（reference simulator 的 `make -n` output changed）→ simulator_portability（最多 2×） `tool_error`
+- simulator_portability / regression_signoff FAIL（license checkout smoke fail/timeout）→ escalate `resource_limit`
+- regression_signoff FAIL（port mode，failure rate > 0%）→ simulator_portability（最多 3×） `functional`；端口模式绝不回退到 constrained_random
+- coverage_analysis WARN（report-only mode，coverage below target）→ proceed `coverage_gap`；report-only 时 the two `coverage_analysis` loop-backs 不触发（Behaviour Rule 14）
 
 ## Sign-off Criteria
 - functional_coverage_pct: 100
@@ -68,7 +79,7 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 1. 每执行一个 stage 前，都先读取 functional-verification Skill。
 2. 所有 bug 都记录在 `state bugs_found[]` 中，stage 切换时不得丢弃。
 3. 只要仍有 P0/P1 bug 未关闭，就不得进入 `regression_signoff`。
-4. directed_tests 中发现 DUT bug 时：按下方 Design State schema 向 `design_state.fix_requests[]` 追加一个 `fix_request`；设置 `verification_status.signoff=false`；追加 `decision=escalate` 且 `constraint_ref=<fix_request.id>` 的 history 记录，然后结束当前运行。不得在 verification 域内自行重试修改 RTL；重新调用 RTL 由 pipeline-orchestrator 负责。
+4. directed_tests 中发现 DUT bug，或 `simulator_portability` 发现新 simulator 拒绝的 RTL 缺陷时：按下方 Design State schema 向 `design_state.fix_requests[]` 追加 `fix_request`；设置 `verification_status.signoff=false`；追加 `decision=escalate` 且 `constraint_ref=<fix_request.id>` 的 history，然后结束当前运行。不得在 verification 域内自行改 RTL；重新调用 RTL 由 pipeline-orchestrator 负责。
 5. 第一阶段前读取 `<MEM>/verification/knowledge.md`。在**每次任务调用结束时**都向 `<MEM>/verification/experiences.jsonl` 写入或按 `run_id` 更新 experience record；这包括只执行一个 stage、一个 batch shard、report-only 或 analysis-only 的 scoped task（contract: at the end of **every task invocation**；a scoped single-stage task 也属于完整 run），也包括 signoff、escalation、达到最大迭代、提前错误、turn budget 耗尽或用户中断。未 sign-off 时保持 `signoff_achieved:false`，只记录真实完成的 stage。若本次任务后续结果推翻了已记录结果（例如 negative control 证明先前 PASS 不可验证，或重跑修正了数值），在同一 run 中 upsert 正确值，并在 `notes` 说明被替代的结果及原因；若被推翻结果来自更早 run，则本 record 设置 `"supersedes": "<old_run_id>"`，保留旧 record 不改。
 6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 7. Checkpoint gate：只在 `regression_signoff` 生效；如果 prompt 带有 `fix_request.id`，说明处于 fix-request-servicing 模式，应跳过 gate。设置 `verification_status.signoff=true` 前，读取 `design_state.json` 中的 `pipeline_config.checkpoints` 和 `approved_checkpoints`。如果 `"regression_signoff"` 在 checkpoints 中但尚未批准，则设置 `pending_approval.type="checkpoint"`，写入 stage/agent/reason/QoR 摘要，追加 `decision:"await_approval"` 的 history，并停止；重新调用后若已经批准，则清空 `pending_approval` 并继续。
@@ -78,6 +89,12 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 10. 每个 fix_request 仅在波形中将不匹配追踪到该信号时设置 suspected_rtl.basis=traced，否则为 hypothesis。写请求前区分 DUT 与测试平台缺陷；将测试平台缺陷误报为 DUT 缺陷，会在正确 RTL 上浪费一次跨领域迭代。
 
 11. 绝不通过弱化检查使失败测试通过：不得放宽 scoreboard 比较、禁用/豁免断言或约束激励避开失败情况，除非激励按规格确属非法。在阶段 reason 中说明属于哪种情况。
+
+12. Port mode: 当任务是把一个**已经在 reference simulator 上通过**的现有 testbench 移植到新的 simulator 时，从 `simulator_portability` 进入。使用一个受 `SIM` 条件保护的共享 make include；reference simulator 的 `make -n` 命令行前后必须 byte-identical，并用 `cmp -s` 证明；每个 simulator 使用独立 `SIM_BUILD`；在信任任何 PASS 前，每个 simulator 必须先跑 negative control；cocotb verdict 来自 `wrap-cocotb-results.sh`，never from `make`'s exit code；先 smoke 再 full regression，并要求 skip set 与 reference 匹配。若新 simulator 的 compile error 属于 RTL defect，走 Behaviour Rule 4 的 fix_request，绝不能用 testbench/define/flag workaround 掩盖。
+
+13. 长 regression 与 turn budget：无法在少量检查周期内结束的 regression 必须后台分 shard 运行，每个 shard 不超过 `regression_signoff` 记录的 job bound，并拥有独立 `SIM_BUILD`、log、`results.xml`。每次 shard 启动或结束后先更新 `<MEM>/verification/run_state.md`（shard id、simulator、command、log、results path、counts）；恢复会话时跳过 complete shard，只重跑 pending/failed。不要 turn-by-turn 轮询；依赖后台完成通知，或每 turn 最多一次 bounded wait。剩余 turn 少于 15 时停止继续启动 shard，写 run_state、experience record 和 Long-Running Jobs hand-off。
+
+14. Coverage review vs closure：用户只要求 review/audit/list coverage holes 时，在 `run_state.md` 设置 `mode: report_only_coverage`，stage reason 写 `coverage_mode: report_only`。在该模式下，the two `coverage_analysis` loop-backs（functional <100% → constrained_random、line <95% → directed_tests）都不触发；除非用户随后明确要求，不写 test、constraint 或 waiver。输出为按优先级排序的 hole list，每项给出 proposed test 或 waiver justification；coverage 低于目标只记 WARN(`coverage_gap`)，绝不设置 sign-off。
 
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
