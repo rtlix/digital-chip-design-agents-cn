@@ -195,35 +195,45 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
    c. 找到 Python 模块时，按下方 **Module version selection** 选取版本，不能简单排序。运行 `module load <python-module>`，再用 `which python3` 解析 `PYTHON_EXEC`。排除非发布版本在此尤其重要：选中的解释器会保持加载整个运行过程，选中 `_test` 或 `-debug` 构建会影响所有后续阶段。设置 `python_env.type = "module"`，并在 `python_env.module_name` 记录所加载模块名。**整个编排器运行期间保持模块加载，不能卸载**；后续 `tool_installation`、`wrapper_deployment`、`environment_validation` 均依赖可解析的 `PYTHON_EXEC`。生成的 `load-modules.sh` 负责未来 Shell 会话的持续加载。
    d. `module_system` 为 `"none"`、调用阶梯耗尽（`module_listing` 为 `"UNAVAILABLE"`）或列表无 Python 模块时，进入步骤 B。检测到但无法列出的模块系统不等于不存在模块系统：虽然在此回退到 PATH 解释器，`module_discovery` 仍须报告 WARN，不能因已找到解释器而省略警告。
 
-   **Step B — PATH fallback**
-   e. `which python3`，保存为 `PYTHON_EXEC`。
-   f. 找不到则在 `tool-status.json` 把 python3 记为 `MISSING` 并立即 FAIL；所有 wrapper/Python package 都依赖它。
-   g. 分类：
-      - `system`：`PYTHON_EXEC == /usr/bin/python3`
-      - `module_system == "custom"`：其他路径（pyenv/conda/venv/custom prefix）
+   **Step B — PATH-based fallback**。PATH 中第一个 `python3` 只是 candidate，不是答案；EDA 主机很容易被厂商安装树中的 bundled Python 抢先。
+   e. 从 non-interactive bash 枚举 PATH 上所有 `python3` 和 `python3.N`（N=6..20），并补查 `/usr/bin`、`/usr/local/bin`、`$HOME/.local/bin`；`realpath` 去重，记录每个版本。没有 candidate 时立即把 python3 记 MISSING 并 FAIL。
+   f. 对每个 candidate 分类，first match wins：
+      - `bundled`：路径位于 EDA vendor tree（Synopsys/Cadence/Mentor/Siemens/Ansys/Xilinx/Intel 等）或对应 `$<VENDOR>_HOME` 下。A bundled interpreter **is never selected as `PYTHON_EXEC`**；只把它记录到 `python_env.candidates[]`，例如 `{ "path": "...", "version": "3.8.16", "type": "module | system | custom | bundled" }` 中实际该项 type 为 bundled。
+      - `system`：`/usr/bin` 或 `/usr/local/bin`。
+      - `custom`：其他路径，如 pyenv/conda/custom prefix。
+   g. Python 最低版本来自项目要使用的 cocotb 的 `Requires-Python`；不能拍脑袋。没有指定 cocotb 时 floor=3.8。
+   h. 选择满足 floor 的最新 non-bundled candidate，按数字版本比较（3.12 > 3.9）；同版本 system 优先 custom。如果没有满足要求的 non-bundled candidate，列出 candidates 并 FAIL，**never fall back to a `bundled` one**。
+   i. 优先使用 project-local venv。如果 `<project>/.venv/bin/python`（或项目 Makefile 指定 venv）存在、满足 floor 且 base interpreter 非 bundled，则设 `python_env.type="venv"`。否则保留 h 的 interpreter，并设 `venv_planned:true`；本 stage 不创建 venv。
 
-   **步骤 C：完成记录：**
-   h. 无论如何解析到 `PYTHON_EXEC`，均设置 `PYTHON_BIN_DIR = $(dirname "$PYTHON_EXEC")`。
-   i. 在 `tool-status.json` 的顶层 `python_env` 键下记录：
+   **Step C — Finalize**
+   j. `PYTHON_BIN_DIR=$(dirname "$PYTHON_EXEC")`。
+   k. `tool-status.json` 顶层：
       ```json
       {
         "python_env": {
           "exec": "<absolute path>",
-          "type": "module | system | custom",
+          "type": "module | system | custom | venv",
           "bin_dir": "<absolute dir>",
-          "module_name": "<module name, or null if not module-based>"
+          "module_name": null,
+          "base_exec": null,
+          "floor": "3.x",
+          "venv_planned": false,
+          "candidates": [
+            { "path": "<candidate>", "version": "3.x", "type": "module | system | custom | bundled" }
+          ]
         }
       }
       ```
-   j. 获取 `"$PYTHON_EXEC" --version`，在 `tools` 数组中存为普通条目（`"tool": "python3"`、`"command": "python3"`、`"status": "FOUND"`、`"version": "<output>"`、`"path": "<PYTHON_EXEC>"`），让 `module_discovery` 能找到 `python3` 并升级为 `FOUND_PREFER_MODULE`。
+      `bundled` 只允许出现在 `candidates[].type`，永远不能成为最终 `python_env.type`。
+   l. 记录 `"$PYTHON_EXEC" --version`，并在 tools[] 中保存 python3 FOUND 条目。
 
 3. **例外：Python 包：**
    - **cocotb：** 按规则 2 确定的解释器类型检测：
-     - `python_env.type == "custom"` 或 `"module"` 时，先检查 `"$PYTHON_BIN_DIR/cocotb-config" --version`；退出为零则记录 FOUND 和返回的版本字符串。仅在不存在或退出非零时回退到 PATH 上的 `cocotb-config --version`。
+     - `python_env.type == "custom"`、`"module"` 或 `"venv"` 时，先检查 `"$PYTHON_BIN_DIR/cocotb-config" --version`；退出为零则记录 FOUND 和返回的版本字符串。仅在不存在或退出非零时回退到 PATH 上的 `cocotb-config --version`。
      - `python_env.type == "system"` 时，仅使用 PATH 上的 `cocotb-config --version`。
      - 所有尝试失败时报告 MISSING。
    - **openlane：** 运行 `"$PYTHON_EXEC" -m pip show openlane 2>/dev/null`。退出码为 0 且输出含 `Name: openlane` 时记录 FOUND 并提取 `Version:`；否则记录 MISSING。
-   - **uv：** `python_env.type == "custom"` 或 `"module"` 时先检查 `"$PYTHON_BIN_DIR/uv" --version`，再回退到 PATH 上的 `uv --version`。`system` 类型仅使用 `uv --version`。
+   - **uv：** `python_env.type == "custom"`、`"module"` 或 `"venv"` 时先检查 `"$PYTHON_BIN_DIR/uv" --version`，再回退到 PATH 上的 `uv --version`。`system` 类型仅使用 `uv --version`。
 4. **专有工具：** 使用 `which <primary-executable>` 检查 PATH（主命令及备用命令见上方专有工具表）；绝不尝试安装。找到则记录 `PROPRIETARY_ONLY`，否则为 `MISSING`。PATH 中找到且表中有版本探测命令时，以 60 秒超时运行并解析指定行，将解析后的字符串存入 `version`。不能使用过短超时：Cadence Common UI 为回答 `-version` 会启动完整 Shell，冷 NFS 缓存下需要数十秒（`genus -version` 实测冷缓存 26 秒、热缓存 12 秒）。对 `vcs` 仅保存 `Compiler version`，丢弃 FLEXlm host ID。
 
    表中无探测命令、探测超时、退出非零，**或退出 0 但未打印指定行**时，将 `version` 留空，并输出注明工具及原因的 WARN。只有真正找到指定行才记录版本；退出 0 不代表打印了版本。
@@ -245,7 +255,7 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 
 ### Output Required
 - `tool-status.json` 包含两个顶层键：
-  - `python_env`：`{ "exec": "", "type": "module|system|custom", "bin_dir": "", "module_name": "" }`，由规则 2 填充
+  - `python_env`：`{ "exec": "", "type": "module|system|custom|venv", "bin_dir": "", "module_name": "" }`，由规则 2 填充
   - `tools`：由 `{ "tool": "", "command": "", "status": "FOUND|MISSING|PROPRIETARY_ONLY", "version": "", "path": "", "role": null, "dialect": null }` 组成的数组
 
 每项始终包含 `role` 和 `dialect`，值为上表中的字符串或 `null`。每个 `FOUND` 工具以及探测成功的 `PROPRIETARY_ONLY` 工具，`version` 均非空。
@@ -773,6 +783,20 @@ Memory (optional) — `mcp-memory.py` is the server itself:
 
 ---
 
+### Licensed tools on a small shared host (measured)
+
+以下规则来自一台约 8 vCPU / 15 GB 的共享虚拟机上连续商业 RTL→GDS 实测，多个 Agent 共用 license/CPU/RAM：
+- **One heavy tool at a time, enforced by a lock.** 单纯 §pgrep§ “先看有没有进程”存在 race。统一使用 host-wide lock：§exec 9>>$LOCK; flock -x 9§，由 §licensed_lock.sh <cmd>§ 持锁直到 tool 及其 child 全退出；兼容旧调用者时，可按 exact process name 使用 §pgrep -x§ 等待。
+- 启动前用 §safe_run.sh <log> <cmd>§ 检查 load 与 §MemAvailable§；需要时用 §systemd-run --user --scope -p MemoryMax=<cap> -p MemorySwapMax=0§、§nice§、§setsid§。CPU 设置 **2 or fewer**。Timeout 时杀整个 **process group**，裸 timeout 可能留下持 license 的 child。
+- 小主机 heavy PD/STA job 不并发。PrimeTime/StarRC 等轻量 run 可在明确内存余量下共享；KLayout/Magic/Innovus/ICC2/RedHawk 需保守串行。
+- 启动延迟本身可能很长：ICC2 实测 **30-65 min**；不能用短 timeout 判挂死，wall time 还应记录当时 load。
+- 长任务使用 §setsid§/§nohup§，结束时写 **done-marker**；等 marker，不 grep 旧 log。不要用宽泛 §pkill -f§，它可能匹配并杀掉调用 shell。
+- Chain driver 必须读取每 stage 自己的 **result line**，不能只相信脚本最后 exit 0。
+- §grdgenxo§ / Techgen 等 field solver 可能小时级，单独排队。
+- License server 状态不能只靠普通 lmstat socket 结论；需要 vendor checkout probe 时使用 §ckout_test§。
+
+---
+
 ## Stage: environment_validation
 
 ### Domain Rules
@@ -784,8 +808,8 @@ Memory (optional) — `mcp-memory.py` is the server itself:
    - type=custom/system：确认当前 python3 path 与 `python_env.exec` 一致，不一致 WARN
 2. 严格按 `tool_discovery` 规则 2–3 重新检查工具存在性，包括 PATH 回退及 `python_env.type` 分支。不同检测方式会在真实安装上产生静默分歧：
    - `openlane`：使用 `"$PYTHON_EXEC" -m pip show openlane`，规则 3 对它没有回退。
-   - `cocotb`、`uv`：custom/module 类型先尝试 `"$PYTHON_BIN_DIR/<tool>"`，再回退 PATH 命令；system 类型只用 PATH，不构造 `$PYTHON_BIN_DIR` 探测。
-   在 `tool-manifest.json` 的 `resolved_via` 记录解析路径。custom/module 类型通过 PATH 回退找到包时，报告 WARN：“<tool> 从 PATH 的 <path> 解析，位于当前 Python bin 目录 <python_env.bin_dir> 之外，可能使用不同于 <python_env.exec> 的解释器”；修复指引为确认解释器或以 `"$PYTHON_EXEC" -m pip install <tool>` 重装到当前环境。工具确实存在，不能判缺失。
+   - `cocotb`、`uv`：custom/module/venv 类型先尝试 `"$PYTHON_BIN_DIR/<tool>"`，再回退 PATH 命令；system 类型只用 PATH，不构造 `$PYTHON_BIN_DIR` 探测。
+   在 `tool-manifest.json` 的 `resolved_via` 记录解析路径。custom/module/venv 类型通过 PATH 回退找到包时，报告 WARN：“<tool> 从 PATH 的 <path> 解析，位于当前 Python bin 目录 <python_env.bin_dir> 之外，可能使用不同于 <python_env.exec> 的解释器”；修复指引为确认解释器或以 `"$PYTHON_EXEC" -m pip install <tool>` 重装到当前环境。工具确实存在，不能判缺失。
    此风险很常见：`tool_installation` 优先使用 astral.sh 独立 uv 安装器，安装前缀并非 `$PYTHON_BIN_DIR`；参考主机的 uv 就位于与解释器无关的共享 bin 目录。system 类型的 PATH 就是当前环境，绝不报此 WARN。
    与 `tool-status.json` 比较，该文件由 tool_discovery 写入、module_discovery 原地更新，是此时唯一工具记录。不能与本阶段输出 `tool-manifest.json` 比较，因为尚无内容可比。本阶段只读 tool-status.json；分歧为 WARN，不降级工具状态。
 
