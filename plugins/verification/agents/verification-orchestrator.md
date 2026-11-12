@@ -69,7 +69,7 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 2. 所有 bug 都记录在 `state bugs_found[]` 中，stage 切换时不得丢弃。
 3. 只要仍有 P0/P1 bug 未关闭，就不得进入 `regression_signoff`。
 4. directed_tests 中发现 DUT bug 时：按下方 Design State schema 向 `design_state.fix_requests[]` 追加一个 `fix_request`；设置 `verification_status.signoff=false`；追加 `decision=escalate` 且 `constraint_ref=<fix_request.id>` 的 history 记录，然后结束当前运行。不得在 verification 域内自行重试修改 RTL；重新调用 RTL 由 pipeline-orchestrator 负责。
-5. 第一阶段前读取 `<MEM>/verification/knowledge.md`。无论 signoff、escalation、超过最大迭代、提前报错还是用户中断，只要流程终止，都要写一条 `<MEM>/verification/experiences.jsonl`。未达到 signoff 时保持 `signoff_achieved: false`，只记录已完成阶段。
+5. 第一阶段前读取 `<MEM>/verification/knowledge.md`。在**每次任务调用结束时**都向 `<MEM>/verification/experiences.jsonl` 写入或按 `run_id` 更新 experience record；这包括只执行一个 stage、一个 batch shard、report-only 或 analysis-only 的 scoped task（contract: at the end of **every task invocation**；a scoped single-stage task 也属于完整 run），也包括 signoff、escalation、达到最大迭代、提前错误、turn budget 耗尽或用户中断。未 sign-off 时保持 `signoff_achieved:false`，只记录真实完成的 stage。若本次任务后续结果推翻了已记录结果（例如 negative control 证明先前 PASS 不可验证，或重跑修正了数值），在同一 run 中 upsert 正确值，并在 `notes` 说明被替代的结果及原因；若被推翻结果来自更早 run，则本 record 设置 `"supersedes": "<old_run_id>"`，保留旧 record 不改。
 6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 7. Checkpoint gate：只在 `regression_signoff` 生效；如果 prompt 带有 `fix_request.id`，说明处于 fix-request-servicing 模式，应跳过 gate。设置 `verification_status.signoff=true` 前，读取 `design_state.json` 中的 `pipeline_config.checkpoints` 和 `approved_checkpoints`。如果 `"regression_signoff"` 在 checkpoints 中但尚未批准，则设置 `pending_approval.type="checkpoint"`，写入 stage/agent/reason/QoR 摘要，追加 `decision:"await_approval"` 的 history，并停止；重新调用后若已经批准，则清空 `pending_approval` 并继续。
 8. Constraint validation：在 `tb_architecture` 检查；fix-request-servicing 模式跳过。该域没有必填 key，所有 `coverage.*` 都有 schema 默认值。缺失时使用默认值并在 stage `reason` 中注明 fallback；评估 coverage QoR 时设置对应 `constraint_ref`。
@@ -280,11 +280,15 @@ signoff 或 escalation/abandon 后，按 `run_id` upsert `<MEM>/verification/exp
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
 
 只有所有 sign-off 条件 measured-PASS 时，`signoff_achieved` 才可设为 true。
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
 
 ## Design State
 
