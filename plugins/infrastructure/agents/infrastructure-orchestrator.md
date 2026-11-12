@@ -31,15 +31,16 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 - xschem、GTKWave、uv
 
 ### Proprietary（只检测，绝不安装）
-跟踪 34 个专有工具（完整命令/探测表见基础设施 Skill 的 Proprietary 章节）。此处按 role 分组，因为方言冲突以角色为单位警告；同角色不同 dialect 的工具不能互换，一种方言的命令行对同角色另一方言无效。
+跟踪 46 个专有工具（完整命令/探测表见基础设施 Skill 的 Proprietary 章节）。此处按 role 分组，因为方言冲突以角色为单位警告；同角色不同 dialect 的工具不能互换，一种方言的命令行对同角色另一方言无效。
 
 | `role` | dialects present (tool `command`) |
 |---|---|
 | `rtl_simulator` | `synopsys` (`vcs`) · `cadence` (`xrun`) · `siemens` (`vsim`) |
+| `coverage_report` | `synopsys` (`urg`) · `cadence` (`imc`) |
 | `synthesis` | `synopsys` (`dc_shell`, `fc_shell`, Synplify) · `cadence` (`genus`) |
 | `physical_design` | `cadence` (`innovus`) · `synopsys` (`icc2_shell`) · `siemens` (Aprisa) |
-| `sta` | `synopsys` (`pt_shell`) · `cadence` (`tempus`) |
-| `lec` | `synopsys` (`fm_shell`, alt `formality`) · `cadence` (`conformal`) |
+| `sta` | `synopsys` (`pt_shell`) · `cadence` (`tempus`，可选；缺失时使用 PrimeTime) |
+| `lec` | `synopsys` (`fm_shell`, alt `formality`) · `cadence` (`lec`，Conformal) |
 | `formal` | `cadence` (`jg`) · `synopsys` (`vcf`) · `siemens` (`qformal`) |
 | `atpg` | `synopsys` (`tmax`) · `cadence` (`modus`) · `siemens` (`tessent`) |
 | `lint_cdc` | `synopsys` (`spyglass`, VC Static) — 单一命令方言，详见 Skill |
@@ -47,8 +48,12 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 | `fpga_pnr` | `xilinx` (`vivado`) · `intel` (`quartus_sh`) · `microchip` (`libero`) |
 | `mem_compiler` | `arm` (`artisan`) — 单一命令方言 |
 | `characterisation` | `synopsys` (`siliconsmart`) · `cadence` (`liberate`) |
-| `extraction` | `synopsys` (`starrc`) — 单一命令方言 |
-| `power_analysis` | `cadence` (`voltus`, Joules RTL) · `synopsys` (PrimePower) · `siemens` (PowerPro) |
+| `extraction` | `synopsys` (`StarXtract`) · `cadence` (`quantus`) |
+| `extraction_tech` | `synopsys` (`grdgenxo`) · `cadence` (`Techgen`) |
+| `library_prep` | `synopsys` (`lc_shell`, `icc2_lm_shell`) |
+| `power_analysis` | `cadence` (`voltus`/`joules`) · `synopsys` (PrimePower) · `siemens` (PowerPro) |
+| `ir_em` | `ansys` (`redhawk`, `totem`) |
+| `drc_lvs` | open: `klayout`/`magic`/`netgen` · `siemens` (`calibre`) · `cadence` (`pvs`) |
 | `embedded_compiler` | `arm` (`armcc`) · `greenhills` (MULTI) · `iar` (Embedded Workbench) |
 | `debug_probe` | `segger` (`JLinkGDBServer`) · `lauterbach` (`t32marm`) · `arm` (`armds`) |
 | `arch_simulator` | `synopsys` (Platform Architect) · `arm` (Performance Models) · `cadence` (VSP) |
@@ -70,6 +75,9 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 - environment_validation WARN（同角色不同方言共存）→ proceed（签核摘要报告 WARN，绝不阻止签核）
 - environment_validation FAIL（仿真器冒烟编译错误）→ escalate: "resource_limit: <tool> 无法编译简单模块，<wrapper error>；工具/许可证缺陷无法靠重试修复，先修复再重跑 environment_validation。"
 - environment_validation WARN（冒烟未启用、许可证排队阻塞/超时）→ proceed（摘要报告 WARN，绝不阻止签核）
+- tool_discovery WARN（coverage-reporting gap：找到 simulator 但缺 `urg`/`imc`）→ proceed；coverage 可收集但不可 merge/report，不得写成 coverage FAIL
+- tool_discovery FAIL（没有满足 cocotb floor 的非 bundled Python）→ escalate `resource_limit`
+- environment_validation WARN（parallel-job bound 无法完全测量或 sim_build 空间低）→ proceed，并在 `regression_resources` 记录 null/shortfall
 - wrapper_deployment FAIL（权限拒绝）→ 升级并给出 sudo chmod +x plugins/infrastructure/tools/*.sh `resource_limit`
 
 ## State Object
@@ -92,8 +100,13 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
     "exec": null,
     "type": null,
     "bin_dir": null,
-    "module_name": null
+    "module_name": null,
+    "base_exec": null,
+    "floor": null,
+    "venv_planned": false,
+    "candidates": []
   },
+  "coverage_reporting_gaps": [],
   "module_system": null,
   "module_system_detail": null,
   "module_listing": null,
@@ -147,13 +160,14 @@ Each stage must return:
 3. 达到最大 iteration 后停止并输出完整 state/root cause。
 4. **绝不自动运行安装脚本**；每个 MISSING 工具单独生成
    `install-missing-tools/install-<toolname>.sh`，交给用户 review。
-5. 完成时确认 environment_validation 已创建符合 Skill Output Required 验证凭据 schema 的 tool-manifest.json（不是更新此前文件），全部 11 个 Wrapper 可执行，mcp-adapter.py 与 mcp-session-adapter.py 存在，全部 10 个工具服务器 MCP 片段已写入解析后的绝对路径并打印；存在时也处理可选记忆服务器 mcp-memory.json。
+5. Python selection: never record EDA vendor install tree 中的 `bundled` interpreter 为 `python_env.exec`；枚举 `python3.N`，按 cocotb `Requires-Python` floor 选最新 non-bundled，并优先 project-local venv。
+6. 完成时确认 environment_validation 已创建符合 Skill Output Required 验证凭据 schema 的 tool-manifest.json（不是更新此前文件），全部 25 个 Wrapper 可执行，mcp-adapter.py 与 mcp-session-adapter.py 存在，全部 10 个工具服务器 MCP 片段已写入解析后的绝对路径并打印；存在时也处理可选记忆服务器 mcp-memory.json。
 
-6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
-7. `environment_validation` checkpoint：signoff 前检查 approval。未批准时设置
+7. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
+8. `environment_validation` checkpoint：signoff 前检查 approval。未批准时设置
    `pending_approval.type="checkpoint"`，记录 tools_detected/wrappers_deployed 摘要并停止；
    批准后清空 pending_approval。
-8. Infrastructure Memory 默认关闭。仅当
+9. Infrastructure Memory 默认关闭。仅当
    `design_state.pipeline_config.track_infrastructure == true`
    或 invocation 带 `--track-memory` 时，才读写 `<MEM>/infrastructure/`。
 
