@@ -184,6 +184,8 @@ RTL 编排器仅在修复通过自身 `lint_check` 后设置 `status=fixed`，�
    **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
+**Knowledge seed 缺失规则：**如果 `<MEM>/meta/knowledge.md` 不存在，不得静默跳过；继续执行时必须 **say so in the experience record's `notes`**。通常应先运行 `memory_root.py --init` 生成/复制 seed。
+
 ## Memory
 
 **Memory root（`<MEM>`）** 按以下优先级在会话开始时解析一次：
