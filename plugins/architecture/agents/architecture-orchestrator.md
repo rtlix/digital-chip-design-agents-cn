@@ -91,7 +91,7 @@ perf_modelling → power_area_estimation → risk_assessment → arch_signoff
 2. 严格执行 loop-back rule，FAIL 后不得直接进入下一阶段（见 Stage Gate 与升级，第 2 条）。
 3. 达到最大迭代次数后停止，展示完整 state 和 escalation report（见 Stage Gate 与升级，第 3 条）。
 4. 完成后必须生成 microarchitecture 文档和 RTL handoff package。
-5. 第一阶段前读取 `<MEM>/architecture/knowledge.md`。无论 signoff、escalation、达到最大迭代、提前错误还是用户中断，只要流程终止，都写一条 `<MEM>/architecture/experiences.jsonl`。未达到 signoff 时 `signoff_achieved:false`，只记录已完成 stage。
+5. 第一阶段前读取 `<MEM>/architecture/knowledge.md`。在**每次任务调用结束时**都向 `<MEM>/architecture/experiences.jsonl` 写入或按 `run_id` 更新 experience record；这包括只执行一个 stage、一个 batch shard、report-only 或 analysis-only 的 scoped task（contract: at the end of **every task invocation**；a scoped single-stage task 也属于完整 run），也包括 signoff、escalation、达到最大迭代、提前错误、turn budget 耗尽或用户中断。未 sign-off 时保持 `signoff_achieved:false`，只记录真实完成的 stage。若本次任务后续结果推翻了已记录结果（例如 negative control 证明先前 PASS 不可验证，或重跑修正了数值），在同一 run 中 upsert 正确值，并在 `notes` 说明被替代的结果及原因；若被推翻结果来自更早 run，则本 record 设置 `"supersedes": "<old_run_id>"`，保留旧 record 不改。
 6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 7. Checkpoint gate 仅在 `arch_signoff` 生效；fix-request-servicing 模式（prompt 中传入 `fix_request.id`）跳过。设置 `architecture.signoff=true` 前读取 `pipeline_config.checkpoints` 和 `approved_checkpoints`。如果 `arch_signoff` 需要批准但尚未批准，则原子设置 `pending_approval.type="checkpoint"`，写入 stage、agent、reason、选中架构/预估 MHz/面积摘要，追加 `decision:"await_approval"` 的 history，输出提示后停止。重新调用且该 stage 已批准时，清空 `pending_approval` 并继续。
 8. Constraint extraction：在 `spec_analysis` 中解析产品规格里的目标时钟、面积 budget 和功耗 budget。可推导时写入 `constraints.clock.clk_mhz`、`constraints.area.area_um2`、`constraints.power.power_mw`；规格未提供时保留 null。完整 constraints object 必须在 `spec_analysis` 阶段就写入 `design_state.json`，不能等到 session end，确保下游 Orchestrator 在 architecture 完成后立即可读。
@@ -308,11 +308,15 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
 
 Partial run（中断、错误、max-turns）保持 `signoff_achieved:false`；只有成功 signoff 才设 true。
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
 
 ## Design State
 
