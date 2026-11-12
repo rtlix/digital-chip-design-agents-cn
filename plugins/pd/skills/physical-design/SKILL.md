@@ -124,7 +124,7 @@ Agent 流程：
 - Routing layer 限制的 `global_min_layer_mode` 可能只是 soft；需要时使用 `hard` mode 并验证实际 route。
 - PG 建网可用 `set_pg_via_master_rule`；PVT/scenario 显式设置 `set_process_number`、`set_voltage`、`set_temperature`。
 - 某些 report/constraint 命令要求 `-object_list`；错误参数可见 `CHF-002`；multi-scenario 查询明确 `-scenarios`。
-- Hold repair 若只允许弱 `ZBUF`/`ZINV`，先用 `set_lib_cell_purpose -include hold` 配置可用 cell。`add_buffer` drops the new cell off the row grid 时必须重新 legalize，不能直接 route。
+- Hold repair 若只允许 **weak `ZBUF`/`ZINV`**，先用 `set_lib_cell_purpose -include hold` 配置可用 cell。`add_buffer` drops the new cell off the row grid 时必须重新 legalize，不能直接 route。
 - `fat_table` / power strap 邻近 spacing 可能需要额外 **0.1 um met4 routing blockages**；实测 rule `m4.5ab`。
 - Pin connection 例外可用 `set_routing_rule -min_routing_layer met3 -min_layer_mode allow_pin_connection`，但不能放宽普通 signal route。
 - Antenna 可设置 `diode_mode 1`；若商业工具报告不稳定，可 **drive the antenna ECO from the OpenROAD list**，但最终仍需同一 sign-off deck 复核。
