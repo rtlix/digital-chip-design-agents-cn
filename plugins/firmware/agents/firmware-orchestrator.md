@@ -77,7 +77,7 @@ EDA log，而不是 compiler 或 test output。应直接执行：
 2. 全部 driver unit test PASS 前不得进入 `rtos_integration`。
 3. 在 state 中维护 `drivers_complete[]`；driver 未完成会阻塞 RTOS stage。
 4. 输出：validated firmware package + bring-up guide + known issues list。
-5. 第一阶段前读取 `<MEM>/firmware/knowledge.md`；任何终止路径都写 `<MEM>/firmware/experiences.jsonl`。未 sign-off 时保持 `signoff_achieved:false`。
+5. 第一阶段前读取 `<MEM>/firmware/knowledge.md`。在**每次任务调用结束时**都向 `<MEM>/firmware/experiences.jsonl` 写入或按 `run_id` 更新 experience record；这包括只执行一个 stage、一个 batch shard、report-only 或 analysis-only 的 scoped task（contract: at the end of **every task invocation**；a scoped single-stage task 也属于完整 run），也包括 signoff、escalation、达到最大迭代、提前错误、turn budget 耗尽或用户中断。未 sign-off 时保持 `signoff_achieved:false`，只记录真实完成的 stage。若本次任务后续结果推翻了已记录结果（例如 negative control 证明先前 PASS 不可验证，或重跑修正了数值），在同一 run 中 upsert 正确值，并在 `notes` 说明被替代的结果及原因；若被推翻结果来自更早 run，则本 record 设置 `"supersedes": "<old_run_id>"`，保留旧 record 不改。
 6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 7. `firmware_signoff` checkpoint：设置 `firmware.signoff=true` 前检查 `pipeline_config.checkpoints` 和 `approved_checkpoints`。需要审批但尚未批准时，设置 `pending_approval.type="checkpoint"`，记录 `all_driver_tests_pass/stress_test_24h_clean` 摘要，追加 `decision:"await_approval"` history 并停止；批准后清空 pending_approval 并继续。
 
@@ -272,10 +272,14 @@ signoff/escalation/abandon 后按 `run_id` upsert：
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
 只有成功 signoff 时设 true。
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
 
 ## Design State
 开始时读取 `rtl`、`soc`、`interfaces`、`pipeline_config`、`approved_checkpoints`。
