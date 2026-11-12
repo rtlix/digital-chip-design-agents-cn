@@ -38,20 +38,20 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 3. **直接执行** —— 最后手段；Verilator lint 输出在多轮 loop-back 后会快速膨胀
 
 ## Loop-Back Rules
-- design_input_check FAIL（输入错误：include 同名、陈旧/同级生成树、路径缺失、覆盖配置）→ escalate: "input_setup: <file> 从 <path used> 而非 <path intended> 解析，重新指定 filelist/include/配置；未修改 RTL。"
-- design_input_check FAIL（仅注册：本次新增模块缺少于某工具列表）→ rtl_coding（加入所有缺失列表，不改 RTL，最多 1×）`connectivity`
-- lint_check FAIL（规则未完成，原因位于输入或不能归因本次写入 RTL）→ escalate: "input_setup: lint 未运行任何规则便停止，<evidence>；RTL 未评估且未修改。"
-- lint_check FAIL（规则未完成，解析错误仅在本次写入 RTL，输入检查 PASS）→ rtl_coding（计入下方 5×；`tool_error`，不能 `functional`）
-- lint_check FAIL (errors > 0, rule check completed) → rtl_coding        （最多 5×） `functional`
-- lint_check FAIL（转换后 RTL 不被下游前端接受）→ rtl_coding（改源结构，不改转换文件，计入上方 5×）`tool_error`
-- cdc_rdc_analysis FAIL (unwaived violations) → rtl_coding        （最多 3×） `connectivity`
-- synth_check FAIL（综合前端解析/elaboration 错误，如 yosys 拒绝 sv2v 输出）→ rtl_coding（修源结构，再跑 lint 前端门控，最多 2×）`tool_error`
-- synth_check FAIL（黑盒/未定义模块有自有 RTL）→ rtl_coding（加入综合列表，不改 RTL，最多 1×）`connectivity`
-- synth_check FAIL（无自有 RTL，缺库/宏/IP 视图）→ escalate: "input_setup: <module> 在综合输入无定义，请提供库或 stub 视图。"
-- synth_check FAIL (WNS < −0.5 ns)           → rtl_coding        （最多 2×） `timing`
-- synth_check FAIL (area > 120% estimate)    → module_planning   （最多 1×） `power_area`
-- rtl_signoff FAIL (missing modules)         → module_planning   （最多 1×） `spec_gap`
-- rtl_signoff FAIL (quality issues)          → rtl_coding        （最多 2×） `functional`
+- design_input_check FAIL (input set wrong: duplicate include basename, stale or sibling generated tree, missing path, shadowing config) → escalate: "input_setup: <file> resolves from <path used> ahead of <path intended> - repoint the filelist, include path or config; no RTL was edited"
+- design_input_check FAIL (registration only: a module this run added is missing from a tool's source list) → rtl_coding (add the file to each list that misses it; edit no RTL; max 1×) `connectivity`
+- lint_check FAIL (rule check did not complete; cause in the input set, or not attributed to RTL this run wrote) → escalate: "input_setup: lint stopped before any rule ran - <evidence>; the RTL was not evaluated and no RTL was edited"
+- lint_check FAIL (rule check did not complete; parse error confined to RTL this run wrote, design_input_check PASS) → rtl_coding (counts toward the 5× below; `tool_error`, never `functional`)
+- lint_check FAIL (errors > 0, rule check completed) → rtl_coding (max 5×) `functional`
+- lint_check FAIL (front-end check: converted RTL does not parse in the downstream tool) → rtl_coding (fix the source construct, never the converted file; counts toward the 5× above) `tool_error`
+- cdc_rdc_analysis FAIL (unwaived violations) → rtl_coding (max 3×) `connectivity`
+- synth_check FAIL (parse or elaboration error in the synthesis front-end, e.g. a yosys syntax error on sv2v output) → rtl_coding (fix the source construct, then re-run the lint gate's front-end check; max 2×) `tool_error`
+- synth_check FAIL (black box or undefined module that resolves to first-party RTL) → rtl_coding (add the file to the synthesis source list; edit no RTL; max 1×) `connectivity`
+- synth_check FAIL (black box with no first-party RTL: missing library, macro or IP view) → escalate: "input_setup: <module> has no definition in the synthesis inputs - supply its library or stub view"
+- synth_check FAIL (WNS < −0.5 ns) → rtl_coding (max 2×) `timing`
+- synth_check FAIL (area > 120% estimate) → module_planning (max 1×) `power_area`
+- rtl_signoff FAIL (missing modules) → module_planning (max 1×) `spec_gap`
+- rtl_signoff FAIL (quality issues) → rtl_coding (max 2×) `functional`
 
 ## Sign-off Criteria
 - lint_errors: 0
@@ -87,10 +87,9 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 7. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 8. Checkpoint gate 仅在 `rtl_signoff` 生效；如果 prompt 中传入 `fix_request.id`，则处于 fix-request-servicing 模式，应跳过 gate。设置 `rtl.signoff=true` 前读取 `pipeline_config.checkpoints` 和 `approved_checkpoints`。如果 `rtl_signoff` 需要人工批准但尚未批准，则原子设置 `pending_approval.type="checkpoint"`，写入 stage/agent/reason/QoR 摘要，追加 `decision:"await_approval"` 的 history，输出 gate 提示并停止。重新调用后若已批准，则清空 `pending_approval` 并继续。
 9. Constraint validation 在 `module_planning` 执行；fix-request-servicing 模式跳过。必填：`clock.clk_mhz`。缺失或 null 时，原子设置 `pending_approval.type="constraint_gap"`，stage 为 `module_planning`，agent 为 `rtl-design-orchestrator`，history 使用 `decision:"escalate"`、`failure_class:"spec_gap"`、`suggested_next_step:"escalate"`、`constraint_ref:"clock.clk_mhz"` 并停止。可选约束缺失时使用 schema 默认值并在 stage reason 中注明 fallback。评估 QoR 时，使用相应 `constraint_ref` 标记约束来源。
-10. 修复请求门控：处理 fix_request 时，关闭前运行编辑可能影响的全部门控，不只 lint_check。下方 RTL Lint Gate 同样适用于修复输出，且此前须执行规则 11。始终运行 lint_check；下游转换 RTL 时也运行前端检查（RTL Lint Gate 第 8 项），因为修复最容易引入转换器无法降低的结构。编辑跨时钟/复位域信号、同步器、复位路径时重跑 cdc_rdc_analysis；改变时序路径逻辑深度、增删状态、增加模块/文件时重跑 synth_check（同时重跑规则 11 注册检查）。仅 lint_check 为 0 错误且前端检查通过，其他受影响门控通过或附理由报告 NOT RUN 时，才设 status=fixed。在 rtl_response.diff_summary 记录各门控结果（工具、命令、错误/警告数、退出状态），或为何判断未受影响。lint_check 回退上限内仍无法干净，或触发回归、无进展、意图偏移防护时，保持 claimed 并升级；pipeline-orchestrator 将仍 claimed 的请求标为 abandoned。不得通过改变请求未要求改变的行为来压下失败并关闭请求。
+10. Fix-request gate: in fix-request-servicing mode, run **every gate the edit could affect** before closing the `fix_request`, not only `lint_check`. Always run `lint_check`, including the **front-end check** wherever a downstream flow converts the RTL; re-run `cdc_rdc_analysis` when the edit touches a clock/reset crossing or synchronizer; re-run `synth_check` when it changes timing-path depth, state, modules/files, or synthesis-visible structure. A gate that cannot run is **reported NOT RUN with the reason**. Only after every affected gate is measured clean (or explicitly NOT RUN with reason, leaving signoff false) may the request be set `fixed`; otherwise keep it `claimed` and escalate as required.
 
-11. 输入集合门控：首次 lint_check 前运行 design_input_check；之后每次 lint_check 前，若 filelist、include 路径、生成头文件树或工具项目/配置文件自上次通过后改变，则重新检查，包括处理 fix_request 模式。仅工具读取预期文件且规则检查完成，lint 才构成 RTL 证据。design_input_check FAIL（本次新增模块仅缺列表注册的例外除外），或 lint_check 因非本次写入 RTL 解析错误的原因未完成时，不编辑任何 .v/.sv；追加终止 history[]，包含 decision=escalate、failure_class=input_setup、retry_strategy=escalate、suggested_next_step=escalate，reason 指出文件、工具实际路径、预期路径、应改行。处理修复请求时保持 claimed。输入集合通过前，绝不删除端口、信号或声明来消除重复声明/未声明标识符消息。
-
+11. Input-set gate: run `design_input_check` before the first `lint_check`, and again if a filelist, include path, generated-header tree or tool project/config changed. On FAIL other than the registration-only case, or when lint rule checking did not complete for a cause not confined to RTL this run wrote, **edit no `.v`/`.sv` file**; record `input_setup` and escalate with actual/intended paths. **Never delete a port, signal or declaration** to silence duplicate-declaration or undeclared-identifier messages before this gate passes.
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
 每条 `history[]` 记录都携带两个字段：`failure_class` 表示发生了什么故障，
@@ -352,6 +351,8 @@ signoff 或 escalation/abandon 后，在 `<MEM>/rtl-design/experiences.jsonl` �
 
 
 **Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
+
+**RTL hand-off contract：** **Write it on every termination path**. `rtl.files[]` is the block's complete current file set；`rtl.unverified[]` 累积本次 run 各阶段未经工具证明的声明；lint/CDC/synth/signoff 状态只有在本次 run 实测 clean 时才能写 true——`true` only when measured clean in this run。
 
 ## Design State
 
