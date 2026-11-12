@@ -73,7 +73,7 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 
 ## Stage: rtl_coding
 
-适用范围：本阶段规则仅约束可综合 RTL。测试平台（`*_tb.sv`、`tb_*.sv`、`tb/` 下文件）、仅用于 bind 的断言文件、仅用于仿真的行为模型不在此范围；其中 `initial`、`#delay` 和阻塞赋值是正确用法，相应编码规则由 functional-verification Skill 定义。
+适用范围：本阶段规则仅约束可综合 RTL。Testbenches (`*_tb.sv`, `tb_*.sv`, `tb/` 下文件)、仅用于 bind 的断言文件、仅用于仿真的行为模型不在此范围；其中 `initial`、`#delay` 和阻塞赋值是正确用法，相应编码规则由 functional-verification Skill 定义。
 
 ### 领域规则——通用
 1. 优先使用 `logic`，不再依赖 wire/reg 区分
@@ -151,6 +151,8 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 | VC Static (Synopsys) | 商业工具，命令方言 `synopsys` | Power-intent rule checking |
 | Questa PowerPro (Siemens) | 商业工具，命令方言 `siemens` | Formal power analysis |
 
+**Unverified-claims entries：** 本阶段每个未经工具运行证明的结论都要立即追加到 `rtl.unverified[]`，不能等 sign-off 才补。
+
 ### 必须输出
 - 每个 module 的 RTL 源文件（.sv）
 - 每个 module 的 SVA assertion 文件
@@ -167,7 +169,7 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 ### Domain Rules
 1. 解析并打印工具将读取的 filelist **绝对路径**，以及选择该列表的项目/配置文件绝对路径。存在多个候选（受管理项目文件与用户覆盖目录、两个同名 filelist）时，说明工具使用哪个及原因。陈旧覆盖目录会静默绕过受管理项目文件及其设置的全部变量。
 
-2. 将每个 include 目录按搜索顺序解析为绝对路径。include 搜索采用首个匹配：两个目录存在同名但内容不同的文件时，属于 **ERROR** 而非警告，工具会静默使用第一个并忽略第二个。指出文件名、所有包含它的目录以及最终获选目录。
+2. 将每个 include 目录按搜索顺序解析为绝对路径。include 搜索采用 **first-match-wins**（首个匹配）：两个目录存在同名但内容不同的文件时，**is an ERROR, not a warning**（属于 **ERROR** 而非警告），工具会静默使用第一个并忽略第二个。指出文件名、所有包含它的目录以及最终获选目录。
 
 3. 标出解析到声明的设计根目录之外的 include 目录和源文件，以及 include 集合可达的同级树，如 `X` 与 `X_v2`、`X_old`、`X_bak`，或包含同名文件的平行版本目录。
 
@@ -179,7 +181,7 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
    `python3 check_design_inputs.py <filelist.f> --root <design root> [--env NAME=VALUE] [--generated OUT_DIR=SOURCE]`。
    脚本应用规则 2、3、5，对每个 `--generated` 对执行规则 4 的时间检查，并配合 `--rtl-dir` 和 `--list` 应用规则 8。规则 1，以及由厂商项目文件而非 `.f` 驱动的流程，按上述规则手工检查。
 
-7. FAIL 时不得修改设计文件。修复位于输入集合中，通常只涉及 filelist 一行；在两个树之间作选择应由所有者决定。报告 `failure_class: "input_setup"`、`suggested_next_step: "escalate"`、文件、两个绝对路径及需修改的行。绝不回退到 `rtl_coding`，唯一例外为规则 8 中注册本次新增模块。
+7. FAIL 时不得修改设计文件。修复位于输入集合中，通常只涉及 filelist 一行；在两个树之间作选择应由所有者决定。报告 `failure_class: "input_setup"`、`suggested_next_step: "escalate"`、文件、两个绝对路径及需修改的行。**Never loop back to `rtl_coding`**；绝不回退到 `rtl_coding`，唯一例外为规则 8 中注册本次新增模块。
 
 8. 注册：磁盘上每个模块必须对每个工具可见。仿真、lint、综合、PD、形式验证常使用独立源列表，往往存于 Makefile 变量。模块缺少于某列表时，转换器/综合器（sv2v、yosys）可能无错误地将其黑盒化，而读取另一列表的仿真回归无法发现。枚举项目中每个工具输入列表，将 Makefile 变量导出为文件
    （`make -s --eval='print-%:;@echo $($*)' print-<VAR> > <var>.f`），再运行
@@ -225,11 +227,11 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 
 11. 工具自行报告严重级别时，映射到上方级别以保持豁免有效：`BLOCKER` / `HIGH` → ERROR，`MEDIUM` → WARNING，`LOW` / `INFO` → 信息。
 
-12. 规则检查未完成的运行实际执行了**零条**规则。解析/elaboration 致命错误、工具报告规则检查中止或跳过、文件缺失，都表示 ERROR/WARNING 数量未知；记为 `null`，不能写 `0`。结果不构成 RTL 证据，绝不能分类为 `functional`。
+12. 规则检查未完成的运行 **ran zero rules**；实际执行了**零条**规则。解析/elaboration 致命错误、工具报告规则检查中止或跳过、文件缺失，都表示 ERROR/WARNING 数量未知；记为 `null`，**never `0`**；不能写 `0`。结果 **not evidence about the RTL**；不构成 RTL 证据，**never classified `functional`**；绝不能分类为 `functional`。
 
-13. 编辑前对中止运行的每个 fatal 归因。以下属于输入集合失败（`input_setup`，升级，不改 RTL）：同次出现重复声明和未声明标识符 fatal（include 路径上混入两代生成头文件）；消息指出同一文件的两条路径；include/源文件不存在；fatal 位于本次未写入的文件。删除“重复”端口或补声明“未声明”信号只会压下消息并破坏正确 RTL。仅当解析错误局限于本次写入/修改的文件，且当前输入集合 `design_input_check` 通过时，才以格式错误输出（`tool_error`）回退到 `rtl_coding`，只修复语法。
+13. 编辑前对中止运行的每个 fatal 归因。以下属于输入集合失败（`input_setup`，升级，不改 RTL）：同次出现 **duplicate-declaration and undeclared-identifier** fatal（include 路径上混入两代生成头文件）；消息指出同一文件的两条路径；include/源文件不存在；fatal 位于本次未写入的文件。删除“重复”端口或补声明“未声明”信号只会压下消息并破坏正确 RTL。仅当解析错误局限于本次写入/修改的文件，且当前输入集合 `design_input_check` 通过时，才以格式错误输出（`tool_error`）回退到 `rtl_coding`，只修复语法。
 
-14. 先按根因分类，再按严重级别：a）配置/输入失败，按规则 13；b）库模型噪声，如行为宏模型、标准单元 `specify` 块、厂商原语内的发现，注明模型并一次性豁免；c）RTL 本身发现，才适用规则 1–2 的级别。流程 Wrapper 退出非零不等于 lint 失败，它可能根据日志文字门控，在 lint 工具报 0 错误时仍判失败。读取工具自身错误数。
+14. 先按根因分类，再按严重级别：a）配置/输入失败，按规则 13；b）库模型噪声，如行为宏模型、标准单元 `specify` 块、厂商原语内的发现，注明模型并一次性豁免；c）RTL 本身发现，才适用规则 1–2 的级别。**non-zero exit is not "lint failed"**；流程 Wrapper 退出非零不等于 lint 失败，它可能根据日志文字门控，在 lint 工具报 0 错误时仍判失败。读取工具自身错误数。
 
 15. 前端检查：lint 不能证明下游前端接受该 RTL。Verilator、slang 和仿真器原生读取 SystemVerilog；综合前转换 RTL（sv2v、Surelog/UHDM、厂商 SV 到 Verilog 步骤）的流程生成的文件不会被这些工具读取。只要任一下游存在转换，必须对 filelist 执行转换，再由实际消费工具解析输出：
     `sv2v <files> > out.v && yosys -q -p 'read_verilog out.v; hierarchy -check -top <top>'`
@@ -243,6 +245,8 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 - ERROR count：进入下一阶段前必须为 0
 - WARNING count：全部评审，waive 时提供理由
 - 所有 RTL 文件均已检查，而不仅仅是 top-level
+
+**Unverified-claims entries：** 本阶段每个未经工具运行证明的结论都要立即追加到 `rtl.unverified[]`，不能等 sign-off 才补。
 
 ### 必须输出
 - Lint report（按 file/rule）
@@ -261,7 +265,7 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 3. Multi-bit data：async FIFO 或 handshake protocol
 4. Pulse crossing：pulse stretcher + synchronizer
 5. 未豁免 CDC violation 必须为 0
-6. CDC 工具不可用时，阶段为 NOT RUN，不能为 PASS。通过推理分析的每个跨域都是 `UNVERIFIED` 的 `cdc`（或 `reset`）声明，在本阶段逐项追加到未经验证声明列表，注明所依赖同步器，供下游形式验证及功能验证逐项检查。
+6. **No CDC tool available: the stage is NOT RUN, not PASS.** CDC 工具不可用时，阶段为 NOT RUN，不能为 PASS。通过推理分析的每个跨域都是 `UNVERIFIED` 的 `cdc`（或 `reset`）声明，在本阶段逐项追加到未经验证声明列表，注明所依赖同步器，供下游形式验证及功能验证逐项检查。
 7. **Prove the crossing rules ran.** CDC/RDC 工具即使 exit 0、report 看起来干净，也可能根本没跑 crossing rule。先用一个 negative-control design：一个未同步 crossing、同一 crossing 经 2-FF synchronizer、以及 clock A flop 驱动 clock B flop async reset。工具必须 flag bad crossing + bad reset，并放过 synchronized crossing；**If the control is not flagged, the stage is NOT RUN**。
 8. 读取 log 中所有 skipped/not-run rule 与 license checkout failure。CDC goal 可能请求 license server 名单中不存在的 feature（例如 SpyGlass `cdc_verify_struct`/`rdc_verify_struct` 请求 `cdc_adv_checker`）；这说明“product license 在”不等于“所需 rule feature 可运行”。Contract：**request a licence feature other than the product names the licence server lists** 时，必须记录缺失 feature 和 skipped rule，并把 stage 标 NOT RUN。
 9. Lint rule 16 同样适用于 CDC：**A module the tool black-boxed got zero rules**，其 crossing 未被检查。
@@ -277,6 +281,8 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 - CDC violations（unwaived）：0
 - RDC violations（unwaived）：0
 - 所有 clock domain 都已在工具 constraint 中验证
+
+**Unverified-claims entries：** 本阶段每个未经工具运行证明的结论都要立即追加到 `rtl.unverified[]`，不能等 sign-off 才补。
 
 ### 必须输出
 - CDC/RDC report
@@ -333,12 +339,13 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 - [ ] High-opportunity domain 的 `clock_gating_coverage` ≥ `design_state.constraints.power.gating_coverage_pct_min`%（默认 60%），并写入 sign-off record
 
 ### 必须输出
+- **Unverified-claims list**：完整 `rtl.unverified[]`，即使为空也显式写 `[]`
 - RTL file package（全部 .sv）
 - File list（filelist.f）
 - Compile order 文档
 - Assertion library（.sva）
 - RTL sign-off record
-- 未经验证声明列表：代码审查、lint、CDC 的每个 UNVERIFIED 结论逐项写为 `{module, category, claim}`；category 为 cdc、reset、fsm、protocol、arithmetic、parameter 之一。每个使用无 default 的 unique case 的 FSM 都须有 fsm 条目，注明恢复断言。该列表交给验证与形式验证，遗漏的声明就不会有下游检查。空列表必须明确写为空，不能省略。rtl_coding、lint_check、cdc_rdc_analysis 作出结论时逐步建立，本阶段补全。每条终止路径均交接，包括未到本阶段或未签核的运行；未签核仍须交接全部已作出的声明。
+- 未经验证声明列表：代码审查、lint、CDC 的每个 UNVERIFIED 结论逐项写为 `{module, category, claim}`；category 为 cdc、reset、fsm、protocol、arithmetic、parameter 之一。每个使用无 default 的 unique case 的 FSM 都须有 fsm 条目，注明恢复断言。该列表交给验证与形式验证，遗漏的声明就不会有下游检查。空列表必须明确写为空，不能省略。rtl_coding、lint_check、cdc_rdc_analysis 作出结论时逐步建立，本阶段补全。这些声明 **handed off on every termination path**，每条终止路径均交接，包括未到本阶段或未签核的运行；未签核仍须交接全部已作出的声明。
 
 ---
 
