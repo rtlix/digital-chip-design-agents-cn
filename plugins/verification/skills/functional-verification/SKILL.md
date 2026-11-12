@@ -422,27 +422,40 @@ priority:     P0
 
 ## Stage: regression_signoff
 
-### Regression 分层
+### Regression Tiers
+| Tier | Trigger | Duration | Contents |
+|---|---|---|---|
+| Smoke | 每次 RTL commit | <30 min | P0 directed tests |
+| Nightly | 每晚 | <8 h | 全部 directed + 100 random seeds |
+| Weekly | 每周 gate | <48 h | 全套 + 1000 seeds |
+| Sign-off | Tape-out gate | Unlimited | 全套 + 10,000 seeds |
 
-| 层级 | 触发 | 时长 | 内容 |
-|------|------|------|------|
-| Smoke | 每次 RTL commit | < 30 min | P0 directed tests |
-| Nightly | 每晚 | < 8 hr | 全部 directed + 100 random seeds |
-| Weekly | 每周 gate | < 48 hr | 全套测试 + 1000 seeds |
-| Sign-off | Tape-out gate | 不限 | 全套测试 + 10,000 seeds |
+### Domain Rules
+1. **Regression 前先做 license checkout smoke。** 每个 proprietary simulator 必须在 `timeout 300` 下 compile+run 一个 trivial module 或真实 smoke；`vcs -ID` / `xrun -version` 并不证明 runtime license 可用，VCS compile 与 simv 也可能使用不同 feature。Xcelium 的 `-licqueue` 缺 seat 时会 hang，因此 timeout expiry 是 license 问题，不应误判成慢 test。同一 session 的 infrastructure smoke 可复用。
+2. **并行 job 上限** = `min(cores, floor(free_RAM / per-job peak RSS), free license seats)`。优先读取 infrastructure `tool-manifest.json.regression_resources`，否则用 `nproc`、`MemAvailable`、smoke peak RSS、`lmstat` 实测；报告 bound 和 limiting term。
+3. **检查 `SIM_BUILD` 与 coverage DB 的 filesystem 空间。** 启动前 `df -P`；要求 free ≥ jobs × smoke build size（`du -s`），不足则转 scratch。
+4. **Verdict 来自结构化结果。** cocotb 每 run 用 `wrap-cocotb-results.sh` 解析 `results.xml`；UVM 用 simulator 自身 test report。never from `make`'s exit code，也不能 grep log 的 ERROR。Missing/empty `results.xml` 是 shard FAIL；当前 session 尚未证明 FAIL path 的 simulator 先跑 Negative control。
+5. **长 regression 后台分 shard，并 checkpoint progress。** 每 shard 不超过 job bound，独立 `SIM_BUILD`、log、`results.xml`。每 shard 完成后把 shard id、simulator、command、results path 和 wrapper counts 写入 `<MEM>/verification/run_state.md`。Resume 时跳过 complete，只重跑 pending/failed；绝不从头重跑整套 regression。等待靠 background completion 或每 turn 一次 bounded wait，不做重复短轮询。
 
-### 通过标准
-- 仿真失败数为 0（已批准 waiver 的已知 bug 除外）
-- UVM FATAL / UVM ERROR 数为 0
-- 满足全部覆盖率目标（见 `coverage_analysis`，由 `design_state.constraints.coverage.*` 控制）
+### Pass Criteria
+- 0 simulation failure（批准 waiver 的 known bug 除外）
+- 0 UVM FATAL / ERROR
+- 全部 coverage target 达标
 - Formal：全部 P0 property proven
-- 所有 P0/P1 bug 已关闭
+- P0/P1 bug 全关闭
 
-### 必须输出
-- Regression pass/fail report
-- 最终合并 coverage report
+### QoR Metrics to Evaluate
+- `regression_failures=0`
+- `shards_complete == shards_total`
+- `max_parallel_jobs` 以及 limiting term 已记录
+- `license_smoke_passed=true`，每个实际使用的 proprietary simulator 都要有
+
+### Output Required
+- 按 simulator / shard 的 regression pass/fail report（来自 `results.xml`）
+- 最终 merged coverage report
 - Open bug list
 - Sign-off checklist
+- Job-bound 与 license-smoke record
 
 ---
 
