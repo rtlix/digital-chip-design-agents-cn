@@ -1,6 +1,6 @@
 {
   "name": "chip-design-formal",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "description": "形式属性验证（FPV）与逻辑等价性检查（LEC）",
   "author": {
     "name": "chuanseng-ng",
