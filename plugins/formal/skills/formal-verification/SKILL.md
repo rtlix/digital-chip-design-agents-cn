@@ -165,8 +165,8 @@ lint 通过不能证明以下事项。只要相应结构存在，就必须检查
 5. 报告 EQUIVALENT / UNMATCHED / ABORTED。
 
 工具摘要（实测细节见下方 *Tool Notes: Formality and Conformal LEC*）：
-- **Formality**（`fm_shell`，dialect `synopsys`；通过 `wrap-fm.sh`）：读取 library，reference 使用 `read_sverilog -r` / `read_verilog -r` 并 `set_top r:/WORK/<top>`，implementation 用 `read_verilog -i` / `set_top i:/WORK/<top>`；DC 流程有 SVF 时必须 `set_svf`，随后 `match`、`verify`。真正通过的 verdict 是 `Verification SUCCEEDED`；FAILED / INCONCLUSIVE 都不是等价。
-- **Conformal**（`lec`，dialect `cadence`；命令形态 `lec -xl -nogui -dofile lec.do`，通过 `wrap-lec.sh`）：`read library`、`read design -golden`、`read design -revised`、`set system mode lec`、`add compare point -all`、`compare`、`report verification`。任何 Non-equivalent 或 Abort point 都不能算等价。
+- **Formality**（(`fm_shell`, dialect `synopsys`)；通过 `wrap-fm.sh`）：读取 library，reference 使用 `read_sverilog -r` / `read_verilog -r` 并 `set_top r:/WORK/<top>`，implementation 用 `read_verilog -i` / `set_top i:/WORK/<top>`；DC 流程有 SVF 时必须 `set_svf`，随后 `match`、`verify`。真正通过的 verdict 是 `Verification SUCCEEDED`；FAILED / INCONCLUSIVE 都不是等价。
+- **Conformal**（(`lec`, dialect `cadence`)；命令形态 `lec -xl -nogui -dofile lec.do`，通过 `wrap-lec.sh`）：`read library`、`read design -golden`、`read design -revised`、`set system mode lec`、`add compare point -all`、`compare`、`report verification`。任何 Non-equivalent 或 Abort point 都不能算等价。
 - **Yosys**：可使用 `equiv_make/equiv_simple/equiv_induct` 或 miter + SAT。
 
 ### Tool Notes: Formality and Conformal LEC (measured)
