@@ -18,9 +18,11 @@ allowed-tools: Read, Write, Bash
 只有 Orchestrator 中途读取本 Skill，或用户只问局部参考问题时才直接使用这里的规则。
 
 ## Pre-run Context
+
+`<MEM>` 表示已经解析出的 Memory root，而不是字面量 `memory/` 目录。解析优先级为：显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库内 seed；可用 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径，最终以 Orchestrator 的 `## Memory` 章节为准。
 任何 stage 前如存在则读取：
-1. `memory/soc/knowledge.md`
-2. `memory/soc/run_state.md`
+1. `<MEM>/soc/knowledge.md`
+2. `<MEM>/soc/run_state.md`
 把历史 failure pattern、有效 tool flag、PDK/tool quirk 用于 stage 决策。
 
 ## Purpose
@@ -239,12 +241,12 @@ allowed-tools: Read, Write, Bash
 ## Memory
 
 ### Write on stage completion
-每 stage 完成后按 `run_id` upsert `memory/soc/experiences.jsonl`。
+每 stage 完成后按 `run_id` upsert `<MEM>/soc/experiences.jsonl`。
 `run_id = soc_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。
 最终 signoff 前保持 `signoff_achieved:false`。
 
 ### Run state
-任何工具前第一步写 `memory/soc/run_state.md`，记录 run_id/design_name/tool/start_time/last_stage。
+任何工具前第一步写 `<MEM>/soc/run_state.md`，记录 run_id/design_name/tool/start_time/last_stage。
 
 ### Optional: claude-mem index
 如果 observation 工具可用，把 applied fix 写入 `chip-design-soc-fixes`；否则跳过。
