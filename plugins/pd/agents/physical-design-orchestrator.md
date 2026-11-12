@@ -313,11 +313,15 @@ floorplan 前读取 `<MEM>/pd/knowledge.md`（若存在），将已知失败模�
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
 
 仅签核阶段所有标准均通过时将 signoff_achieved 设为 true；升级、放弃、中断或部分运行保持 false。若在签核前因中断、错误或轮数上限终止，立即记录已完成阶段，不能等到签核终态。文件及父目录不存在时创建。
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
 
 ## Design State
 
