@@ -65,6 +65,7 @@ Each stage must return:
 1. 每 stage 前读取 logic-synthesis Skill。
 2. 完成后生成 PD handoff package：netlist、SDC、timing/area/power report。
 3. 每次 netlist 修改后都必须运行 LEC，不仅仅 sign-off 时运行。
+8. 跨综合工具做公平比较时，使用同一 RTL/SDC/library/corner 与同一独立 STA probe；这种任务标记为 **comparison run, no target**，只比较 QoR，不把任一结果自动写成 sign-off。
 4. 第一 stage 前读取 `<MEM>/synthesis/knowledge.md`；所有终止路径都写 experience，未 sign-off 时保持 false。
 5. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 6. `synthesis_signoff` checkpoint：未批准时设置
