@@ -235,6 +235,8 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
     `sv2v <files> > out.v && yosys -q -p 'read_verilog out.v; hierarchy -check -top <top>'`
     （先用 `read_verilog -lib <stubs>` 读取规则 8 的 stub）。作为独立门控报告命令与退出状态。SystemVerilog 合法而 Verilog-2005（IEEE 1364）非法的结构，如函数返回值直接部分选择 `f(x)[N-1:0]`，会通过 lint 和全部回归，仅在此失败；应先将结果赋给命名信号再选择。修复源结构，绝不修改转换后文件。转换工具不可用时，门控报告 NOT RUN。
 
+16. **A module the tool black-boxed got zero rules（被 black-box 的 module 实际执行了 0 条规则）。** 每次 run 都读取 elaboration / black-box summary；若 first-party module 被 black-box，按规则 12 的 aborted run 处理：finding 是 unknown，不是 0。SpyGlass 遇到 `string`-typed or `real` parameter（如 SYNTH_5260 / SYNTH_5247，最终显示 `UnsynthesizedDU`）可能把整个 SoC top 静默 black-box。分析时可给工具一份**仅用于分析**、把这些 parameter 改成可接受类型且保持行数不变的副本，使报告行号仍对应 RTL；**Never edit the RTL to satisfy the lint tool**。
+
 ### QoR 指标
 - 规则检查已完成：必须为 true，中止运行没有可用 ERROR 数量
 - 下游转换 RTL 时的前端检查：退出 0 且无解析错误
@@ -260,6 +262,9 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 4. Pulse crossing：pulse stretcher + synchronizer
 5. 未豁免 CDC violation 必须为 0
 6. CDC 工具不可用时，阶段为 NOT RUN，不能为 PASS。通过推理分析的每个跨域都是 `UNVERIFIED` 的 `cdc`（或 `reset`）声明，在本阶段逐项追加到未经验证声明列表，注明所依赖同步器，供下游形式验证及功能验证逐项检查。
+7. **Prove the crossing rules ran.** CDC/RDC 工具即使 exit 0、report 看起来干净，也可能根本没跑 crossing rule。先用一个 negative-control design：一个未同步 crossing、同一 crossing 经 2-FF synchronizer、以及 clock A flop 驱动 clock B flop async reset。工具必须 flag bad crossing + bad reset，并放过 synchronized crossing；**If the control is not flagged, the stage is NOT RUN**。
+8. 读取 log 中所有 skipped/not-run rule 与 license checkout failure。CDC goal 可能请求 license server 名单中不存在的 feature（例如 SpyGlass `cdc_verify_struct`/`rdc_verify_struct` 请求 `cdc_adv_checker`）；这说明“product license 在”不等于“所需 rule feature 可运行”。Contract：**request a licence feature other than the product names the licence server lists** 时，必须记录缺失 feature 和 skipped rule，并把 stage 标 NOT RUN。
+9. Lint rule 16 同样适用于 CDC：**A module the tool black-boxed got zero rules**，其 crossing 未被检查。
 
 ### RDC 规则
 1. 所有 reset domain 必须在 constraint 中显式定义
@@ -268,6 +273,7 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 4. Retention register 必须有正确 UPF annotation
 
 ### QoR 指标
+- **Negative control flagged (rule 7): must be true**，否则本阶段 NOT RUN
 - CDC violations（unwaived）：0
 - RDC violations（unwaived）：0
 - 所有 clock domain 都已在工具 constraint 中验证
