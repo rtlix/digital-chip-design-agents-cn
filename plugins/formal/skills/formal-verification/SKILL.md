@@ -157,25 +157,68 @@ lint 通过不能证明以下事项。只要相应结构存在，就必须检查
 
 ## Stage: lec_run
 
+### LEC Flow
+1. 读取 golden：RTL 或 pre-ECO netlist。
+2. 读取 revised：post-synthesis 或 post-ECO netlist。
+3. 映射 compare point：匹配 sequential/combinational key point。
+4. 对全部 point 做 cone-of-influence 比较。
+5. 报告 EQUIVALENT / UNMATCHED / ABORTED。
+
+工具摘要（实测细节见下方 *Tool Notes: Formality and Conformal LEC*）：
+- **Formality**（`fm_shell`，dialect `synopsys`；通过 `wrap-fm.sh`）：读取 library，reference 使用 `read_sverilog -r` / `read_verilog -r` 并 `set_top r:/WORK/<top>`，implementation 用 `read_verilog -i` / `set_top i:/WORK/<top>`；DC 流程有 SVF 时必须 `set_svf`，随后 `match`、`verify`。真正通过的 verdict 是 `Verification SUCCEEDED`；FAILED / INCONCLUSIVE 都不是等价。
+- **Conformal**（`lec`，dialect `cadence`；命令形态 `lec -xl -nogui -dofile lec.do`，通过 `wrap-lec.sh`）：`read library`、`read design -golden`、`read design -revised`、`set system mode lec`、`add compare point -all`、`compare`、`report verification`。任何 Non-equivalent 或 Abort point 都不能算等价。
+- **Yosys**：可使用 `equiv_make/equiv_simple/equiv_induct` 或 miter + SAT。
+
+### Tool Notes: Formality and Conformal LEC (measured)
+
+以下规则实测于 **Formality X-2025.06** 与 **Conformal LEC 24.10-p100**，目标为 Sky130 CPU macro（约 6k compare points、10 个 SRAM black box）。Formality 运行 `fm_shell -f <lec.tcl>`；Conformal 运行 `lec -nogui -xl -dofile <lec.do>`。所有 EQUIVALENT 结论都只有在 negative control 能失败后才可信。
+
+**Formality**
+- 顺序非常重要：`set_svf <dc.svf>` → `read_db -container r -technology_library <macro.db>` → `read_sverilog -container r -libname WORK ...` → `set_top r:/WORK/<top>`，然后才读 implementation 的 `.db` / netlist 并 `set_top i:/WORK/<top>`，最后 `match` / `verify`。如果 implementation library 在 reference `set_top` 前读入，实测会出现 **FM-236** 与 unlinked cell。
+- 设置 `set_app_var hdlin_unresolved_modules error`，让缺 module 直接 fail，不能静默 black-box。SRAM behavioral stub 不应与 macro `.db` 混读；两侧应由同一 macro view 一致 black-box。
+- **A DC netlist needs DC's SVF.** 实测缺 SVF 时有 **143 reference registers** unmatched；DC 的 merge/constant transformation 被 SVF 解释后才能正确匹配。SVF 也不能盲信：对 SVF 所描述关系制作 RTL/netlist mutant，若错误关系仍被“解释成等价”，setup 无效。
+- `report_*` 不要用 shell `>` 直接重定向，使用 `redirect -file <f> { report_... }`。
+- Post-route netlist 中 antenna/port-protection diode 可能在 Formality 中成为 implementation-only black box。并行跑一个 **diode-stripped** copy，要求该 copy unmatched=0。
+
+**Conformal**
+- Genus 的 `write_do_lec` 输出可能调用需要 **Conformal_Ultra** license 的 `analyze_extended_mapping`；plain `lec` 会失败，因此使用 `lec -xl`。不要直接改 Genus 原始 dofile，而是生成带 assert/substitution 的派生副本。
+- dofile 第一行必须保持 `tclmode`；在其前插 comment 可能 abort。`exit -f` 在 tclmode 无效，应先切 `vpxmode`。Driver 用 bash 更稳妥。
+- 除 Genus-guided compare 外，再跑一个 **direct** compare（去掉 Genus implementation-information/verification-information claim）与一个 flat compare；三者应一致。
+- Post-route diode 同样建议在副本中 strip，并从 netlist 动态统计 expected diode 数，不能 hardcode。
+
+**Negative controls on flat netlists**
+- 每次 compare 都制作至少一个 structural mutant：例如反转一个 flop D，或交换已知逻辑 cone 中某 gate 的两个输入；每个 golden 都必须至少产生一个 failing point。
+- **Anchor mutants on structure, not on literal names.** Flat/MCMM/re-route/resize 会改变 hierarchical/net/cell 名；例如 `a211o_1` → `a211o_2`。Mutator 应按 cell family、drive suffix、net role 等结构 pattern 找 anchor；找不到时必须 **fail loudly**，并通过 byte-compare 确认 mutant 真的与原始 netlist 不同。
+
 ### Domain Rules
-1. 明确 reference / implementation 版本与 provenance。
-2. 正确处理 blackbox、memory macro、DFT/test logic 和 constant mapping。
-3. 对 rename/optimization 使用结构化 compare point mapping。
-4. Unmatched point 必须分类，不得直接 waive。
-5. Synthesis 引入的不等价应路由给 synthesis domain；V1 不通过 RTL fix_request 处理。
-6. Sign-off LEC 必须使用最终交付 netlist 与对应 RTL。
+1. Golden 与 revised 使用一致的设计约束语义；对纯 LEC setup 不用 timing exception 掩盖逻辑差异。
+2. Scan chain reorder 使用 scan-aware/unaware 的正确 compare 模式。
+3. Black box 必须在两侧一致；列出 unread/unlinked/black-box object。
+4. Unmatched point 必须 root-cause，不得无理由 waive。
+5. 每次 ECO 后都跑 LEC，不只 sign-off 跑。
+6. **Negative control before trusting EQUIVALENT.** 对 intentionally mutated revised netlist 运行同一脚本，必须报告 non-equivalent。若 mutant 仍被判等价，说明 top、blackbox、SVF、constant cone 或 compare setup 有问题，真实 netlist 的 PASS 不可信。
+7. Unmatched/unread object 逐名列出；“某 module 被 black-box 后 EQUIVALENT”只证明 module 外部，不证明内部。
+
+### Common LEC Failures
+| Failure | Fix |
+|---|---|
+| Optimizer removed logic | 查 removal report；必要时 set_dont_touch |
+| Golden/revised setup 不一致 | 对齐 mode / defines / blackbox / library |
+| Scan chain reordering | 使用正确 scan compare mode |
+| Black box mismatch | 两侧使用同一 blackbox list |
+| DC netlist 大量 unmatched register | 确认正确加载 DC SVF |
 
 ### QoR Metrics to Evaluate
-- Unmatched compare point：0
-- Non-equivalent point：0
-- Waiver 全部有 justification
-- Reference/implementation provenance 已确认
+- All compare points：EQUIVALENT
+- Unmatched：0（或明确、批准且有独立 stripped-copy 证明）
+- Aborted：0
+- Negative control：必须得到 non-equivalent
 
 ### Output Required
-- LEC setup
-- Equivalence report
-- Unmatched/non-equivalent point list
-- Waiver list
+- LEC run report
+- Unmatched / aborted point analysis
+- Negative-control mutant + verdict
+- EQUIVALENT sign-off record
 
 ---
 
