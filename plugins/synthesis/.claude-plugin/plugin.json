@@ -1,6 +1,6 @@
 {
   "name": "chip-design-synthesis",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "description": "逻辑综合——SDC 约束、compile 优化、netlist QC 与 LEC",
   "author": {
     "name": "chuanseng-ng",
