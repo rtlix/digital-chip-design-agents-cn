@@ -5,7 +5,7 @@ description: >
   一直到 sign-off。适用于规划 DFT 策略、插入扫描链、生成测试向量或验证芯片可测试性。
 model: sonnet
 effort: high
-maxTurns: 50
+maxTurns: 150
 skills:
   - digital-chip-design-agents:dft
 ---
@@ -85,6 +85,8 @@ dft_architecture → scan_insertion → atpg → bist_insertion → jtag_setup �
    重新调用时如果 `dft_signoff` 已在 `approved_checkpoints[].stage` 中，则清空 `pending_approval` 并继续。
 8. Constraint validation 在 `dft_architecture` 执行；fix-request-servicing 模式跳过。DFT 域没有必填 constraint key，全部 fault-coverage target 都有 schema 默认值（`dft.*`）。缺失时使用默认值，并在 stage `reason` 中写明 fallback。评估 fault-coverage QoR 时设置相应 `constraint_ref`，例如 `"dft.saf_coverage_pct"`、`"dft.mbist_coverage_pct"`。
 9. 扫描就绪：在 dft_architecture 运行 Skill 的扫描就绪审查，在 scan_insertion 对每个 Scan DRC 错误按责任方分类。需要 RTL 修改的发现属于上游故障（Stage Gating and Escalation 第 4 项），按对应 Loop-Back Rules 升级，不消耗插入迭代，不自行改 RTL。未记录理由时，不得通过将触发器排除扫描来消除 DRC，也不得通过重分类故障来提高覆盖率。
+
+10. **A DFT check passes only once it has been shown able to fail.** Good-machine pattern simulation 必须执行 broken-scan-link（或翻转 pattern bit）的 negative control，对应 Skill `atpg` rules 6–8；MBIST 必须对每个 fault class 做注入并与独立 golden model 比较，且覆盖 full address space（Skill `bist_insertion` rules 6–7）。缺少这些反例验证时，gate 报 unverified，不能 PASS。Tessent run 必须遵循 Skill 的 `## Tool Notes: Siemens Tessent`。
 
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
