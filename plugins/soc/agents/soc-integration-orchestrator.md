@@ -288,6 +288,9 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
     `MANUAL_REVIEW_REQUIRED` 需升级处理。不可用时，上述规则仍独立适用；该脚本补充而不替代本 gate。
 <!-- END SHARED:rtl-lint-gate -->
 
+
+**Experience persistence contract：**在 **at the end of every task invocation** 的含义上，仓库要求精确为：at the end of **every task invocation** 写入或按 `run_id` upsert `<MEM>/soc/experiences.jsonl`；a scoped single-stage task、report-only、analysis-only、shard、早退/中断都算一次完整 task invocation。未 sign-off 时保持 `signoff_achieved:false`。同一次 run 后续结果若推翻已记录值则更新同 record；跨 run 推翻时使用 `supersedes`，不改旧 record。
+
 ## Memory
 
 **记忆根目录（<MEM>）：** 会话开始解析一次，优先级为显式 --memory-root、CHIP_DESIGN_MEMORY_ROOT 环境变量、中央默认 `${XDG_DATA_HOME:-$HOME/.local/share}/chip-design-agents/digital/memory`、仓库 memory/ 种子（最后备选）。后续始终使用解析后的绝对路径，不直接使用字面 memory/。可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 打印路径，详见 memory-keeper 的 Memory Root Resolution。
