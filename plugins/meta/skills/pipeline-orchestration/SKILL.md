@@ -20,6 +20,8 @@ allowed-tools: Read, Write, Bash
 - **在另一个 Orchestrator 内被调用**：读取 `design_state.json`，
   汇总 open 的 `fix_requests[]` 后返回；不要再启动 subagent（防递归）。
 
+`<MEM>` below is the resolved memory root。`<MEM>` 表示按 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库 seed 解析出的 Memory root，而不是字面量 `memory/`。
+
 ## Purpose
 
 本 Skill 定义 verification↔RTL 的闭环反馈协议。Simulation 或 formal verification
@@ -481,5 +483,5 @@ Spawn：
 
 - 当前 pipeline session 的 fix_request 最终达到 fixed 或 abandoned
 - `cross_domain_iteration_count` 更新
-- 写入 `memory/meta/experiences.jsonl`
+- 写入 `<MEM>/meta/experiences.jsonl`
 - Console summary：处理了哪些 request、用了多少轮、结果为 converged / escalated / no open requests
