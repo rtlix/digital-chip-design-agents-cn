@@ -241,8 +241,8 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 <!-- BEGIN SHARED:rtl-lint-gate (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## RTL Lint Gate
 适用于本 Orchestrator 编写、修改或生成的全部可综合 RTL，包括回退迭代和处理 `fix_request`
-时的修改。Testbench（`*_tb.sv`、`tb_*.sv`）及仅用于仿真的行为模型豁免：
-其中 `initial`、`#delay` 和 blocking assignment 是正确用法。
+时的修改。Testbench（`*_tb.sv`、`tb_*.sv`）及仅用于仿真的行为模型通常豁免：
+其中 `initial`、`#delay` 和 blocking assignment 是正确用法。**但如果 CI 的 lint target 会编译它们，第 10 条仍然适用。**
 
 1. **文件离开阶段前执行 lint。** RTL 最后一次编辑后未经 lint，无论改动多小，都按 Reporting Contract 标为 NOT RUN。
 2. **Slang 必须完整 elaboration。** 执行 `slang -Weverything --ignore-unknown-modules <files>`。
@@ -283,7 +283,8 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
    列表是 `.f` 或可导出为 `.f` 时，使用 `plugins/rtl-design/skills/rtl-design/` 下的
    `check_design_inputs.py <filelist.f> --rtl-dir <rtl> --list <name>=<file> ...`，
    它会列出每个遗漏磁盘上 module 的列表。
-10. **可选：`hdl-rtl-skill`。** 若其 `rtl-lint` 脚本可用，将它作为 slang runner，执行第 2–4 条。
+10. **Lint with the tool version CI runs, on everything CI lints（使用 CI 实际运行的版本检查 CI 实际检查的全部文件）。** 版本必须来自 CI job log 中真正执行的 `verilator --version`、lockfile、固定 container 或 download script，**not from a comment or README that names a version**，因为说明文字会过期。新版工具会新增 warning；在旧版本本地 clean 并不能证明 CI gate 会 clean。实测案例：注释写 Verilator 5.036，而 CI 实际运行 5.048；5.048 新增 `PROCASSINIT`，使一个 declaration initializer 与 `always` 同时写同变量的 behavioural SRAM model 在 `-Wall` 下失败。第 1 条的 TB/model 豁免在 CI lint target 边界处结束：**a CI lint target compiles is gated like RTL**。本地没有 CI 对应版本时，构建/获取该版本（仓库内 build 也可以），否则 **report the gate NOT RUN with the version you could not run**。需要 power-up 初值时，对 procedurally written variable 用 `initial` block，不用 declaration initializer；`always_ff` target 更不能由其他过程写（IEEE 1800 9.2.2.4，VCS `ICPD`）。
+11. **可选：`hdl-rtl-skill`。** 若其 `rtl-lint` 脚本可用，将它作为 slang runner，执行第 2–4 条。
     `BLOCKER`/`HIGH` 算 error，`MEDIUM` 算 warning，`LOW`/`INFO` 算 informational，
     `MANUAL_REVIEW_REQUIRED` 需升级处理。不可用时，上述规则仍独立适用；该脚本补充而不替代本 gate。
 <!-- END SHARED:rtl-lint-gate -->
