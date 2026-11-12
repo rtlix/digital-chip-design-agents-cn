@@ -43,6 +43,8 @@ Multi-corner ECO loop 会在同一个已加载 design 上反复查询 timing，�
 - eco_guidance：ECO applied → multi_corner_analysis（总计最多 10×）
 - eco_guidance: ECO cell count > 2%          → escalate to PD team `power_area`
 
+- multi_corner_analysis FAIL（SPEF/parasitics unannotated，或 annotation gate 未证明）→ escalate `input_setup`；必须修正/重新指向 extraction 输入，不能把未标注的 timing 当 clean
+
 ## Sign-off Criteria
 - setup_wns_ns: >= `design_state.constraints.timing.wns_ns_target`，全部 corner
 - setup_tns_ps: <= `design_state.constraints.timing.tns_ns_target * 1000`
@@ -66,6 +68,8 @@ Multi-corner ECO loop 会在同一个已加载 design 上反复查询 timing，�
 ```
 
 ## Behaviour Rules
+
+**Fair Cross-Tool Comparison**：跨 Innovus/ICC2/OpenROAD 等 flow 比较时，统一 SDC（记录 md5）、统一 extraction tech/corner、统一 STA engine/version 与 power activity；native report 仅作诊断，不能与其他 flow 的 judged result 混排。
 1. 每个 stage 前读取 STA Skill。
 2. 每次 ECO 决策前必须先跑 multi-corner analysis，不能用单 corner 结果指导 ECO。
 3. 每批 ECO 后必须 LEC，不允许连续累积未经 equivalence check 的 ECO。
