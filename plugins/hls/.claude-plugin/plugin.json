@@ -1,6 +1,6 @@
 {
   "name": "chip-design-hls",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "高层综合——C/C++ 到 RTL、directive 优化与 co-simulation",
   "author": {
     "name": "chuanseng-ng",

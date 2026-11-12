@@ -165,21 +165,21 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 6. 第 3、4、7 条触发升级处理时，本领域 `signoff` 保持 `false`，
    experience 记录中的 `signoff_achieved` 也写为 `false`。
 7. **重试必须朝同一目标取得可测量进展。** Loop-Back Rules 限制最多允许多少次尝试，
-   并不要求耗尽次数。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
+   并不要求耗尽次数（**not a number that must be spent**）。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
    它是唯一的停止条件。在替代 artifact 完成测量之前，保留上一次测得更好的 artifact。
    每次回退迭代后，将当前测量结果（QoR 数值或故障集合，而不只是故障个数）与上一轮比较：
    - **Regression（退步）**：结果更差或出现新故障。恢复上一版 artifact；本轮仍计入上限。
-   - **No progress（无进展）**：连续两轮结果未改善。停止再次运行并升级处理。
+   - **No progress（无进展）**：**two consecutive iterations** 结果未改善。停止再次运行并升级处理。
    - **Moved target（目标改变）**：改善来自被检查对象改变，例如放宽约束、添加 waiver/
      exception/exclusion、弱化检查/测试/假设，或改变设计行为以消除工具告警。
-     靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
+     **A pass obtained by changing the target is not a pass.** 靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
      的 `reason` 和该阶段 waiver/exception 记录中引用证明这一点的规格条款或约束来源。
      其他领域或用户拥有的目标（`design_state.constraints`、规格、上游 artifact）不能自行修改，
      应按第 4 条处理。如果只能改变目标才能通过，则升级处理。
 
    本条升级时追加终止 `history[]`：`decision: "escalate"`、观察到的 `failure_class`
    及映射的 `retry_strategy`、`suggested_next_step: "escalate"`；`reason` 指出三种情况
-   中触发了哪一种、各轮测量结果及用户需要决定什么。此时未达到上限，不记录 `resource_limit`。
+   中触发了哪一种、各轮测量结果及用户需要决定什么。此时 **`resource_limit` — the cap was not reached**，所以不记录 `resource_limit`。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -187,13 +187,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
 
 1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
-   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+   不在前台执行长任务，**never busy-poll it**；等待循环同样消耗 turn budget，却不产出结果。
 2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
    每次检查都消耗 turn，检查频率应符合预计运行时长。
-3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+3. **A quiet log is not a hung job（日志安静不代表任务挂起）。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
    判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
    仅凭日志静默无法判断运行或挂起。
-4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+4. **stop and hand it over（任务预计超过 turn budget 时停止等待并交接）。** 报告正在运行什么、job id、日志路径、
    启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
    列出任务的阶段性报告比未经验证的成功声明更有用。
 5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
@@ -221,25 +221,25 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
-   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+8. **Run the gates your change triggers, not only the gates you were asked about.** 第 1–7 条约束任务明确点名的 gate；
+   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和 **path filters, do not guess**；
+   找出所改路径触发的 CI job，**run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.** 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** — signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**。不能将上次结果冒充本次实测。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
 <!-- BEGIN SHARED:rtl-lint-gate (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## RTL Lint Gate
 适用于本 Orchestrator 编写、修改或生成的全部可综合 RTL，包括回退迭代和处理 `fix_request`
-时的修改。Testbench（`*_tb.sv`、`tb_*.sv`）及仅用于仿真的行为模型豁免：
-其中 `initial`、`#delay` 和 blocking assignment 是正确用法。
+时的修改。Testbench（`*_tb.sv`、`tb_*.sv`）及仅用于仿真的行为模型通常豁免：
+其中 `initial`、`#delay` 和 blocking assignment 是正确用法。**但如果 CI 的 lint target 会编译它们，第 10 条仍然适用。**
 
 1. **文件离开阶段前执行 lint。** RTL 最后一次编辑后未经 lint，无论改动多小，都按 Reporting Contract 标为 NOT RUN。
 2. **Slang 必须完整 elaboration。** 执行 `slang -Weverything --ignore-unknown-modules <files>`。
@@ -280,10 +280,14 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
    列表是 `.f` 或可导出为 `.f` 时，使用 `plugins/rtl-design/skills/rtl-design/` 下的
    `check_design_inputs.py <filelist.f> --rtl-dir <rtl> --list <name>=<file> ...`，
    它会列出每个遗漏磁盘上 module 的列表。
-10. **可选：`hdl-rtl-skill`。** 若其 `rtl-lint` 脚本可用，将它作为 slang runner，执行第 2–4 条。
+10. **Lint with the tool version CI runs, on everything CI lints（使用 CI 实际运行的版本检查 CI 实际检查的全部文件）。** 版本必须来自 CI job log 中真正执行的 `verilator --version`、lockfile、固定 container 或 download script，**not from a comment or README that names a version**，因为说明文字会过期。新版工具会新增 warning；在旧版本本地 clean 并不能证明 CI gate 会 clean。实测案例：注释写 Verilator 5.036，而 CI 实际运行 5.048；5.048 新增 `PROCASSINIT`，使一个 declaration initializer 与 `always` 同时写同变量的 behavioural SRAM model 在 `-Wall` 下失败。第 1 条的 TB/model 豁免在 CI lint target 边界处结束：**a CI lint target compiles is gated like RTL**。本地没有 CI 对应版本时，构建/获取该版本（仓库内 build 也可以），否则 **report the gate NOT RUN with the version you could not run**。需要 power-up 初值时，对 procedurally written variable 用 `initial` block，不用 declaration initializer；`always_ff` target 更不能由其他过程写（IEEE 1800 9.2.2.4，VCS `ICPD`）。
+11. **可选：`hdl-rtl-skill`。** 若其 `rtl-lint` 脚本可用，将它作为 slang runner，执行第 2–4 条。
     `BLOCKER`/`HIGH` 算 error，`MEDIUM` 算 warning，`LOW`/`INFO` 算 informational，
     `MANUAL_REVIEW_REQUIRED` 需升级处理。不可用时，上述规则仍独立适用；该脚本补充而不替代本 gate。
 <!-- END SHARED:rtl-lint-gate -->
+
+
+**Experience persistence contract：**在 **at the end of every task invocation** 的含义上，仓库要求精确为：at the end of **every task invocation** 写入或按 `run_id` upsert `<MEM>/hls/experiences.jsonl`；a scoped single-stage task、report-only、analysis-only、shard、早退/中断都算一次完整 task invocation。未 sign-off 时保持 `signoff_achieved:false`。同一次 run 后续结果若推翻已记录值则更新同 record；跨 run 推翻时使用 `supersedes`，不改旧 record。
 
 ## Memory
 
@@ -317,11 +321,15 @@ algorithm_analysis 前读取 `<MEM>/hls/knowledge.md`（若存在），将已知
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
 
 仅签核阶段所有标准均通过时将 signoff_achieved 设为 true；升级、放弃、中断或部分运行保持 false。若在签核前因中断、错误或轮数上限终止，立即记录已完成阶段，不能等到签核终态。文件及父目录不存在时创建。
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
 
 ## Design State
 

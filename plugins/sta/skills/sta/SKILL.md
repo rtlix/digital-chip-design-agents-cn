@@ -19,9 +19,11 @@ allowed-tools: Read, Write, Bash
 才直接使用这里的规则。
 
 ## Pre-run Context
+
+`<MEM>` 表示已经解析出的 Memory root，而不是字面量 `memory/` 目录。解析优先级为：显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库内 seed；可用 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径，最终以 Orchestrator 的 `## Memory` 章节为准。为保持上游 contract 可检测：`<MEM>` below is the resolved memory root。
 任何 stage 前，如存在则读取：
-1. `memory/sta/knowledge.md`
-2. `memory/sta/run_state.md`
+1. `<MEM>/sta/knowledge.md`
+2. `<MEM>/sta/run_state.md`
 应用已知 failure pattern、有效 tool flag、PDK/tool quirk 与恢复信息。
 
 ## Purpose
@@ -60,6 +62,39 @@ openroad -no_init -exit sta.tcl > sta.log 2>&1
 ```
 
 完成后解析 `sta.log`。如果发现 setup/hold violation，按 loop-back 进入 ECO guidance。
+
+---
+
+## Fair Cross-Tool Comparison
+
+当比较**不同实现工具**（例如 Innovus、ICC2、OpenROAD/LibreLane）的 timing/power 时，必须统一裁判，否则比较的是 STA/extraction 差异，不是 implementation 差异：
+
+1. **Same SDC.** 所有 flow 读取同一份 constraint，并记录 **md5**（`sta.sdc_md5`）。Tool-specific SDC 是另一个实验。
+2. **Same extractor and tech.** 最终 DEF 使用同一 extractor、同一 tech、同一 RC corner 重新提取；工具内建 extraction 只标作 native。
+3. **Same STA engine.** 所有 flow 用同一 sign-off engine/version、library/corner/derate 做裁判。
+4. **Same activity assumptions** for power：使用相同 vectorless default 或相同 SAIF。
+5. Native report 保留，但 **labelled `native`**（`sta.judged_by`），用于诊断，不与其他 flow 的 sign-off 数值直接排名。
+6. 无法满足 1–4 的比较只能标 `indicative`。
+7. **Prove each judged run used the inputs it claims.** 每 run 记录 netlist、SPEF、SDC 的 md5，并与 flow 交付文件核对，避免 stale SPEF 或 half-read SDC 产生“看起来合理”的假数值。
+8. **Close the implementation in the corners you judge in.** TT-only implementation 再拿到多 corner judge 上比较，测到的是 corner scope 差异，不是工具优劣。
+
+---
+
+## Tool Notes: Synopsys PrimeTime (multi-corner) and PrimePower
+
+以下流程实测于 **PrimeTime X-2025.06**，通过 `wrap-pt.sh`，对三个 P&R flow 做 StarRC SPEF 的统一裁判；每个 (library corner, RC corner) 启一个 **one `pt_shell` per (library corner, RC corner)** 的独立 run。
+
+1. Library：`set_app_var search_path` / `link_path`，包含 stdcell corner 和 **每个 macro 的 .db**；只有 TT view 的 SRAM 在其他 corner 复用时，必须把这一限制写到结果旁。
+2. `read_verilog` → `current_design` → `link_design`；在脚本内 assert **SDC md5** 再 `read_sdc`。只对真实 clock `set_propagated_clock`；propagated **virtual** clock ignores its network latency。
+3. `read_parasitics -format spef <spef>`；把 SPEF copy 到 run dir，copy 前后都记录 md5。
+4. **Annotation gate.** `report_annotated_parasitics -check -internal_nets -boundary_nets -driverless_nets -loadless_nets -pin_to_pin_nets`，以 `-pin_to_pin_nets` 行作为主要 gate；clock nets 再跑 `-list_not_annotated`。`read_parasitics` 的 summary 写到 `parasitics_command.log`，不一定在 stdout。`PARA-124` 这类 SPEF 中存在但 netlist 没有的 net 要统计并解释。
+5. `check_timing -verbose`、`report_global_timing`、`report_qor`、`report_constraint -all_violators`。Clean 时 `report_global_timing` 可能打印 `No setup violations found.`；设置 `report_default_significant_digits 4` 防止很小的负 slack 被 2 位小数隐藏。
+6. 只有得到 **non-empty setup and hold WNS** 才接受 run；缺一项就是无效结果。
+7. **`read_sdc` stops at the first unsupported command**，后续 constraint 会被丢弃而 session 不一定失败。实测 **Innovus-exported SDC is not PT-readable** as-is；需要去除/转换不支持的命令，并 diff 派生版。
+8. Tool-written SDC 是不同 constraint set。ICC2 `write_sdc` 可能加入 `set_clock_latency 1.77814` useful-skew/I/O latency；必须分别记录 shared/tool SDC md5。
+9. PrimePower：`power_default_toggle_rate 0.1`、static probability 0.5；PT 会从 D 传播寄存器 activity，而某些 engine 给 register output 默认 activity，实测可有 **15 % difference**。需要时对 `[all_registers -output_pins]` 显式设置一致 activity。
+10. SRAM table 超范围时不同 STA engine 的 delay **extrapolate** 策略不同，比较前检查 macro output load 是否在 Liberty table 范围内。
+11. **Tempus may be absent**；没有对应工具时明确 NOT RUN，而不是拿其他引擎结果冒充 Tempus。
 
 ---
 
@@ -257,12 +292,12 @@ Optional：
 ## Memory
 
 ### Write on stage completion
-每 stage 后按 `run_id` upsert `memory/sta/experiences.jsonl`。
+每 stage 后按 `run_id` upsert `<MEM>/sta/experiences.jsonl`。
 `run_id = sta_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用；
 最终 sign-off 前 `signoff_achieved:false`。
 
 ### Run state
-工具前第一步写 `memory/sta/run_state.md`：
+工具前第一步写 `<MEM>/sta/run_state.md`：
 ```markdown
 run_id:      sta_<YYYYMMDD>_<HHMMSS>
 design_name: <design>

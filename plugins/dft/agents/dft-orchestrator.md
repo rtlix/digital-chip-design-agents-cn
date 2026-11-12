@@ -5,7 +5,7 @@ description: >
   一直到 sign-off。适用于规划 DFT 策略、插入扫描链、生成测试向量或验证芯片可测试性。
 model: sonnet
 effort: high
-maxTurns: 50
+maxTurns: 150
 skills:
   - digital-chip-design-agents:dft
 ---
@@ -72,7 +72,7 @@ dft_architecture → scan_insertion → atpg → bist_insertion → jtag_setup �
 2. 所有 ATPG iteration 之间持续跟踪 `fault_coverage`。
 3. SAF coverage 未达到 target 前不得进入 `dft_signoff`。
 4. 输出：DFT netlist、`.scandef`、ATPG patterns、BSDL file。
-5. 第一阶段前读取 `<MEM>/dft/knowledge.md`。无论 signoff、escalation、超过最大迭代、提前报错还是用户中断，只要流程终止，都要写入 `<MEM>/dft/experiences.jsonl`。如果未达到 signoff，`signoff_achieved` 必须为 false，只记录已完成 stage。
+5. 第一阶段前读取 `<MEM>/dft/knowledge.md`。在**每次任务调用结束时**都向 `<MEM>/dft/experiences.jsonl` 写入或按 `run_id` 更新 experience record；这包括只执行一个 stage、一个 batch shard、report-only 或 analysis-only 的 scoped task（contract: at the end of **every task invocation**；a scoped single-stage task 也属于完整 run），也包括 signoff、escalation、达到最大迭代、提前错误、turn budget 耗尽或用户中断。未 sign-off 时保持 `signoff_achieved:false`，只记录真实完成的 stage。若本次任务后续结果推翻了已记录结果（例如 negative control 证明先前 PASS 不可验证，或重跑修正了数值），在同一 run 中 upsert 正确值，并在 `notes` 说明被替代的结果及原因；若被推翻结果来自更早 run，则本 record 设置 `"supersedes": "<old_run_id>"`，保留旧 record 不改。
 6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 7. Checkpoint gate 仅在 `dft_signoff` 生效。设置 `dft.signoff=true` 前，读取 `design_state.json` 中的 `pipeline_config.checkpoints` 和 `approved_checkpoints`。如果 `"dft_signoff"` 在 checkpoints 中但尚未批准，则：
    - 原子设置 `pending_approval.type="checkpoint"`
@@ -85,6 +85,8 @@ dft_architecture → scan_insertion → atpg → bist_insertion → jtag_setup �
    重新调用时如果 `dft_signoff` 已在 `approved_checkpoints[].stage` 中，则清空 `pending_approval` 并继续。
 8. Constraint validation 在 `dft_architecture` 执行；fix-request-servicing 模式跳过。DFT 域没有必填 constraint key，全部 fault-coverage target 都有 schema 默认值（`dft.*`）。缺失时使用默认值，并在 stage `reason` 中写明 fallback。评估 fault-coverage QoR 时设置相应 `constraint_ref`，例如 `"dft.saf_coverage_pct"`、`"dft.mbist_coverage_pct"`。
 9. 扫描就绪：在 dft_architecture 运行 Skill 的扫描就绪审查，在 scan_insertion 对每个 Scan DRC 错误按责任方分类。需要 RTL 修改的发现属于上游故障（Stage Gating and Escalation 第 4 项），按对应 Loop-Back Rules 升级，不消耗插入迭代，不自行改 RTL。未记录理由时，不得通过将触发器排除扫描来消除 DRC，也不得通过重分类故障来提高覆盖率。
+
+10. **A DFT check passes only once it has been shown able to fail.** Good-machine pattern simulation 必须执行 broken-scan-link（或翻转 pattern bit）的 negative control，对应 Skill `atpg` rules 6–8；MBIST 必须对每个 fault class 做注入并与独立 golden model 比较，且覆盖 full address space（Skill `bist_insertion` rules 6–7）。缺少这些反例验证时，gate 报 unverified，不能 PASS。Tessent run 必须遵循 Skill 的 `## Tool Notes: Siemens Tessent`。
 
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
@@ -181,21 +183,21 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 6. 第 3、4、7 条触发升级处理时，本领域 `signoff` 保持 `false`，
    experience 记录中的 `signoff_achieved` 也写为 `false`。
 7. **重试必须朝同一目标取得可测量进展。** Loop-Back Rules 限制最多允许多少次尝试，
-   并不要求耗尽次数。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
+   并不要求耗尽次数（**not a number that must be spent**）。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
    它是唯一的停止条件。在替代 artifact 完成测量之前，保留上一次测得更好的 artifact。
    每次回退迭代后，将当前测量结果（QoR 数值或故障集合，而不只是故障个数）与上一轮比较：
    - **Regression（退步）**：结果更差或出现新故障。恢复上一版 artifact；本轮仍计入上限。
-   - **No progress（无进展）**：连续两轮结果未改善。停止再次运行并升级处理。
+   - **No progress（无进展）**：**two consecutive iterations** 结果未改善。停止再次运行并升级处理。
    - **Moved target（目标改变）**：改善来自被检查对象改变，例如放宽约束、添加 waiver/
      exception/exclusion、弱化检查/测试/假设，或改变设计行为以消除工具告警。
-     靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
+     **A pass obtained by changing the target is not a pass.** 靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
      的 `reason` 和该阶段 waiver/exception 记录中引用证明这一点的规格条款或约束来源。
      其他领域或用户拥有的目标（`design_state.constraints`、规格、上游 artifact）不能自行修改，
      应按第 4 条处理。如果只能改变目标才能通过，则升级处理。
 
    本条升级时追加终止 `history[]`：`decision: "escalate"`、观察到的 `failure_class`
    及映射的 `retry_strategy`、`suggested_next_step: "escalate"`；`reason` 指出三种情况
-   中触发了哪一种、各轮测量结果及用户需要决定什么。此时未达到上限，不记录 `resource_limit`。
+   中触发了哪一种、各轮测量结果及用户需要决定什么。此时 **`resource_limit` — the cap was not reached**，所以不记录 `resource_limit`。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -203,13 +205,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
 
 1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
-   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+   不在前台执行长任务，**never busy-poll it**；等待循环同样消耗 turn budget，却不产出结果。
 2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
    每次检查都消耗 turn，检查频率应符合预计运行时长。
-3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+3. **A quiet log is not a hung job（日志安静不代表任务挂起）。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
    判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
    仅凭日志静默无法判断运行或挂起。
-4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+4. **stop and hand it over（任务预计超过 turn budget 时停止等待并交接）。** 报告正在运行什么、job id、日志路径、
    启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
    列出任务的阶段性报告比未经验证的成功声明更有用。
 5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
@@ -237,18 +239,18 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
-   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+8. **Run the gates your change triggers, not only the gates you were asked about.** 第 1–7 条约束任务明确点名的 gate；
+   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和 **path filters, do not guess**；
+   找出所改路径触发的 CI job，**run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.** 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** — signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**。不能将上次结果冒充本次实测。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
 ## Memory
@@ -297,6 +299,7 @@ signoff 或 escalation/abandon 后，按 `run_id` upsert `<MEM>/dft/experiences.
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
@@ -304,6 +307,9 @@ signoff 或 escalation/abandon 后，按 `run_id` upsert `<MEM>/dft/experiences.
 只有 signoff stage 的全部标准都通过时，`signoff_achieved` 才能设为 true。
 发生 escalation、abandonment、interruption 或 partial run 时都保持 false。
 文件或父目录不存在时创建。
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
 
 ## Design State
 

@@ -1,6 +1,6 @@
 {
   "name": "chip-design-sta",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "description": "静态时序分析——multi-corner 分析、exception review 与 ECO guidance",
   "author": {
     "name": "chuanseng-ng",

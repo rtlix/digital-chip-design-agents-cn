@@ -21,9 +21,11 @@ allowed-tools: Read, Write, Bash
 在 active Orchestrator 内再次启动自身会造成 recursive delegation，必须禁止。
 
 ## Pre-run Context
+
+`<MEM>` 表示已经解析出的 Memory root，而不是字面量 `memory/` 目录。解析优先级为：显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库内 seed；可用 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径，最终以 Orchestrator 的 `## Memory` 章节为准。为保持上游 contract 可检测：`<MEM>` below is the resolved memory root。
 任何 stage 前，如存在则读取：
-1. `memory/synthesis/knowledge.md`
-2. `memory/synthesis/run_state.md`
+1. `<MEM>/synthesis/knowledge.md`
+2. `<MEM>/synthesis/run_state.md`
 应用历史 failure pattern、有效 tool flag、PDK/tool quirk 与 run state。
 
 ## Purpose
@@ -92,6 +94,36 @@ ORFS/LibreLane 中典型 Yosys log：
 - Validated SDC
 - Clock summary
 - Constraint QA report
+
+---
+
+### Tool Notes: commercial synthesis (measured)
+
+以下流程实测于一台 8 vCPU / 15 GB 主机、Sky130 `sky130_fd_sc_hd` CPU macro（约 30k cells、10 个 OpenRAM SRAM hard macro），每个工具 2 cores、同一时间只跑一个 licensed tool。版本：DC-NXT **X-2025.06-SP3**、Genus **23.14-s090_1**，中立 timing probe 使用 PrimeTime X-2025.06。Fusion Compiler 未实测；其 synthesis command 是 `compile_fusion`，不是 `compile_ultra`。
+
+**Design Compiler / DC-NXT**
+- `dc_shell -topographical_mode` 属于 **Milkyway** flow，不能直接读取 NDM reference library；NDM topographical synthesis 使用 **`dcnxt_shell -topographical_mode -f <script.tcl>`**。
+- Wire RC：`set_tlu_plus_files -max_tluplus ... -min_tluplus ... -tech2itf_map ...`，然后 `check_tlu_plus_files`，三项检查都必须 PASS。`read_parasitic_tech` does not exist in dcnxt_shell。
+- 从 DEF 读取 floorplan：`extract_physical_constraints <fp.def>`；generate-scope macro 无法直接靠 DEF 名字定位时，用 `set_cell_location -fixed` 并 `set_dont_touch`。
+- **`set_svf <file>` **before** `analyze`**，结束后 `set_svf -off`。Formality 依赖 SVF 匹配 DC constant-register removal/merge。
+- Native SV read：`analyze -format sverilog` + `elaborate`；compile 使用 `compile_ultra -spg`。`set_dont_use */<cell>` 不正确，使用 `set_dont_use [get_lib_cells */<cell>]`。
+- `compile_ultra -spg` 实测约 219 s，session 约 9 min，**peak RSS 1.4–1.6 GB**。
+- 只在 TT 做 area recovery 会生成慢结构：实测 ripple-carry PC adder 在 TT 恰好 0 slack，却在 SS 达到 **-10.5 ns at ss**。修复方式是 **MCMM**：创建 SS/TT setup、FF/TT hold scenario，并在 hold scenario 使用 `set_fix_hold`。说明 “+0.00” 不是 timing headroom。
+
+**Genus physically-aware**
+- `genus -no_gui -overwrite -f <script.tcl>`；流程：`read_mmmc` → `read_physical -lef` → `read_hdl -sv` → `elaborate` → `read_def` → `syn_generic -physical` → `syn_map -physical` → `syn_opt`，实测 **peak RSS ~2.0 GB**。
+- Genus 与 Innovus 的 MMMC dialect 不完全相同。Genus 23.14 使用 `create_timing_condition` + `create_delay_corner -timing_condition`；Innovus 23.1x 对同形式会报 **TCLCMD-992**，共享脚本必须按工具分支。
+- Instance `.location` 只读；macro placement 用 `read_def -incremental <macros.def>`。
+- `syn_opt -spatial` 没有 qrcTechFile 时会以 **PHYS-1015** 失败；可退回 plain physical-aware `syn_opt` 并明确记录。
+- SDC `set_max_area 0` 在 Genus 中会给 **SDC-200**/被忽略，而 DC 会真正使用它，所以跨工具 area comparison 要记录这一差异。
+- Output 包括 `write_hdl`、`write_sdc -view <view>` 和 `write_do_lec`。
+
+**Fusion Compiler outline**
+- FC 在 NDM design library 中继续物理感知综合，主命令为 `compile_fusion`（可配 `-to/-from`），而不是 `compile_ultra`。
+- 若要进行 tool comparison，使用相同 RTL/SDC/library/corner；这是 **comparison run, no target**，不能把比较 run 的结果自动写成 sign-off。
+
+**Cross-tool comparison**
+- 选哪份 synthesis netlist 前，用同一 STA engine、同一 SDC、同一 library corner 对各 netlist 做 zero-wire / equivalent-parasitic timing probe。实测这样才能区分 “netlist 结构本身慢” 与 “后端 wire RC 慢”。
 
 ---
 
@@ -208,7 +240,7 @@ Optional：
 ## Memory
 
 ### Write on stage completion
-每 stage 后按 `run_id` upsert `memory/synthesis/experiences.jsonl`。
+每 stage 后按 `run_id` upsert `<MEM>/synthesis/experiences.jsonl`。
 实现方式为读取全部行、删除同 run_id 旧 record、追加更新后的 record，然后原子替换。
 每条 record 必须有顶层 `run_id`：
 `synthesis_<YYYYMMDD>_<HHMMSS>`，一次生成全流程复用。

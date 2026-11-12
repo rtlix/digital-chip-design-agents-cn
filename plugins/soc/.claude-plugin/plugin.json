@@ -1,6 +1,6 @@
 {
   "name": "chip-design-soc",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "SoC IP 集成——IP 获取、bus fabric 与 chip-level simulation",
   "author": {
     "name": "chuanseng-ng",

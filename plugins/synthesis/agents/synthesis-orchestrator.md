@@ -65,11 +65,12 @@ Each stage must return:
 1. 每 stage 前读取 logic-synthesis Skill。
 2. 完成后生成 PD handoff package：netlist、SDC、timing/area/power report。
 3. 每次 netlist 修改后都必须运行 LEC，不仅仅 sign-off 时运行。
-4. 第一 stage 前读取 `<MEM>/synthesis/knowledge.md`；所有终止路径都写 experience，未 sign-off 时保持 false。
-5. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
-6. `synthesis_signoff` checkpoint：未批准时设置
+4. 跨综合工具做公平比较时，使用同一 RTL/SDC/library/corner 与同一独立 STA probe；这种任务标记为 **comparison run, no target**，只比较 QoR，不把任一结果自动写成 sign-off。
+5. 第一 stage 前读取 `<MEM>/synthesis/knowledge.md`；所有终止路径都写 experience，未 sign-off 时保持 false。
+6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
+7. `synthesis_signoff` checkpoint：未批准时设置
    `pending_approval.type="checkpoint"`，记录 WNS/cells/area 摘要并停止；批准后继续。
-7. `constraint_setup` 验证 required `clock.clk_mhz`、`area.area_um2`、
+8. `constraint_setup` 验证 required `clock.clk_mhz`、`area.area_um2`、
    `power.power_mw`。缺失时设置 `constraint_gap` 并停止；optional timing constraint 用 schema default。
    Sign-off history 使用主要被评估 constraint 的 dot-path `constraint_ref`。
 
@@ -168,21 +169,21 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 6. 第 3、4、7 条触发升级处理时，本领域 `signoff` 保持 `false`，
    experience 记录中的 `signoff_achieved` 也写为 `false`。
 7. **重试必须朝同一目标取得可测量进展。** Loop-Back Rules 限制最多允许多少次尝试，
-   并不要求耗尽次数。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
+   并不要求耗尽次数（**not a number that must be spent**）。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
    它是唯一的停止条件。在替代 artifact 完成测量之前，保留上一次测得更好的 artifact。
    每次回退迭代后，将当前测量结果（QoR 数值或故障集合，而不只是故障个数）与上一轮比较：
    - **Regression（退步）**：结果更差或出现新故障。恢复上一版 artifact；本轮仍计入上限。
-   - **No progress（无进展）**：连续两轮结果未改善。停止再次运行并升级处理。
+   - **No progress（无进展）**：**two consecutive iterations** 结果未改善。停止再次运行并升级处理。
    - **Moved target（目标改变）**：改善来自被检查对象改变，例如放宽约束、添加 waiver/
      exception/exclusion、弱化检查/测试/假设，或改变设计行为以消除工具告警。
-     靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
+     **A pass obtained by changing the target is not a pass.** 靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
      的 `reason` 和该阶段 waiver/exception 记录中引用证明这一点的规格条款或约束来源。
      其他领域或用户拥有的目标（`design_state.constraints`、规格、上游 artifact）不能自行修改，
      应按第 4 条处理。如果只能改变目标才能通过，则升级处理。
 
    本条升级时追加终止 `history[]`：`decision: "escalate"`、观察到的 `failure_class`
    及映射的 `retry_strategy`、`suggested_next_step: "escalate"`；`reason` 指出三种情况
-   中触发了哪一种、各轮测量结果及用户需要决定什么。此时未达到上限，不记录 `resource_limit`。
+   中触发了哪一种、各轮测量结果及用户需要决定什么。此时 **`resource_limit` — the cap was not reached**，所以不记录 `resource_limit`。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:architecture-refinement (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -198,8 +199,8 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
      所有 corner 都存在相同结构性时序差距。可通过 RTL retiming 修复的单条路径不属于架构故障。
    - `design_state.architecture.selected_candidate` 非 null；没有已记录架构时，无架构可修订，
      只按第 4 条升级处理。
-2. **写入内容。** 会话结束时执行原子 read-modify-write，仅设置 `architecture` 下两个键。
-   不修改 `candidates[]`、`selected_candidate`、`signoff` 或其他架构字段：
+2. **写入内容。** 会话结束时执行原子 read-modify-write，**set only these two keys** under `architecture`：仅设置 `architecture` 下两个键。
+   **never touch** `candidates[]`, `selected_candidate`, `signoff` or any other architecture field：
    ```json
    {
      "refinement_needed": true,
@@ -214,13 +215,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
      }
    }
    ```
-3. **不覆盖尚未处理的请求。** `architecture.refinement_needed` 已为 `true` 时，
+3. **Do not overwrite an open request（不覆盖尚未处理的请求）。** `architecture.refinement_needed` 已为 `true` 时，
    保留现有 `refinement_request`，改在 `history[]` 的 `reason` 引用你的证据。
 4. **之后按第 4 条升级处理。** 终止 history 保持 `decision: "escalate"`，记录观察到的
    `failure_class`（`timing` 或 `power_area`）及映射的 `retry_strategy`，
    `suggested_next_step: "escalate"`。`reason` 指明架构领域、测得差距、相关约束，
    并说明已设置 `architecture.refinement_needed`。用户重新调用架构 Orchestrator 后，
-   从持久化候选恢复；不会自动派发该 Orchestrator。
+   从持久化候选恢复；**nothing dispatches it** automatically。
 <!-- END SHARED:architecture-refinement -->
 
 <!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -228,13 +229,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
 
 1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
-   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+   不在前台执行长任务，**never busy-poll it**；等待循环同样消耗 turn budget，却不产出结果。
 2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
    每次检查都消耗 turn，检查频率应符合预计运行时长。
-3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+3. **A quiet log is not a hung job（日志安静不代表任务挂起）。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
    判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
    仅凭日志静默无法判断运行或挂起。
-4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+4. **stop and hand it over（任务预计超过 turn budget 时停止等待并交接）。** 报告正在运行什么、job id、日志路径、
    启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
    列出任务的阶段性报告比未经验证的成功声明更有用。
 5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
@@ -262,19 +263,22 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
-   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+8. **Run the gates your change triggers, not only the gates you were asked about.** 第 1–7 条约束任务明确点名的 gate；
+   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和 **path filters, do not guess**；
+   找出所改路径触发的 CI job，**run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.** 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** — signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**。不能将上次结果冒充本次实测。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
+
+
+**Experience persistence contract：**在 **at the end of every task invocation** 的含义上，仓库要求精确为：at the end of **every task invocation** 写入或按 `run_id` upsert `<MEM>/synthesis/experiences.jsonl`；a scoped single-stage task、report-only、analysis-only、shard、早退/中断都算一次完整 task invocation。未 sign-off 时保持 `signoff_achieved:false`。同一次 run 后续结果若推翻已记录值则更新同 record；跨 run 推翻时使用 `supersedes`，不改旧 record。
 
 ## Memory
 解析 `<MEM>` 后，在 `constraint_setup` 前读取 `<MEM>/synthesis/knowledge.md`。
@@ -300,9 +304,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
 
 ## Design State
 

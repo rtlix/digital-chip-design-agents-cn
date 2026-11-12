@@ -66,7 +66,7 @@ after: ^## Behaviour Rules$
   或预算/上限已耗尽；动作是 `escalate` 或 `abandon`。
 - **none（无故障）**：仅与 `failure_class: "none"` 配对（PASS、`await_approval`）。
 
-`input_setup` 表示工具在错误输入上正确运行：filelist、include 路径、项目或配置文件、
+`input_setup` means **the tool ran correctly on the wrong inputs**（工具在错误输入上正确运行）：filelist、include 路径、项目或配置文件、
 生成的头文件或库视图解析到了错误目录树。它不是 `tool_error`，因为重试会原样重现；
 也不能作为被检查 artifact 的证据，因为该 artifact 根本没有被评估。
 当证据指向输入集合（同一文件出现两个路径、本次运行未写入的文件、检查前就中止）时，
@@ -85,8 +85,7 @@ Loop-Back Rules 将 FAIL/WARN 送回另一阶段时，记录 `decision: "loop_ba
 WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规则仍有剩余迭代次数时，
 映射的 `escalate` 也不会覆盖它。仍然记录映射出的 `retry_strategy`，让冲突在 `history[]`
 中可见，而不是静默解决。Stage Gating and Escalation 第 4、7 条性质不同：它们依据证据
-停止循环（上游故障或重试不收敛），不受规则剩余次数影响。`input_setup` 也具有该优先级：
-任何 Loop-Back Rules 行都不能覆盖它，因为回退规则会发送到修改 artifact 的阶段，
+停止循环（上游故障或重试不收敛），不受规则剩余次数影响。`input_setup` 也具有该优先级：**no Loop-Back Rules row overrides it**；任何 Loop-Back Rules 行都不能覆盖它，因为回退规则会发送到修改 artifact 的阶段，
 而此时 artifact 本身并没有问题。
 
 某个条件完全没有对应 Loop-Back Rules 行时，没有可遵循的规则，也没有可据以映射的分类。
@@ -136,21 +135,21 @@ after: ^## Behaviour Rules$
 6. 第 3、4、7 条触发升级处理时，本领域 `signoff` 保持 `false`，
    experience 记录中的 `signoff_achieved` 也写为 `false`。
 7. **重试必须朝同一目标取得可测量进展。** Loop-Back Rules 限制最多允许多少次尝试，
-   并不要求耗尽次数。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
+   并不要求耗尽次数（**not a number that must be spent**）。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
    它是唯一的停止条件。在替代 artifact 完成测量之前，保留上一次测得更好的 artifact。
    每次回退迭代后，将当前测量结果（QoR 数值或故障集合，而不只是故障个数）与上一轮比较：
    - **Regression（退步）**：结果更差或出现新故障。恢复上一版 artifact；本轮仍计入上限。
-   - **No progress（无进展）**：连续两轮结果未改善。停止再次运行并升级处理。
+   - **No progress（无进展）**：**two consecutive iterations** 结果未改善。停止再次运行并升级处理。
    - **Moved target（目标改变）**：改善来自被检查对象改变，例如放宽约束、添加 waiver/
      exception/exclusion、弱化检查/测试/假设，或改变设计行为以消除工具告警。
-     靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
+     **A pass obtained by changing the target is not a pass.** 靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
      的 `reason` 和该阶段 waiver/exception 记录中引用证明这一点的规格条款或约束来源。
      其他领域或用户拥有的目标（`design_state.constraints`、规格、上游 artifact）不能自行修改，
      应按第 4 条处理。如果只能改变目标才能通过，则升级处理。
 
    本条升级时追加终止 `history[]`：`decision: "escalate"`、观察到的 `failure_class`
    及映射的 `retry_strategy`、`suggested_next_step: "escalate"`；`reason` 指出三种情况
-   中触发了哪一种、各轮测量结果及用户需要决定什么。此时未达到上限，不记录 `resource_limit`。
+   中触发了哪一种、各轮测量结果及用户需要决定什么。此时 **`resource_limit` — the cap was not reached**，所以不记录 `resource_limit`。
 <!-- END BLOCK stage-gating -->
 
 <!-- BLOCK architecture-refinement
@@ -170,8 +169,8 @@ after: ^## Behaviour Rules$
      所有 corner 都存在相同结构性时序差距。可通过 RTL retiming 修复的单条路径不属于架构故障。
    - `design_state.architecture.selected_candidate` 非 null；没有已记录架构时，无架构可修订，
      只按第 4 条升级处理。
-2. **写入内容。** 会话结束时执行原子 read-modify-write，仅设置 `architecture` 下两个键。
-   不修改 `candidates[]`、`selected_candidate`、`signoff` 或其他架构字段：
+2. **写入内容。** 会话结束时执行原子 read-modify-write，**set only these two keys** under `architecture`：仅设置 `architecture` 下两个键。
+   **never touch** `candidates[]`, `selected_candidate`, `signoff` or any other architecture field：
    ```json
    {
      "refinement_needed": true,
@@ -186,13 +185,13 @@ after: ^## Behaviour Rules$
      }
    }
    ```
-3. **不覆盖尚未处理的请求。** `architecture.refinement_needed` 已为 `true` 时，
+3. **Do not overwrite an open request（不覆盖尚未处理的请求）。** `architecture.refinement_needed` 已为 `true` 时，
    保留现有 `refinement_request`，改在 `history[]` 的 `reason` 引用你的证据。
 4. **之后按第 4 条升级处理。** 终止 history 保持 `decision: "escalate"`，记录观察到的
    `failure_class`（`timing` 或 `power_area`）及映射的 `retry_strategy`，
    `suggested_next_step: "escalate"`。`reason` 指明架构领域、测得差距、相关约束，
    并说明已设置 `architecture.refinement_needed`。用户重新调用架构 Orchestrator 后，
-   从持久化候选恢复；不会自动派发该 Orchestrator。
+   从持久化候选恢复；**nothing dispatches it** automatically。
 <!-- END BLOCK architecture-refinement -->
 
 <!-- BLOCK long-running-jobs
@@ -203,13 +202,13 @@ after: ^## Behaviour Rules$
 构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
 
 1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
-   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+   不在前台执行长任务，**never busy-poll it**；等待循环同样消耗 turn budget，却不产出结果。
 2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
    每次检查都消耗 turn，检查频率应符合预计运行时长。
-3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+3. **A quiet log is not a hung job（日志安静不代表任务挂起）。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
    判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
    仅凭日志静默无法判断运行或挂起。
-4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+4. **stop and hand it over（任务预计超过 turn budget 时停止等待并交接）。** 报告正在运行什么、job id、日志路径、
    启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
    列出任务的阶段性报告比未经验证的成功声明更有用。
 5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
@@ -240,18 +239,18 @@ after: ^## Behaviour Rules$
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
-   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+8. **Run the gates your change triggers, not only the gates you were asked about.** 第 1–7 条约束任务明确点名的 gate；
+   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和 **path filters, do not guess**；
+   找出所改路径触发的 CI job，**run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.** 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** — signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**。不能将上次结果冒充本次实测。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END BLOCK reporting-contract -->
 
 <!-- BLOCK rtl-lint-gate
@@ -261,8 +260,8 @@ after: ^## Behaviour Rules$
 -->
 ## RTL Lint Gate
 适用于本 Orchestrator 编写、修改或生成的全部可综合 RTL，包括回退迭代和处理 `fix_request`
-时的修改。Testbench（`*_tb.sv`、`tb_*.sv`）及仅用于仿真的行为模型豁免：
-其中 `initial`、`#delay` 和 blocking assignment 是正确用法。
+时的修改。Testbench（`*_tb.sv`、`tb_*.sv`）及仅用于仿真的行为模型通常豁免：
+其中 `initial`、`#delay` 和 blocking assignment 是正确用法。**但如果 CI 的 lint target 会编译它们，第 10 条仍然适用。**
 
 1. **文件离开阶段前执行 lint。** RTL 最后一次编辑后未经 lint，无论改动多小，都按 Reporting Contract 标为 NOT RUN。
 2. **Slang 必须完整 elaboration。** 执行 `slang -Weverything --ignore-unknown-modules <files>`。
@@ -286,7 +285,7 @@ after: ^## Behaviour Rules$
    规则未执行，计数未知而非 0，无法得出 RTL 结论。编辑任何文件前先归因各 fatal。
    重复声明伴随未声明标识符、同一文件出现两条路径、缺 include，或本次未写文件中的 fatal，
    都指向输入集合：include search 首个匹配优先，旧树排在前面会遮蔽新树。
-   记录 `input_setup`，不编辑 RTL，并携带路径升级处理。只有本次写入的文件有 parse error，
+   **Record `input_setup`, edit no RTL**；记录 `input_setup`，不编辑 RTL，并携带路径升级处理。只有本次写入的文件有 parse error，
    且输入集合已检查时，才由你修复。
 8. **Lint 不证明下游 front-end 接受 RTL。** Verilator、slang 和仿真 regression 原生读取 SystemVerilog。
    下游综合前若使用 sv2v、Surelog/UHDM 或 vendor SV-to-Verilog 转换，必须对 filelist 执行转换，
@@ -303,7 +302,8 @@ after: ^## Behaviour Rules$
    列表是 `.f` 或可导出为 `.f` 时，使用 `plugins/rtl-design/skills/rtl-design/` 下的
    `check_design_inputs.py <filelist.f> --rtl-dir <rtl> --list <name>=<file> ...`，
    它会列出每个遗漏磁盘上 module 的列表。
-10. **可选：`hdl-rtl-skill`。** 若其 `rtl-lint` 脚本可用，将它作为 slang runner，执行第 2–4 条。
+10. **Lint with the tool version CI runs, on everything CI lints（使用 CI 实际运行的版本检查 CI 实际检查的全部文件）。** 版本必须来自 CI job log 中真正执行的 `verilator --version`、lockfile、固定 container 或 download script，**not from a comment or README that names a version**，因为说明文字会过期。新版工具会新增 warning；在旧版本本地 clean 并不能证明 CI gate 会 clean。实测案例：注释写 Verilator 5.036，而 CI 实际运行 5.048；5.048 新增 `PROCASSINIT`，使一个 declaration initializer 与 `always` 同时写同变量的 behavioural SRAM model 在 `-Wall` 下失败。第 1 条的 TB/model 豁免在 CI lint target 边界处结束：**a CI lint target compiles is gated like RTL**。本地没有 CI 对应版本时，构建/获取该版本（仓库内 build 也可以），否则 **report the gate NOT RUN with the version you could not run**。需要 power-up 初值时，对 procedurally written variable 用 `initial` block，不用 declaration initializer；`always_ff` target 更不能由其他过程写（IEEE 1800 9.2.2.4，VCS `ICPD`）。
+11. **可选：`hdl-rtl-skill`。** 若其 `rtl-lint` 脚本可用，将它作为 slang runner，执行第 2–4 条。
     `BLOCKER`/`HIGH` 算 error，`MEDIUM` 算 warning，`LOW`/`INFO` 算 informational，
     `MANUAL_REVIEW_REQUIRED` 需升级处理。不可用时，上述规则仍独立适用；该脚本补充而不替代本 gate。
 <!-- END BLOCK rtl-lint-gate -->
@@ -321,13 +321,13 @@ after: ^## (General Behaviour|Behaviour for All Domains|通用行为|所有领�
 - 重试须朝同一目标改善实测结果：退步则撤销，连续两次无变化则停止并报告，
   不能通过放宽失败的约束、检查或测试取得 PASS。
 - 报告前执行任务点名的每个 gate，引用准确输出；未执行的 gate 标 NOT RUN 并说明原因。
-- 向自带 CI 的仓库推送前，读取 workflow 路径过滤，找出所改路径触发的所有 job，
-  在本地执行每个 job 的全部步骤，而非仅上次失败步骤；列出未能执行的步骤。
+- 向自带 CI 的仓库推送前，读取 **workflow path filters**，找出所改路径触发的所有 job，
+  在本地执行每个 job 的全部步骤，**not only the step that last failed**；列出未能执行的步骤。
 - 工具 exit 0 但输出为空/不可解析，不能算通过。
 - 工具在检查设计前中止，或使用错误输入（filelist、include 路径、配置、生成头文件）时，
   不修改设计；报告该输入并停止。
 - 结束前重读交付物清单，列出未完成项。
-- 每次停止时，无论是否 signoff，都记录本次为下一阶段建立的信息：所产文件，
+- **Whenever you stop, with or without signoff**，都记录本次为下一阶段建立的信息：所产文件，
   以及未经工具运行而得出的全部结论。未声明 signoff 不意味着不交接内容。
 - 区分 measured value 与 inference。
 - 测试使用 generated artifact 时，确认每个执行该测试的环境能获取它：已提交，或由该环境实际执行的步骤重建。

@@ -18,9 +18,11 @@ allowed-tools: Read, Write, Bash
 - 由 physical-design-orchestrator 中途调用：不要再次启动 Agent；本文件只作为规则库。
 
 ## Pre-run Context
+
+`<MEM>` 表示已经解析出的 Memory root，而不是字面量 `memory/` 目录。解析优先级为：显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库内 seed；可用 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径，最终以 Orchestrator 的 `## Memory` 章节为准。为保持上游 contract 可检测：`<MEM>` below is the resolved memory root。
 任何 stage 前，如存在则读取：
-1. `memory/pd/knowledge.md`
-2. `memory/pd/run_state.md`
+1. `<MEM>/pd/knowledge.md`
+2. `<MEM>/pd/run_state.md`
 并应用已知 failure pattern、tool flag、PDK quirk 和 run state。
 
 ## Purpose
@@ -77,6 +79,86 @@ Agent 流程：
 2. 读取每个完成 stage 的 log，提取 WNS、DRC、congestion、IR drop 等 QoR
 3. 应用本 Skill loop-back，修 config/constraint
 4. 从失败 stage 重新启动
+
+---
+
+## PDK Enablement
+
+商业 P&R / extraction / sign-off 工具需要完整的 logical + physical + RC view。一个 flow 的输入包至少包含 technology definition、std-cell/macro LEF、所有 timing corner（**including every macro's `.lib`**）、GDS/CDL、RC tech、layer map 和 sign-off deck。Open PDK 缺商业格式时，必须先从公开 tech/LEF/Liberty 构造并验证这些 view；构造出来的商业 view 需要与开源 reference flow **Correlate**，否则后续数值只能标 `indicative`。
+
+跨 extractor 技术转换通常类似：
+- Synopsys extraction：`grdgenxo` → `nxtgrd` / TLU+，并保留 layer/map 一致性。
+- Cadence extraction：`Techgen` → `qrcTech`。
+- Open sign-off：**Magic and KLayout for DRC, Netgen for LVS**，必要时与 Calibre/PVS 商业 deck 结果交叉检查。
+- `pd.spef` 应保存为 **a list**（`"spef": [...]`）以支持 nom/min/max 或更多 RC corner，而不是单一路径。
+
+### Measured on Sky130
+
+以下是把 Sky130 开源 PDK enable 到商业 flow 时的实测陷阱，必须作为 recipe 的一部分保留：
+- Library/NDM 生成过程中某些工具在成功写完输出后会 **segfaults at process exit**；不能仅凭进程崩溃否定已完成 artifact，也不能仅凭文件存在判 PASS，必须先检查 log 中实际 build/check result。观察到过 `LIB-007`。
+- NDM/workspace 需要 **gapless** layer/track/physical view；缺失会触发 `DPUI-924`。多 PVT 库按 **one pane per corner** 组织；用 `check_workspace -allow_missing` 区分允许缺失与真正错误，留意 `PVT-030`。
+- 部分 library command 的对象/语法错误会出现 `UID-109`；不要把 shell wildcard 当 lib-cell object。
+- RC 生成：`grdgenxo` + `-itf2TLUPlus`，并检查 `LBMISC-215479`；Cadence/Quantus enablement 中记录 `IMPEXT-6091` / `IMPEXT-3548`。
+- Sky130 层名转换可能要求 **`li1` → `met0`**。ICT/ITF 相关 threshold 实测使用过 `COUPLING_ABS_THRESHOLD: 0.1`。
+- Foundry/open-source deck 可能通过 `.calibre` / layer-map 间接引用规则；缺失或映射错误可表现为 `TEC-011`。
+- MMMC/physical-view 构建中会用 `create_timing_condition`；Innovus/Genus 的 dialect 不完全相同。
+- 仅有 routing tracks 的 DEF 属于 **TRACKS-only DEF**，不能冒充完整 floorplan/placement DEF；相关恢复/转换时观察到 `SVR-4`。
+
+---
+
+## Tool Notes: Cadence Innovus
+
+实测版本 **23.14-s088_1**。以下事项会直接影响 timing/power/route 的可信度：
+- MMMC I/O latency 不能只靠主 SDC；view 需要 `-latency_file`，并用 `update_constraint_mode` 更新。若使用 CCOpt，明确 `set_ccopt_property update_io_latency false` 与外部 latency 的 ownership；**virtual ideal I/O clock** 的网络/latency 语义要与 sign-off STA 对齐。
+- MMMC dialect/command 可能报 `TCLCMD-997`；hold closure 常用 `setOptMode -holdTargetSlack 0.2`。实测 native timing 可比统一 judge **0.17 ns optimistic**。
+- Power comparison 要统一 activity；Innovus native flow 使用过 **activity 0.2**，对应命令 `set_default_switching_activity`，不能与另一个工具默认 0.1 的结果直接比较。
+- 实测 `create_inst` returned without placing anything；批量插 cell 使用 `addInst`，需要时加 `-physical` 并随后合法化。
+- `create_shape` does not exist；某些版本下 `editAddRoute` did nothing；可用 `add_shape`。ECO cell 放置后应先 `refinePlace` before `ecoRoute`。
+- Antenna 使用 `check_antennas`，必要时 **Taps at the source**；记录 `npc.2`、`IMPCCOPT-2440`、`IMPOPT-7027` 等具体 rule/message。不要只靠文本 “PIN” 计数，需定位实际违反对象。
+
+---
+
+## Tool Notes: Synopsys ICC2 / Fusion Compiler
+
+实测 ICC2 **X-2025.06-SP1**；某些大型启动/load database 流程需要 **30-65 min**，因此必须遵守 Long-Running Jobs。
+- Routing layer 限制的 `global_min_layer_mode` 可能只是 soft；需要时使用 `hard` mode 并验证实际 route。
+- PG 建网可用 `set_pg_via_master_rule`；PVT/scenario 显式设置 `set_process_number`、`set_voltage`、`set_temperature`。
+- 某些 report/constraint 命令要求 `-object_list`；错误参数可见 `CHF-002`；multi-scenario 查询明确 `-scenarios`。
+- Hold repair 若只允许 **weak `ZBUF`/`ZINV`**，先用 `set_lib_cell_purpose -include hold` 配置可用 cell。`add_buffer` drops the new cell off the row grid 时必须重新 legalize，不能直接 route。
+- `fat_table` / power strap 邻近 spacing 可能需要额外 **0.1 um met4 routing blockages**；实测 rule `m4.5ab`。
+- Pin connection 例外可用 `set_routing_rule -min_routing_layer met3 -min_layer_mode allow_pin_connection`，但不能放宽普通 signal route。
+- Antenna 可设置 `diode_mode 1`；若商业工具报告不稳定，可 **drive the antenna ECO from the OpenROAD list**，但最终仍需同一 sign-off deck 复核。
+- 名称查找可用 `-case_insensitive`。输出 netlist 用 `write_verilog -exclude supply_statements`；GDS 处理记录 `-merge_gds_top_cell` 与 `copy_block`。
+
+---
+
+## Tool Notes: Synopsys StarRC
+
+实测 **X-2025.06-SP1**：
+- DEF flow 以 `TOP_DEF_FILE` 明确输入；遇到 `SX-0271`、`SX-1907`、`SX-2064` 时先判断 layer/name/short 设置，而不是直接重跑。
+- 为相关性分析可设置 `COUPLING_REL_THRESHOLD: 0`，并显式决定 `LEF_USE_OBS: NO` 是否符合本 PDK。
+- `SHORTS_LIMIT` 只是 report/control 参数，不能把真实 short “限制掉”后宣告 clean。
+
+---
+
+## Tool Notes: Ansys RedHawk
+
+实测 **2025 R2.2**：
+- 关键字 **`INSTANCE_POWER_FILES` must be plural**；写成 singular 的 `INSTANCE_POWER_FILE` 可能 **accepted silently and ignored**，造成看似成功但没有 instance power 的假结果。
+- Instance-name mapping 需 **escape-free** 且与 DEF/netlist 一致；检查 `ipfMissing`。
+- 输出可用 `write_rh_file -filetype irdrop`。某些 DEF warning 可在充分 root-cause 后用 `IGNORE_DEF_ERROR 1`，但 `ITG-016` 等 grid/connectivity 问题不可压掉。
+- Pad/location 输入常用 `.ploc`。自动 EM 相关 `ENABLE_AUTO_EM 1` 不代表所有 metal/via rule 都已校准。
+- PEAK-mode EM 若拿 DC current limit 直接比较，**not a valid pass/fail**。平均电流 sign-off 使用 `perform emcheck -mode AVG` 或 PDK 指定模型。
+- `DECAP_CELL` / decap insertion 会改变 IR；任何 “通过”若 **depend on decap**，必须把 decap 数量/位置纳入 artifact 和复验。
+
+---
+
+## Tool Notes: Magic, KLayout and Netgen on a commercial GDS
+
+实测工具版本包括 Magic **8.3.489**、Netgen **1.5.278**、KLayout **0.29.4**。大型 merged GDS 的 Magic DRC 在小主机上可超过 **11 GiB**，因此不能 **alone** 依赖单一工具/单次运行；要用资源上限和可恢复日志。
+- SRAM macro 周边的 DRC 要区分 macro 内部、边界与 top-level route；某些 finding 实际发生 **inside the SRAM footprints**。
+- Sky130 `nwell.4` 等规则应根据 deck/waiver ownership 分类，不能因 hard macro 内部图形而擅自改 top-level。
+- Netgen/LVS 的 macro pin/port 名需要正确导出；必要时在 Magic extraction 中使用 `port make`，并验证 schematic/layout 端口一一对应。
 
 ---
 
@@ -173,6 +255,29 @@ Agent 流程：
 
 ---
 
+## Stage: extraction
+
+### Domain Rules
+1. 对 final routed database 在所需 RC corner 生成 parasitics。开放 flow 优先 OpenRCX；商业 flow 可用 StarRC/Quantus。
+2. 提取输入必须与 PDK stack 一致：tech file、layer map、corner mapping、macro obstruction/view。输入不匹配属于 `input_setup`，不是通过重跑 extractor 能修好的 tool error。
+3. 输出 SPEF 每个 corner 独立命名，并记录 source DEF/GDS、tech、corner、md5；`pd.spef` 保存为 list。
+4. 使用 sign-off STA 的 annotation gate 检查未标注 timing nets；超过阈值不能进入 sign-off。
+5. 商业 extractor 与 reference extractor 做 correlation；超 tolerance 时 downstream timing/power 标 `indicative`，不静默选择“更好看”的一套。
+
+### QoR Metrics to Evaluate
+- SPEF file：存在、非空、时间戳属于本 run
+- Unannotated timing nets：≤1%，sign-off target 按 STA annotation gate
+- Corner coverage：全部 required RC corner
+- Commercial/reference correlation delta：记录
+
+### Output Required
+- 每 corner SPEF
+- Extraction log / annotation summary
+- Tech/layer/corner provenance
+- Correlation report（若有 reference extractor）
+
+---
+
 ## Stage: timing_optimization
 
 ### Domain Rules
@@ -243,6 +348,30 @@ Agent 流程：
 
 ---
 
+## Stage: ir_em
+
+### Domain Rules
+1. 在 final routed database 上分别测 static 和 dynamic IR drop，取 worst 作为 sign-off metric。
+2. 使用真实 PG shapes、macro PG pin、pad/package source；zero PG shape、floating macro pin、empty grid 都是 connectivity FAIL，不是“IR=0”。
+3. Power input 必须能证明已加载；如 instance power file 被工具静默忽略，结果为 NOT RUN。
+4. Signal/PG EM 使用 PDK 对应 current-density/rule model；不把不兼容的 PEAK/DC limit 组合当 pass/fail。
+5. IR/EM ECO 后重新 extraction/timing/power，确保修 IR 没破坏 timing。
+
+### QoR Metrics to Evaluate
+- `ir_drop_pct` < `constraints.power.ir_drop_pct_max`，static/dynamic worst
+- `em_violations: 0`
+- `power_mw` ≤ budget；**comparison run, no target** 时只记录不判定
+- PG connectivity：完整
+
+### Output Required
+- Static/dynamic IR report
+- EM violation report
+- Power input provenance
+- PG connectivity summary
+- ECO 前后 comparison（如发生）
+
+---
+
 ## Stage: signoff
 
 ### Sign-off Pass Criteria
@@ -292,10 +421,10 @@ Optional timing/area/power threshold 使用 schema default。
 ## Memory
 
 ### Run state
-任何工具前第一步写 `memory/pd/run_state.md`，包含 run_id/design_name/pdk/tool/start_time/last_stage。
+任何工具前第一步写 `<MEM>/pd/run_state.md`，包含 run_id/design_name/pdk/tool/start_time/last_stage。
 
 ### Write on stage completion
-每 stage 完成后按 `run_id` upsert `memory/pd/experiences.jsonl`，
+每 stage 完成后按 `run_id` upsert `<MEM>/pd/experiences.jsonl`，
 不得同一 run 追加第二行。最终 sign-off 前 `signoff_achieved:false`。
 Record 必须在 JSON object 内包含顶层 `run_id`。
 

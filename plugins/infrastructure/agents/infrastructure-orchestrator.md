@@ -31,15 +31,16 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 - xschem、GTKWave、uv
 
 ### Proprietary（只检测，绝不安装）
-跟踪 34 个专有工具（完整命令/探测表见基础设施 Skill 的 Proprietary 章节）。此处按 role 分组，因为方言冲突以角色为单位警告；同角色不同 dialect 的工具不能互换，一种方言的命令行对同角色另一方言无效。
+跟踪 46 个专有工具（完整命令/探测表见基础设施 Skill 的 Proprietary 章节）。此处按 role 分组，因为方言冲突以角色为单位警告；同角色不同 dialect 的工具不能互换，一种方言的命令行对同角色另一方言无效。
 
 | `role` | dialects present (tool `command`) |
 |---|---|
 | `rtl_simulator` | `synopsys` (`vcs`) · `cadence` (`xrun`) · `siemens` (`vsim`) |
+| `coverage_report` | `synopsys` (`urg`) · `cadence` (`imc`) |
 | `synthesis` | `synopsys` (`dc_shell`, `fc_shell`, Synplify) · `cadence` (`genus`) |
 | `physical_design` | `cadence` (`innovus`) · `synopsys` (`icc2_shell`) · `siemens` (Aprisa) |
-| `sta` | `synopsys` (`pt_shell`) · `cadence` (`tempus`) |
-| `lec` | `synopsys` (`fm_shell`, alt `formality`) · `cadence` (`conformal`) |
+| `sta` | `synopsys` (`pt_shell`) · `cadence` (`tempus`，可选；缺失时使用 PrimeTime) |
+| `lec` | `synopsys` (`fm_shell`, alt `formality`) · `cadence` (`lec`，Conformal) |
 | `formal` | `cadence` (`jg`) · `synopsys` (`vcf`) · `siemens` (`qformal`) |
 | `atpg` | `synopsys` (`tmax`) · `cadence` (`modus`) · `siemens` (`tessent`) |
 | `lint_cdc` | `synopsys` (`spyglass`, VC Static) — 单一命令方言，详见 Skill |
@@ -47,8 +48,12 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 | `fpga_pnr` | `xilinx` (`vivado`) · `intel` (`quartus_sh`) · `microchip` (`libero`) |
 | `mem_compiler` | `arm` (`artisan`) — 单一命令方言 |
 | `characterisation` | `synopsys` (`siliconsmart`) · `cadence` (`liberate`) |
-| `extraction` | `synopsys` (`starrc`) — 单一命令方言 |
-| `power_analysis` | `cadence` (`voltus`, Joules RTL) · `synopsys` (PrimePower) · `siemens` (PowerPro) |
+| `extraction` | `synopsys` (`StarXtract`) · `cadence` (`quantus`) |
+| `extraction_tech` | `synopsys` (`grdgenxo`) · `cadence` (`Techgen`) |
+| `library_prep` | `synopsys` (`lc_shell`, `icc2_lm_shell`) |
+| `power_analysis` | `cadence` (`voltus`/`joules`) · `synopsys` (PrimePower) · `siemens` (PowerPro) |
+| `ir_em` | `ansys` (`redhawk`, `totem`) |
+| `drc_lvs` | open: `klayout`/`magic`/`netgen` · `siemens` (`calibre`) · `cadence` (`pvs`) |
 | `embedded_compiler` | `arm` (`armcc`) · `greenhills` (MULTI) · `iar` (Embedded Workbench) |
 | `debug_probe` | `segger` (`JLinkGDBServer`) · `lauterbach` (`t32marm`) · `arm` (`armds`) |
 | `arch_simulator` | `synopsys` (Platform Architect) · `arm` (Performance Models) · `cadence` (VSP) |
@@ -70,6 +75,9 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 - environment_validation WARN（同角色不同方言共存）→ proceed（签核摘要报告 WARN，绝不阻止签核）
 - environment_validation FAIL（仿真器冒烟编译错误）→ escalate: "resource_limit: <tool> 无法编译简单模块，<wrapper error>；工具/许可证缺陷无法靠重试修复，先修复再重跑 environment_validation。"
 - environment_validation WARN（冒烟未启用、许可证排队阻塞/超时）→ proceed（摘要报告 WARN，绝不阻止签核）
+- tool_discovery WARN（coverage-reporting gap：找到 simulator 但缺 `urg`/`imc`）→ proceed；coverage 可收集但不可 merge/report，不得写成 coverage FAIL
+- tool_discovery FAIL（没有满足 cocotb floor 的非 bundled Python）→ escalate `resource_limit`
+- environment_validation WARN（parallel-job bound 无法完全测量或 sim_build 空间低）→ proceed，并在 `regression_resources` 记录 null/shortfall
 - wrapper_deployment FAIL（权限拒绝）→ 升级并给出 sudo chmod +x plugins/infrastructure/tools/*.sh `resource_limit`
 
 ## State Object
@@ -92,8 +100,13 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
     "exec": null,
     "type": null,
     "bin_dir": null,
-    "module_name": null
+    "module_name": null,
+    "base_exec": null,
+    "floor": null,
+    "venv_planned": false,
+    "candidates": []
   },
+  "coverage_reporting_gaps": [],
   "module_system": null,
   "module_system_detail": null,
   "module_listing": null,
@@ -147,13 +160,14 @@ Each stage must return:
 3. 达到最大 iteration 后停止并输出完整 state/root cause。
 4. **绝不自动运行安装脚本**；每个 MISSING 工具单独生成
    `install-missing-tools/install-<toolname>.sh`，交给用户 review。
-5. 完成时确认 environment_validation 已创建符合 Skill Output Required 验证凭据 schema 的 tool-manifest.json（不是更新此前文件），全部 11 个 Wrapper 可执行，mcp-adapter.py 与 mcp-session-adapter.py 存在，全部 10 个工具服务器 MCP 片段已写入解析后的绝对路径并打印；存在时也处理可选记忆服务器 mcp-memory.json。
+5. Python selection: never record EDA vendor install tree 中的 `bundled` interpreter 为 `python_env.exec`；枚举 `python3.N`，按 cocotb `Requires-Python` floor 选最新 non-bundled，并优先 project-local venv。
+6. 完成时确认 environment_validation 已创建符合 Skill Output Required 验证凭据 schema 的 tool-manifest.json（不是更新此前文件），全部 25 个 Wrapper 可执行，mcp-adapter.py 与 mcp-session-adapter.py 存在，全部 10 个工具服务器 MCP 片段已写入解析后的绝对路径并打印；存在时也处理可选记忆服务器 mcp-memory.json。
 
-6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
-7. `environment_validation` checkpoint：signoff 前检查 approval。未批准时设置
+7. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
+8. `environment_validation` checkpoint：signoff 前检查 approval。未批准时设置
    `pending_approval.type="checkpoint"`，记录 tools_detected/wrappers_deployed 摘要并停止；
    批准后清空 pending_approval。
-8. Infrastructure Memory 默认关闭。仅当
+9. Infrastructure Memory 默认关闭。仅当
    `design_state.pipeline_config.track_infrastructure == true`
    或 invocation 带 `--track-memory` 时，才读写 `<MEM>/infrastructure/`。
 
@@ -252,21 +266,21 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 6. 第 3、4、7 条触发升级处理时，本领域 `signoff` 保持 `false`，
    experience 记录中的 `signoff_achieved` 也写为 `false`。
 7. **重试必须朝同一目标取得可测量进展。** Loop-Back Rules 限制最多允许多少次尝试，
-   并不要求耗尽次数。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
+   并不要求耗尽次数（**not a number that must be spent**）。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
    它是唯一的停止条件。在替代 artifact 完成测量之前，保留上一次测得更好的 artifact。
    每次回退迭代后，将当前测量结果（QoR 数值或故障集合，而不只是故障个数）与上一轮比较：
    - **Regression（退步）**：结果更差或出现新故障。恢复上一版 artifact；本轮仍计入上限。
-   - **No progress（无进展）**：连续两轮结果未改善。停止再次运行并升级处理。
+   - **No progress（无进展）**：**two consecutive iterations** 结果未改善。停止再次运行并升级处理。
    - **Moved target（目标改变）**：改善来自被检查对象改变，例如放宽约束、添加 waiver/
      exception/exclusion、弱化检查/测试/假设，或改变设计行为以消除工具告警。
-     靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
+     **A pass obtained by changing the target is not a pass.** 靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
      的 `reason` 和该阶段 waiver/exception 记录中引用证明这一点的规格条款或约束来源。
      其他领域或用户拥有的目标（`design_state.constraints`、规格、上游 artifact）不能自行修改，
      应按第 4 条处理。如果只能改变目标才能通过，则升级处理。
 
    本条升级时追加终止 `history[]`：`decision: "escalate"`、观察到的 `failure_class`
    及映射的 `retry_strategy`、`suggested_next_step: "escalate"`；`reason` 指出三种情况
-   中触发了哪一种、各轮测量结果及用户需要决定什么。此时未达到上限，不记录 `resource_limit`。
+   中触发了哪一种、各轮测量结果及用户需要决定什么。此时 **`resource_limit` — the cap was not reached**，所以不记录 `resource_limit`。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -274,13 +288,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
 
 1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
-   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+   不在前台执行长任务，**never busy-poll it**；等待循环同样消耗 turn budget，却不产出结果。
 2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
    每次检查都消耗 turn，检查频率应符合预计运行时长。
-3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+3. **A quiet log is not a hung job（日志安静不代表任务挂起）。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
    判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
    仅凭日志静默无法判断运行或挂起。
-4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+4. **stop and hand it over（任务预计超过 turn budget 时停止等待并交接）。** 报告正在运行什么、job id、日志路径、
    启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
    列出任务的阶段性报告比未经验证的成功声明更有用。
 5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
@@ -308,18 +322,18 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
-   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+8. **Run the gates your change triggers, not only the gates you were asked about.** 第 1–7 条约束任务明确点名的 gate；
+   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和 **path filters, do not guess**；
+   找出所改路径触发的 CI job，**run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.** 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** — signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**。不能将上次结果冒充本次实测。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
 ## Design State

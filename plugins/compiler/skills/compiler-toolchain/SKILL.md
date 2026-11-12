@@ -23,10 +23,12 @@ Orchestrator 负责强制执行下文定义的 stage sequence、loop-back 和 si
 
 ## Pre-run Context
 
+`<MEM>` 表示已经解析出的 Memory root，而不是字面量 `memory/` 目录。解析优先级为：显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库内 seed；可用 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径，最终以 Orchestrator 的 `## Memory` 章节为准。为保持上游 contract 可检测：`<MEM>` below is the resolved memory root。
+
 执行或建议**任何** stage 前，如存在则先读取：
 
-1. `memory/compiler/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
-2. `memory/compiler/run_state.md` —— 当前 `run_id`、`design_name`、`tool`、`last_stage`，用于中断后恢复。
+1. `<MEM>/compiler/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
+2. `<MEM>/compiler/run_state.md` —— 当前 `run_id`、`design_name`、`tool`、`last_stage`，用于中断后恢复。
 
 无论由用户还是 Orchestrator 加载，都要先读取这些文件。
 
@@ -267,7 +269,7 @@ SECTIONS {
 
 ### Write on stage completion
 每个 stage 完成后，以 `run_id` 为键写入/覆盖
-`memory/compiler/experiences.jsonl` 中的一条 JSON record。
+`<MEM>/compiler/experiences.jsonl` 中的一条 JSON record。
 即使流程中断或单独调用 stage，也能持久化。
 
 `run_id = compiler_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。
@@ -276,7 +278,7 @@ SECTIONS {
 
 ### Run state
 启动任何工具前第一步写
-`memory/compiler/run_state.md`：
+`<MEM>/compiler/run_state.md`：
 
 ```markdown
 run_id:      compiler_<YYYYMMDD>_<HHMMSS>

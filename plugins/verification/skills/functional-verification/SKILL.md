@@ -24,8 +24,8 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 
 在执行或建议**任何**阶段之前，如果以下文件存在，应先读取：
 
-1. `memory/verification/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。每个阶段的决策都应吸收其中经验；若不存在则继续执行。
-2. `memory/verification/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`）。用于中断后的正确恢复；如果不存在，表示开始新运行，Orchestrator 会在第一阶段前创建。
+1. `<MEM>/verification/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。每个阶段的决策都应吸收其中经验；若不存在则继续执行。
+2. `<MEM>/verification/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`）。用于中断后的正确恢复；如果不存在，表示开始新运行，Orchestrator 会在第一阶段前创建。
 
 无论本 Skill 是由用户直接加载，还是由 Orchestrator 在中途调用，都必须执行上述预读，以确保任何诊断前都已查询历史修复经验。
 
@@ -49,6 +49,100 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 - **Synopsys VCS** (`vcs`，命令方言 `synopsys`） — industry-standard SV/UVM simulator
 - **Cadence Xcelium** (`xrun`，命令方言 `cadence`） — multi-language simulator with coverage engine
 - **Siemens Questa** (`vsim` / `vlog` / `vcom`，命令方言 `siemens`） — mixed-language simulation with UVM support
+
+---
+
+## Stage: simulator_portability
+
+仅在**端口模式**进入：已有 testbench（cocotb 或 UVM）已经在一个 simulator 上稳定通过，现在要移植到新的 simulator（例如 Verilator-only regression 移到 VCS/Xcelium）。现有 testbench 及其检查属于输入，不在本阶段重新设计；原先能通过的 simulator 是 **reference simulator**，新的 simulator 必须与它对照。
+
+### Domain Rules — cocotb invocation
+1. cocotb 通过 `SIM` 选择 simulator：`verilator`、`icarus`、`vcs`、`xcelium`、`questa`。以已安装版本的 `cocotb-config --makefiles` 为准。参数通过 cocotb 标准变量传递：
+   - `COMPILE_ARGS`：define、include dir、parameter override、timescale、访问权限
+   - `EXTRA_ARGS`：compile/elaborate 额外参数
+   - `SIM_ARGS`：runtime 参数，例如 `-licqueue`、coverage run flag
+   - `PLUSARGS`：`+SEED=`、`+UVM_TESTNAME=`
+   - `SIM_BUILD`：每个 simulator 独立 build 目录
+   cocotb 2.x 将 `MODULE/TOPLEVEL` 改名为 `COCOTB_TEST_MODULES/COCOTB_TOPLEVEL`，不得假设版本。
+2. 先用 `make -n SIM=<sim>` 读取 cocotb 自带 Makefile 已加参数，再添加自己的。**Never set `EXTRA_ARGS` on the `make` command line** for `SIM=xcelium`：命令行变量会覆盖 Makefile.xcelium 自己的 `EXTRA_ARGS +=`，可能丢掉 `-top`、`-xmlibdirpath`、`-licqueue`。应在共享 include 中转换到独立变量，或显式 `override undefine EXTRA_ARGS` 后再追加，并用 `make -n` 验证 cocotb 自带参数仍存在。
+
+### Domain Rules — Translating Verilator-only idioms
+3. 每个 reference flag 都必须翻译到新 simulator。关键映射如下：
+
+| Verilator | VCS | Xcelium (`xrun`) |
+|---|---|---|
+| `-G<P>=<v>` | `-pvalue+<top>.<P>=<v>` | `-defparam <top>.<P>=<v>` |
+| string parameter | `-pvalue+<top>.<P>=...`，注意 recipe shell 再转义 | 观测到 `BDDSTR` 对 string `-defparam` ignored；生成额外 top，以 hierarchical `defparam` 赋值 |
+| `+define+X=1` / `-DX=1` | `+define+X=1` | `+define+X=1` / `-define X=1` |
+| `-I<dir>` / `+incdir+<dir>` | `+incdir+<dir>` **并加** `-y <dir> +libext+.sv+.v` | 同样加 `-y <dir> +libext+.sv+.v` |
+| `--timescale 1ns/1ps` | `-timescale=1ns/1ps` | `-timescale 1ns/1ps` |
+| `--timescale-override` | `-override_timescale=1ns/1ps` | `-override_timescale 1ns/1ps` |
+| VPI access | `-debug_access+all` / `+acc` | `-access +rwc` |
+| `-Wno-*` / `-Wall` / `--lint-only` / trace/build/thread flags | drop | drop |
+| `--x-assign` / `--x-initial` | drop，不能改变语义 | drop |
+| coverage flags | 转成 `-cm ...` | 转成 `-coverage ...` |
+
+   String parameter 必须在 smoke run 中读回实际值并与 reference 比较。任何 `PRM_ILLG`、`BDDSTR`、`parameter not found`、`ignored` 都是 translation FAIL。Verilator 的 `-I` 还能按文件名搜索 module，所以商业 simulator 侧需映射为 library search，更推荐直接补全 filelist。
+4. **One shared make include, not per-target edits.** 全部转换放在一个共享文件（如 `sim_portability.mk`），每条规则都以 `SIM` guard；不能每 target 复制一份。
+5. **Reference command line 保持 byte-identical。** 加 include 前后保存每个 target 的 `make -n SIM=<reference>`，逐文件 `cmp -s`。如果 port 主机没有 reference simulator，可把同名 stub 放在 PATH 前面，用 `make -n -i` 抓命令，并对 make 自身 `Makefile:NNN:` 行号做相同归一化。交付前仍需按 CI 真正执行的版本重跑 reference lint/regression。
+6. 每个 simulator 独立 `SIM_BUILD`（如 `sim_build_vcs`、`sim_build_xcelium`）；reference 原目录保持不变。
+7. Verilator-only lint/test 在商业 simulator 上标记 NOT RUN，逐项列名，从 pass floor 中扣除；**never count them as passed**。
+8. Simulator 从 non-interactive shell 解析。用户 alias 不进入 make；例如 VCS 显式写 `-full64`，并记录 `command -v vcs`。
+
+### Domain Rules — Triage
+9. **LRM strictness：先分类再修改。** VCS/Xcelium 拒绝而 Verilator 接受的代码分：
+   - **RTL defect**：违反 IEEE 1800，例如 use-before-declaration、multi-driver、`always_ff` target 又被别处写、implicit net。引用 LRM 条款并写 `fix_request`，禁止 testbench/define/`-nowarn` workaround。典型：LRM **9.2.2.4**、VCS `ICPD`。
+   - **Testbench defect**：相同问题位于 TB/bind；修 TB，但 checking 不能变松。
+   - **Tool dialect**：合法代码只是厂商选项/语法不同；在共享 include 中加入 vendor flag，并记录 message ID。
+10. **Simulator semantics differences 必须 root-cause。** 跨 simulator 结果不同先 FAIL，记录 `sim_differences`。优先检查 X/初始化、scheduling race、随机 seed、4-state vs 2-state。Verilator 中未驱动/未写状态可能表现为 0，VCS/Xcelium 为 X；禁止用 `COCOTB_RESOLVE_X` 或 mask 把根因吞掉。
+11. 已知无害的 VCS+cocotb GPI/VPI debug 行不能直接作为 FAIL。绝不能 grep simulation log 的 ERROR 判 verdict。
+
+### Domain Rules — Pass/fail and scope
+12. **Pass/fail 来自 `results.xml`，never from `make`'s exit code。** cocotb 1.9.2 在 VCS/Xcelium 上观测到 test fail 但 make exit 0。运行前删 stale results 或用 `--newer-than` stamp，随后用 `wrap-cocotb-results.sh`。missing/empty/unparsable/0 testcase 都 FAIL。
+13. **Negative control before trusting any PASS.** 每个 simulator 先注入一个已知失败，确认 wrapper 正确报 FAIL，再移除；无法证明 pipeline 能报 FAIL，就不能信任 PASS。
+14. **Staged scope.** 先 compile 全部 test module，再每模块至少一个 smoke、P0 优先；清零 unexplained difference 后才允许 full regression。
+15. **Skips must match the reference.** 新 simulator 的 skipped testcase 名称集合必须与 reference 对齐；只比 count 不够，simulator-specific skip 必须有理由。
+16. Smoke/full launch 前执行 `regression_signoff` 的 license/resource/disk gate。
+17. 每 run 独立 results file 与 `SIM_BUILD`。使用 `COCOTB_RESULTS_FILE` 或支持时 `SIM_RESULTS_IN_BUILD`；不能隔离的部分串行，总 testcase 数与 reference 对账。
+18. Hierarchy access 集中在一个 helper，处理 dotted path / flattened generate name / packed-struct slice fallback，不能每 test 自己 try/except。
+19. 每次运行导出 **UTF-8** locale（如 `LANG=C.UTF-8`、`LC_ALL=C.UTF-8`），避免非 ASCII docstring 触发 `UnicodeEncodeError`。
+
+### QoR Metrics to Evaluate
+- `reference_cmdlines_identical=true`：每 target 前后 `cmp -s` exit 0
+- `compile_errors_per_sim=0`
+- `negative_control_detected=true` 每 simulator
+- `smoke_pass_pct=100%`，或差异全部进入 `sim_differences`
+- `testcase_count_delta=0`
+- `skip_set_match=true`
+- `unexplained_sim_differences=0`
+- `lint_counted_as_compile=0`
+- `param_override_warnings=0`
+- `verilator_only_not_run` 逐项列名并从 pass floor 扣除，never count them as passed
+
+### Common Issues & Fixes
+| Issue | Fix |
+|---|---|
+| make exit 0 但 test fail | `wrap-cocotb-results.sh` 读取 `results.xml` |
+| String parameter 回到默认值 | 修 make+shell quoting，并在 smoke 中读回 |
+| VCS/Xcelium 找不到 signal handle | 按需要加入 `-debug_access+all` / `-access +rwc` |
+| Verilator PASS、商业 simulator 出 X | 查 reset/read-before-reset，分类 RTL/TB defect |
+| Xcelium 启动卡住 | `-licqueue` 等 seat；外层 `timeout` + `lmstat` |
+| make 内找不到 `vcs` | alias 不存在；真实 binary + 显式 `-full64` |
+| `*W,BDDSTR ... ignored` | string parameter 用 generated `defparam` top |
+| `Warning-[PRM_ILLG]` | VCS `-pvalue+` string shell 转义错误 |
+| Xcelium 丢 `-top/-licqueue` | 命令行覆盖了 `EXTRA_ARGS` |
+| VCS/Xcelium module not found | Verilator `-I` 隐式找到了；修 filelist 或 `-y/+libext+` |
+| VCS `ICPD` | `always_ff` target 又被 declaration initializer/`initial` 写 |
+| testcase 少于 reference | results.xml 被 rollup/concurrent job 覆盖 |
+| `UnicodeEncodeError` | 缺 UTF-8 locale |
+
+### Output Required
+- 共享 make include（`sim_portability.mk` 或等价文件）及 translation table
+- `before/`、`after/` 的 `make -n` capture 与逐 target `cmp -s` 结果
+- 每 simulator 的 negative-control、smoke、full-run `wrap-cocotb-results.sh` JSON
+- Triage log：每条处理过的 compile message，含 RTL/TB/dialect 分类、evidence、owner
+- `sim_differences`：每个跨 simulator 结果不同的 test 一条记录
+- 每 simulator 相对 reference 的 skip-set comparison
 
 ---
 
@@ -242,33 +336,59 @@ priority:     P0
 
 ## Stage: coverage_analysis
 
-### 覆盖率目标
-
-| 类型 | 目标 | 优先级 |
-|------|------|----------|
+### Coverage Targets
+| Type | Target | Priority |
+|---|---:|---|
 | Functional (V-plan) | `design_state.constraints.coverage.functional_pct`%（默认 100%） | P0 |
-| Code Line | ≥ `design_state.constraints.coverage.line_pct`%（默认 95%） | P1 |
-| Code Branch | ≥ `design_state.constraints.coverage.branch_pct`%（默认 90%） | P1 |
-| Code Toggle | ≥ `design_state.constraints.coverage.toggle_pct`%（默认 85%） | P2 |
-| FSM State | `design_state.constraints.coverage.fsm_state_pct`%（默认 100%） | P0 |
-| FSM Transition | ≥ `design_state.constraints.coverage.fsm_transition_pct`%（默认 95%） | P0 |
-| Assertion triggered | `design_state.constraints.coverage.assertion_pct`%（默认 100%） | P1 |
+| Code Line | ≥ `coverage.line_pct`（默认 95%） | P1 |
+| Code Branch | ≥ `coverage.branch_pct`（默认 90%） | P1 |
+| Code Toggle | ≥ `coverage.toggle_pct`（默认 85%） | P2 |
+| FSM State | `coverage.fsm_state_pct`（默认 100%） | P0 |
+| FSM Transition | ≥ `coverage.fsm_transition_pct`（默认 95%） | P0 |
+| Assertion triggered | `coverage.assertion_pct`（默认 100%） | P1 |
 
-### 收敛策略
+### Collecting and Merging Code Coverage
+| Simulator | Compile / Run | Scope | Merge + report | Exclusion |
+|---|---|---|---|---|
+| VCS | `-cm line+cond+fsm+tgl+branch+assert`；每 test/seed 独立 `-cm_dir`、`-cm_name` | `-cm_hier`；多 testbench top 优先首行 `+filelist <rtl.f>` | `wrap-urg.sh ... -format both`；不同 top 加 `-lca -flex_merge modules` | `urg -elfile` |
+| Xcelium | `-coverage all`；run 使用 `-covworkdir/-covscope/-covtest/-covoverwrite/-covfile` | CCF select/deselect DUT/TB/model | `wrap-imc.sh -execcmd "merge ...; load ...; report -summary -metrics overall"` | vRefine |
+| Verilator | `--coverage-line --coverage-toggle`，SVA cover 用 `--coverage-user` | pragma / width filter | `verilator_coverage --write-info merged.info ...` | .info filter |
+
+`wrap-urg.sh` 依赖 `dashboard.txt`，因此生成 text/both；`wrap-imc.sh` 解析 stdout。若 infrastructure 记录 `imc` 缺失，Xcelium coverage 可收集 UCD，但 merge/report 是 NOT RUN，绝不能记 0%。
+
+### Domain Rules — Coverage mechanics
+1. **只覆盖 design。** 在 compile 阶段用 `-cm_hier` / `-covfile` 排除 testbench wrapper、bind/checker、behavioral memory/model、cocotb shim，不能等 report 后再过滤。
+2. **并行运行必须唯一 DB 名。** 每 test+seed 独立 `-cm_name`、`-covtest` 或 coverage.dat；两个 job 同名会 **overwrite silently**。
+3. **所有 per-test DB 先 merge 后 report。** 记录实际 merge DB 数，并与真实运行 test 数对账。
+4. **Exclusion 就是 waiver。** 每条 exclusion 带 reason 并审批；只为了抬 coverage 的 exclusion 属于 moved target。
+5. **多 testbench top 按 file list scope。** 每 build 的 VCS `-cm_hier` 首条用 `+filelist <design files>`，避免其他 TB wrapper 进入 denominator。
+6. **跨 testbench top 的 VCS DB 用 `urg -lca ... -flex_merge modules`。** 普通 `urg -dir` 可能保留第一份 DB 结构并静默丢掉其他 top 独有 module。
+7. **全 `--` 的 summary 不是结果。** 当 `every metric is `--`` 时，即使 urg exit 0 也记 NOT RUN；`wrap-urg.sh` 返回 unverified WARN，并核对 merged `Number of tests:`。
+8. **不同 simulator 的 hole 数不能直接继承。** VCS 会把每个 **generate-loop iteration** 的 line/branch 分开统计，也不会自动理解 Verilator pragma/waiver。比较或排名前先把 waiver 转成 `urg -elfile` / IMC vRefine，或单独标注“reference simulator 已 waive”。
+
+### Report-only mode
+用户只要求 review/audit/list coverage hole（`coverage_mode: report_only`）时：
+1. 正常 collect/merge/report，但不写 test、constraint、waiver，也不执行 functional<100% / line<95% 的 loop-back。
+2. Hole 优先级：FSM state/transition → error/default/illegal branch → reset/flush/abort → CDC/synchronizer → 其他 branch/condition/toggle/line；同类按 uncovered block 大小排序。
+3. 每 hole 给 file+line（或 FSM state/arc）、metric，以及 proposed test 或 proposed waiver justification。
+4. Coverage 低于 target 只记 WARN(`coverage_gap`)，不允许 sign-off。
+
+### Closure Strategy
 1. N 个 random seed 后识别 uncovered bin
-2. 为难以命中的 bin 编写针对性 directed test
-3. 调整 constraint，提高对 uncovered area 的命中概率
-4. 对无法到达的 bin（例如 dead code）提供理由并申请 waiver
+2. 为难命中 bin 写 targeted directed test
+3. 合法地 bias stimulus，不能改变 target
+4. 不可达 bin 仅凭 justification + approval waive
 
-### 要评估的 QoR 指标
-- Functional coverage：100%，不得存在未豁免缺口
-- Code coverage：满足上表目标
-- Waiver file：所有条目均经 verification lead 批准
+### QoR Metrics to Evaluate
+- Functional coverage：100%（无未豁免缺口）
+- Code coverage：满足上表 target
+- Waiver file：全部 entry 获批准
 
-### 必须输出
-- 合并 coverage report
-- Uncovered bin 列表及 closure plan
-- Waiver file
+### Output Required
+- 合并 coverage report，并注明 merge DB 数
+- Uncovered bin + closure plan；Report-only mode 输出 ranked hole list + proposed test/waiver
+- Closure mode 的 waiver file
+- 实际使用的 scope/exclusion 文件（`-cm_hier` / `-covfile` 等）
 
 ---
 
@@ -302,27 +422,40 @@ priority:     P0
 
 ## Stage: regression_signoff
 
-### Regression 分层
+### Regression Tiers
+| Tier | Trigger | Duration | Contents |
+|---|---|---|---|
+| Smoke | 每次 RTL commit | <30 min | P0 directed tests |
+| Nightly | 每晚 | <8 h | 全部 directed + 100 random seeds |
+| Weekly | 每周 gate | <48 h | 全套 + 1000 seeds |
+| Sign-off | Tape-out gate | Unlimited | 全套 + 10,000 seeds |
 
-| 层级 | 触发 | 时长 | 内容 |
-|------|------|------|------|
-| Smoke | 每次 RTL commit | < 30 min | P0 directed tests |
-| Nightly | 每晚 | < 8 hr | 全部 directed + 100 random seeds |
-| Weekly | 每周 gate | < 48 hr | 全套测试 + 1000 seeds |
-| Sign-off | Tape-out gate | 不限 | 全套测试 + 10,000 seeds |
+### Domain Rules
+1. **Regression 前先做 license checkout smoke。** 每个 proprietary simulator 必须在 `timeout 300` 下 compile+run 一个 trivial module 或真实 smoke；`vcs -ID` / `xrun -version` 并不证明 runtime license 可用，VCS compile 与 simv 也可能使用不同 feature。Xcelium 的 `-licqueue` 缺 seat 时会 hang，因此 timeout expiry 是 license 问题，不应误判成慢 test。同一 session 的 infrastructure smoke 可复用。
+2. **并行 job 上限** = `min(cores, floor(free_RAM / per-job peak RSS), free license seats)`。优先读取 infrastructure `tool-manifest.json.regression_resources`，否则用 `nproc`、`MemAvailable`、smoke peak RSS、`lmstat` 实测；报告 bound 和 limiting term。
+3. **检查 `SIM_BUILD` 与 coverage DB 的 filesystem 空间。** 启动前 `df -P`；要求 free ≥ jobs × smoke build size（`du -s`），不足则转 scratch。
+4. **Verdict 来自结构化结果。** cocotb 每 run 用 `wrap-cocotb-results.sh` 解析 `results.xml`；UVM 用 simulator 自身 test report。never from `make`'s exit code，也不能 grep log 的 ERROR。Missing/empty `results.xml` 是 shard FAIL；当前 session 尚未证明 FAIL path 的 simulator 先跑 Negative control。
+5. **长 regression 后台分 shard，并 checkpoint progress。** 每 shard 不超过 job bound，独立 `SIM_BUILD`、log、`results.xml`。每 shard 完成后把 shard id、simulator、command、results path 和 wrapper counts 写入 `<MEM>/verification/run_state.md`。Resume 时跳过 complete，只重跑 pending/failed；绝不从头重跑整套 regression。等待靠 background completion 或每 turn 一次 bounded wait，不做重复短轮询。
 
-### 通过标准
-- 仿真失败数为 0（已批准 waiver 的已知 bug 除外）
-- UVM FATAL / UVM ERROR 数为 0
-- 满足全部覆盖率目标（见 `coverage_analysis`，由 `design_state.constraints.coverage.*` 控制）
+### Pass Criteria
+- 0 simulation failure（批准 waiver 的 known bug 除外）
+- 0 UVM FATAL / ERROR
+- 全部 coverage target 达标
 - Formal：全部 P0 property proven
-- 所有 P0/P1 bug 已关闭
+- P0/P1 bug 全关闭
 
-### 必须输出
-- Regression pass/fail report
-- 最终合并 coverage report
+### QoR Metrics to Evaluate
+- `regression_failures=0`
+- `shards_complete == shards_total`
+- `max_parallel_jobs` 以及 limiting term 已记录
+- `license_smoke_passed=true`，每个实际使用的 proprietary simulator 都要有
+
+### Output Required
+- 按 simulator / shard 的 regression pass/fail report（来自 `results.xml`）
+- 最终 merged coverage report
 - Open bug list
 - Sign-off checklist
+- Job-bound 与 license-smoke record
 
 ---
 
@@ -351,7 +484,7 @@ priority:     P0
 ### 每阶段完成后写入
 
 每个阶段完成后，无论当前是否处于完整 Orchestrator 会话，都应以 `run_id` 为键，
-在 `memory/verification/experiences.jsonl` 中写入或覆盖一条 JSON 记录。
+在 `<MEM>/verification/experiences.jsonl` 中写入或覆盖一条 JSON 记录。
 这样即使流程被中断或只单独调用某阶段，信息也能持久化。
 
 `run_id` 使用 `verification_<YYYYMMDD>_<HHMMSS>`，在流程开始时只生成一次，后续阶段复用。
@@ -359,7 +492,7 @@ priority:     P0
 
 ### Run state（第一阶段前写入，每阶段后更新）
 
-在启动任何工具之前，第一件事就是写入 `memory/verification/run_state.md`：
+在启动任何工具之前，第一件事就是写入 `<MEM>/verification/run_state.md`：
 
 ```markdown
 run_id:      verification_<YYYYMMDD>_<HHMMSS>

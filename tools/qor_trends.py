@@ -82,11 +82,14 @@ NUMERIC_METRICS: dict[str, list[str]] = {
     "fpga": ["lut_count", "fmax_mhz"],
     "hls": ["latency_cycles", "dsp_count"],
     "memory-ip": ["memory_instances", "total_memory_area_um2", "worst_access_time_ns", "view_qa_errors", "projected_repair_yield_pct"],
-    "pd": ["wns_ns", "drc_violations", "lvs_errors", "gds_area_um2"],
+    "pd": ["wns_ns", "hold_wns_ns", "tns_ns", "drc_violations", "lvs_errors", "gds_area_um2",
+           "power_mw", "util_pct", "wirelength_um", "runtime_s", "peak_rss_gb"],
     "rtl-design": ["lint_errors", "cdc_violations"],
     "soc": ["ip_blocks_integrated", "memory_map_conflicts"],
-    "sta": ["setup_wns_ns", "hold_wns_ns", "tns_ns", "failing_paths"],
-    "synthesis": ["wns_ns", "cells", "area_um2", "lec_unmatched"],
+    "sta": ["setup_wns_ns", "hold_wns_ns", "tns_ns", "failing_paths", "power_mw", "runtime_s",
+            "peak_rss_gb"],
+    "synthesis": ["wns_ns", "tns_ns", "cells", "area_um2", "lec_unmatched", "power_mw", "runtime_s",
+                  "peak_rss_gb"],
     "verification": ["functional_coverage_pct", "regression_failures", "assertions_triggered"],
 }
 
@@ -325,9 +328,9 @@ def plot_chart(
         import matplotlib.pyplot as plt
     except ImportError:
         print(
-            "[错误] 未安装 matplotlib。请运行：\n"
+            "[error] matplotlib is not installed. Install it with:\n"
             "  pip install matplotlib\n"
-            "或者不使用 --plot，仅输出文本表格。",
+            "Or run without --plot for a text-only table.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -341,7 +344,7 @@ def plot_chart(
                 plots.append((domain, field, qualifying))
 
     if not plots:
-        print("[警告] 没有达到最少运行次数要求的序列可绘图。", file=sys.stderr)
+        print("[warn] No series with enough runs to plot.", file=sys.stderr)
         return
 
     colors = [
@@ -352,7 +355,7 @@ def plot_chart(
     ncols = 2
     nrows = (len(plots) + 1) // ncols
     fig, axes = plt.subplots(nrows, ncols, figsize=(14, 4 * nrows), squeeze=False)
-    fig.suptitle(f"QoR 趋势 — 设计：{design}", fontsize=14, fontweight="bold")
+    fig.suptitle(f"QoR Trends — Design: {design}", fontsize=14, fontweight="bold")
 
     for idx, (domain, field, groups) in enumerate(plots):
         ax = axes[idx // ncols][idx % ncols]
@@ -385,7 +388,7 @@ def plot_chart(
 
         title = f"{domain} / {field}" + ("  ⚠" if has_regression else "")
         ax.set_title(title, fontsize=9, color="red" if has_regression else "black")
-        ax.set_xlabel("运行序号")
+        ax.set_xlabel("Run #")
         ax.set_ylabel(field)
         ax.grid(True, linestyle="--", alpha=0.5)
         if group_by:
@@ -398,7 +401,7 @@ def plot_chart(
 
     if output_file:
         plt.savefig(output_file, dpi=150, bbox_inches="tight")
-        print(f"图表已保存到：{output_file}")
+        print(f"Chart saved to: {output_file}")
     else:
         plt.show()
 
@@ -417,61 +420,61 @@ def _distinct_values(records: list[dict], field: str) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="分析芯片设计 Orchestrator 多次运行之间的 QoR 指标趋势",
+        description="QoR metric trending across chip-design orchestrator runs",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--design", required=True, metavar="NAME", help="要筛选的设计名称")
+    parser.add_argument("--design", required=True, metavar="NAME", help="Design name to filter")
     parser.add_argument(
         "--domain",
         metavar="DOMAIN",
         choices=VALID_DOMAINS,
         default=None,
-        help="只分析一个领域（默认：全部）",
+        help="Limit to one domain (default: all)",
     )
     parser.add_argument(
         "--metric",
         metavar="FIELD",
         default=None,
-        help="只显示指定 metric 字段（默认：全部数值字段）",
+        help="Specific metric field to show (default: all numeric fields)",
     )
     parser.add_argument(
         "--pdk",
         metavar="VALUE",
         default=None,
-        help="按 pdk 过滤记录（不区分大小写）",
+        help="Filter to records with matching pdk (case-insensitive)",
     )
     parser.add_argument(
         "--tool",
         metavar="VALUE",
         default=None,
-        help="按 tool_used 过滤记录（不区分大小写）",
+        help="Filter to records with matching tool_used (case-insensitive)",
     )
     parser.add_argument(
         "--group-by",
         metavar="DIM",
         choices=VALID_GROUP_BY,
         default=None,
-        help="按维度分组：pdk、tool 或 pdk+tool",
+        help="Group series by dimension: pdk, tool, or pdk+tool",
     )
-    parser.add_argument("--plot", action="store_true", help="显示 matplotlib 趋势图")
+    parser.add_argument("--plot", action="store_true", help="Show matplotlib chart")
     parser.add_argument(
         "--output",
         metavar="FILE",
         default=None,
-        help="把图保存到 FILE 而不是直接显示（隐含 --plot）",
+        help="Save chart to FILE instead of displaying (implies --plot)",
     )
     parser.add_argument(
         "--memory-root",
         metavar="PATH",
         default=None,
-        help="Memory 根目录路径",
+        help="Path to the memory/ directory",
     )
     parser.add_argument(
         "--min-runs",
         type=int,
         default=2,
         metavar="N",
-        help="纳入趋势序列所需的最少运行次数（默认：2）",
+        help="Minimum runs required to include a series (default: 2)",
     )
     args = parser.parse_args()
 
@@ -482,7 +485,7 @@ def main() -> None:
         sys.exit(2)
 
     if not memory_root.is_dir():
-        print(f"[错误] 找不到 Memory root：{memory_root}", file=sys.stderr)
+        print(f"[error] memory root not found: {memory_root}", file=sys.stderr)
         sys.exit(2)
 
     domains = [args.domain] if args.domain else VALID_DOMAINS
@@ -515,10 +518,10 @@ def main() -> None:
     if not domain_series:
         if not all_design_records:
             print(
-                f"没有找到设计 '{args.design}' 的运行记录"
-                + (f"（领域：'{args.domain}'）" if args.domain else "")
+                f"No runs found for design '{args.design}'"
+                + (f" in domain '{args.domain}'" if args.domain else "")
                 + ".\n"
-                "请确认设计名称与 Orchestrator 记录的内容完全一致：\n"
+                "Check that the design name matches exactly what orchestrators recorded\n"
                 "in memory/<domain>/experiences.jsonl (field: 'design_name').",
                 file=sys.stderr,
             )
@@ -527,41 +530,41 @@ def main() -> None:
             if args.pdk:
                 avail = _distinct_values(all_design_records, "pdk")
                 hints.append(
-                    f"  设计 '{args.design}' 可用的 PDK： "
+                    f"  Available pdks for design '{args.design}': "
                     + (", ".join(avail) if avail else "(none)")
                 )
             if args.tool:
                 avail = _distinct_values(all_design_records, "tool_used")
                 hints.append(
-                    f"  设计 '{args.design}' 可用的工具： "
+                    f"  Available tools for design '{args.design}': "
                     + (", ".join(avail) if avail else "(none)")
                 )
             print(
-                f"应用过滤条件后，没有找到设计 '{args.design}' 的运行记录。\n"
+                f"No runs found for design '{args.design}' after applying filters.\n"
                 + "\n".join(hints),
                 file=sys.stderr,
             )
         sys.exit(1)
 
-    print("\nQoR 趋势报告")
-    print(f"设计：        {args.design}")
-    print(f"总运行次数：  {total_runs}")
-    print(f"领域：        {', '.join(sorted(domain_series))}")
+    print("\nQoR Trend Report")
+    print(f"Design:      {args.design}")
+    print(f"Total runs:  {total_runs}")
+    print(f"Domains:     {', '.join(sorted(domain_series))}")
     if args.pdk:
-        print(f"PDK 过滤：    {args.pdk}")
+        print(f"PDK filter:  {args.pdk}")
     if args.tool:
-        print(f"工具过滤：    {args.tool}")
+        print(f"Tool filter: {args.tool}")
     if group_by:
-        print(f"分组方式：    {group_by}")
+        print(f"Group by:    {group_by}")
     if args.metric:
-        print(f"Metric 过滤： {args.metric}")
+        print(f"Metric filter: {args.metric}")
 
     rows = print_table(args.design, domain_series, args.min_runs, group_by)
 
     if rows == 0:
         print(
-            f"\n[提示] 没有序列达到 --min-runs={args.min_runs} 的阈值。 "
-            "可使用 --min-runs 1 查看单次运行数据。"
+            f"\n[info] No series met the --min-runs={args.min_runs} threshold. "
+            "Try --min-runs 1 to see single-run data."
         )
 
     if args.output or args.plot:

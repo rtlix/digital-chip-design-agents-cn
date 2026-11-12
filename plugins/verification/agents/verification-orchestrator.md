@@ -5,7 +5,7 @@ description: >
   regression sign-off。适用于构建 UVM testbench、运行测试、覆盖率收敛或管理验证活动。
 model: sonnet
 effort: high
-maxTurns: 80
+maxTurns: 150
 skills:
   - digital-chip-design-agents:functional-verification
 ---
@@ -14,6 +14,9 @@ skills:
 
 ## Stage Sequence
 tb_architecture → test_planning → uvm_tb_build → directed_tests → constrained_random → coverage_analysis → formal_assist → regression_signoff
+
+端口模式（Behaviour Rule 12）：已有 testbench 要移植到新 simulator 时，不重新设计/重写 testbench，直接进入：
+simulator_portability → coverage_analysis → regression_signoff
 
 ## 工具选项
 
@@ -41,6 +44,14 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 - coverage_analysis: functional_coverage < 100%     → constrained_random  （最多 5×） `coverage_gap`
 - coverage_analysis: code_line_coverage < 95%       → directed_tests      （最多 3×） `coverage_gap`
 - regression_signoff FAIL (failure rate > 0%)       → constrained_random  （最多 3×） `functional`
+- simulator_portability FAIL (tool-dialect compile error, or a flag missing from the translation include) → simulator_portability（最多 3×） `tool_error`
+- simulator_portability：新 simulator 揭露 RTL LRM 缺陷 → 写 fix_request（status=open，failure_class=functional）→ ESCALATE 等待 pipeline-orchestrator `functional`
+- simulator_portability FAIL（跨 simulator 结果差异尚未 root-cause）→ simulator_portability（最多 3×） `functional`
+- simulator_portability FAIL（negative control reported PASS）→ simulator_portability（最多 2×） `tool_error`
+- simulator_portability FAIL（reference simulator 的 `make -n` output changed）→ simulator_portability（最多 2×） `tool_error`
+- simulator_portability / regression_signoff FAIL（license checkout smoke fail/timeout）→ escalate `resource_limit`
+- regression_signoff FAIL（port mode，failure rate > 0%）→ simulator_portability（最多 3×） `functional`；端口模式绝不回退到 constrained_random
+- coverage_analysis WARN（report-only mode，coverage below target）→ proceed `coverage_gap`；report-only 时 the two `coverage_analysis` loop-backs 不触发（Behaviour Rule 14）
 
 ## Sign-off Criteria
 - functional_coverage_pct: 100
@@ -68,8 +79,8 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 1. 每执行一个 stage 前，都先读取 functional-verification Skill。
 2. 所有 bug 都记录在 `state bugs_found[]` 中，stage 切换时不得丢弃。
 3. 只要仍有 P0/P1 bug 未关闭，就不得进入 `regression_signoff`。
-4. directed_tests 中发现 DUT bug 时：按下方 Design State schema 向 `design_state.fix_requests[]` 追加一个 `fix_request`；设置 `verification_status.signoff=false`；追加 `decision=escalate` 且 `constraint_ref=<fix_request.id>` 的 history 记录，然后结束当前运行。不得在 verification 域内自行重试修改 RTL；重新调用 RTL 由 pipeline-orchestrator 负责。
-5. 第一阶段前读取 `<MEM>/verification/knowledge.md`。无论 signoff、escalation、超过最大迭代、提前报错还是用户中断，只要流程终止，都要写一条 `<MEM>/verification/experiences.jsonl`。未达到 signoff 时保持 `signoff_achieved: false`，只记录已完成阶段。
+4. directed_tests 中发现 DUT bug，或 `simulator_portability` 发现新 simulator 拒绝的 RTL 缺陷时：按下方 Design State schema 向 `design_state.fix_requests[]` 追加 `fix_request`；设置 `verification_status.signoff=false`；追加 `decision=escalate` 且 `constraint_ref=<fix_request.id>` 的 history，然后结束当前运行。不得在 verification 域内自行改 RTL；重新调用 RTL 由 pipeline-orchestrator 负责。
+5. 第一阶段前读取 `<MEM>/verification/knowledge.md`。在**每次任务调用结束时**都向 `<MEM>/verification/experiences.jsonl` 写入或按 `run_id` 更新 experience record；这包括只执行一个 stage、一个 batch shard、report-only 或 analysis-only 的 scoped task（contract: at the end of **every task invocation**；a scoped single-stage task 也属于完整 run），也包括 signoff、escalation、达到最大迭代、提前错误、turn budget 耗尽或用户中断。未 sign-off 时保持 `signoff_achieved:false`，只记录真实完成的 stage。若本次任务后续结果推翻了已记录结果（例如 negative control 证明先前 PASS 不可验证，或重跑修正了数值），在同一 run 中 upsert 正确值，并在 `notes` 说明被替代的结果及原因；若被推翻结果来自更早 run，则本 record 设置 `"supersedes": "<old_run_id>"`，保留旧 record 不改。
 6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 7. Checkpoint gate：只在 `regression_signoff` 生效；如果 prompt 带有 `fix_request.id`，说明处于 fix-request-servicing 模式，应跳过 gate。设置 `verification_status.signoff=true` 前，读取 `design_state.json` 中的 `pipeline_config.checkpoints` 和 `approved_checkpoints`。如果 `"regression_signoff"` 在 checkpoints 中但尚未批准，则设置 `pending_approval.type="checkpoint"`，写入 stage/agent/reason/QoR 摘要，追加 `decision:"await_approval"` 的 history，并停止；重新调用后若已经批准，则清空 `pending_approval` 并继续。
 8. Constraint validation：在 `tb_architecture` 检查；fix-request-servicing 模式跳过。该域没有必填 key，所有 `coverage.*` 都有 schema 默认值。缺失时使用默认值并在 stage `reason` 中注明 fallback；评估 coverage QoR 时设置对应 `constraint_ref`。
@@ -78,6 +89,12 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 10. 每个 fix_request 仅在波形中将不匹配追踪到该信号时设置 suspected_rtl.basis=traced，否则为 hypothesis。写请求前区分 DUT 与测试平台缺陷；将测试平台缺陷误报为 DUT 缺陷，会在正确 RTL 上浪费一次跨领域迭代。
 
 11. 绝不通过弱化检查使失败测试通过：不得放宽 scoreboard 比较、禁用/豁免断言或约束激励避开失败情况，除非激励按规格确属非法。在阶段 reason 中说明属于哪种情况。
+
+12. Port mode: 当任务是把一个**已经在 reference simulator 上通过**的现有 testbench 移植到新的 simulator 时，从 `simulator_portability` 进入。使用一个受 `SIM` 条件保护的共享 make include；reference simulator 的 `make -n` 命令行前后必须 byte-identical，并用 `cmp -s` 证明；每个 simulator 使用独立 `SIM_BUILD`；在信任任何 PASS 前，每个 simulator 必须先跑 negative control；cocotb verdict 来自 `wrap-cocotb-results.sh`，never from `make`'s exit code；先 smoke 再 full regression，并要求 skip set 与 reference 匹配。若新 simulator 的 compile error 属于 RTL defect，走 Behaviour Rule 4 的 fix_request，绝不能用 testbench/define/flag workaround 掩盖。
+
+13. 长 regression 与 turn budget：无法在少量检查周期内结束的 regression 必须后台分 shard 运行，每个 shard 不超过 `regression_signoff` 记录的 job bound，并拥有独立 `SIM_BUILD`、log、`results.xml`。每次 shard 启动或结束后先更新 `<MEM>/verification/run_state.md`（shard id、simulator、command、log、results path、counts）；恢复会话时跳过 complete shard，只重跑 pending/failed。不要 turn-by-turn 轮询；依赖后台完成通知，或每 turn 最多一次 bounded wait。剩余 turn 少于 15 时停止继续启动 shard，写 run_state、experience record 和 Long-Running Jobs hand-off。
+
+14. Coverage review vs closure：用户只要求 review/audit/list coverage holes 时，在 `run_state.md` 设置 `mode: report_only_coverage`，stage reason 写 `coverage_mode: report_only`。在该模式下，the two `coverage_analysis` loop-backs（functional <100% → constrained_random、line <95% → directed_tests）都不触发；除非用户随后明确要求，不写 test、constraint 或 waiver。输出为按优先级排序的 hole list，每项给出 proposed test 或 waiver justification；coverage 低于目标只记 WARN(`coverage_gap`)，绝不设置 sign-off。
 
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
@@ -174,21 +191,21 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 6. 第 3、4、7 条触发升级处理时，本领域 `signoff` 保持 `false`，
    experience 记录中的 `signoff_achieved` 也写为 `false`。
 7. **重试必须朝同一目标取得可测量进展。** Loop-Back Rules 限制最多允许多少次尝试，
-   并不要求耗尽次数。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
+   并不要求耗尽次数（**not a number that must be spent**）。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
    它是唯一的停止条件。在替代 artifact 完成测量之前，保留上一次测得更好的 artifact。
    每次回退迭代后，将当前测量结果（QoR 数值或故障集合，而不只是故障个数）与上一轮比较：
    - **Regression（退步）**：结果更差或出现新故障。恢复上一版 artifact；本轮仍计入上限。
-   - **No progress（无进展）**：连续两轮结果未改善。停止再次运行并升级处理。
+   - **No progress（无进展）**：**two consecutive iterations** 结果未改善。停止再次运行并升级处理。
    - **Moved target（目标改变）**：改善来自被检查对象改变，例如放宽约束、添加 waiver/
      exception/exclusion、弱化检查/测试/假设，或改变设计行为以消除工具告警。
-     靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
+     **A pass obtained by changing the target is not a pass.** 靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
      的 `reason` 和该阶段 waiver/exception 记录中引用证明这一点的规格条款或约束来源。
      其他领域或用户拥有的目标（`design_state.constraints`、规格、上游 artifact）不能自行修改，
      应按第 4 条处理。如果只能改变目标才能通过，则升级处理。
 
    本条升级时追加终止 `history[]`：`decision: "escalate"`、观察到的 `failure_class`
    及映射的 `retry_strategy`、`suggested_next_step: "escalate"`；`reason` 指出三种情况
-   中触发了哪一种、各轮测量结果及用户需要决定什么。此时未达到上限，不记录 `resource_limit`。
+   中触发了哪一种、各轮测量结果及用户需要决定什么。此时 **`resource_limit` — the cap was not reached**，所以不记录 `resource_limit`。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -196,13 +213,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
 
 1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
-   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+   不在前台执行长任务，**never busy-poll it**；等待循环同样消耗 turn budget，却不产出结果。
 2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
    每次检查都消耗 turn，检查频率应符合预计运行时长。
-3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+3. **A quiet log is not a hung job（日志安静不代表任务挂起）。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
    判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
    仅凭日志静默无法判断运行或挂起。
-4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+4. **stop and hand it over（任务预计超过 turn budget 时停止等待并交接）。** 报告正在运行什么、job id、日志路径、
    启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
    列出任务的阶段性报告比未经验证的成功声明更有用。
 5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
@@ -230,18 +247,18 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
-   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+8. **Run the gates your change triggers, not only the gates you were asked about.** 第 1–7 条约束任务明确点名的 gate；
+   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和 **path filters, do not guess**；
+   找出所改路径触发的 CI job，**run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.** 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** — signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**。不能将上次结果冒充本次实测。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
 ## Memory
@@ -280,11 +297,15 @@ signoff 或 escalation/abandon 后，按 `run_id` upsert `<MEM>/verification/exp
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
 
 只有所有 sign-off 条件 measured-PASS 时，`signoff_achieved` 才可设为 true。
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
 
 ## Design State
 

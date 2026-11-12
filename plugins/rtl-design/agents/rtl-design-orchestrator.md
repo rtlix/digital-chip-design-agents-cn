@@ -6,7 +6,7 @@ description: >
   或生成可交付综合的 RTL package。
 model: sonnet
 effort: high
-maxTurns: 60
+maxTurns: 120
 skills:
   - digital-chip-design-agents:rtl-design
 ---
@@ -38,20 +38,20 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 3. **直接执行** —— 最后手段；Verilator lint 输出在多轮 loop-back 后会快速膨胀
 
 ## Loop-Back Rules
-- design_input_check FAIL（输入错误：include 同名、陈旧/同级生成树、路径缺失、覆盖配置）→ escalate: "input_setup: <file> 从 <path used> 而非 <path intended> 解析，重新指定 filelist/include/配置；未修改 RTL。"
-- design_input_check FAIL（仅注册：本次新增模块缺少于某工具列表）→ rtl_coding（加入所有缺失列表，不改 RTL，最多 1×）`connectivity`
-- lint_check FAIL（规则未完成，原因位于输入或不能归因本次写入 RTL）→ escalate: "input_setup: lint 未运行任何规则便停止，<evidence>；RTL 未评估且未修改。"
-- lint_check FAIL（规则未完成，解析错误仅在本次写入 RTL，输入检查 PASS）→ rtl_coding（计入下方 5×；`tool_error`，不能 `functional`）
-- lint_check FAIL (errors > 0, rule check completed) → rtl_coding        （最多 5×） `functional`
-- lint_check FAIL（转换后 RTL 不被下游前端接受）→ rtl_coding（改源结构，不改转换文件，计入上方 5×）`tool_error`
-- cdc_rdc_analysis FAIL (unwaived violations) → rtl_coding        （最多 3×） `connectivity`
-- synth_check FAIL（综合前端解析/elaboration 错误，如 yosys 拒绝 sv2v 输出）→ rtl_coding（修源结构，再跑 lint 前端门控，最多 2×）`tool_error`
-- synth_check FAIL（黑盒/未定义模块有自有 RTL）→ rtl_coding（加入综合列表，不改 RTL，最多 1×）`connectivity`
-- synth_check FAIL（无自有 RTL，缺库/宏/IP 视图）→ escalate: "input_setup: <module> 在综合输入无定义，请提供库或 stub 视图。"
-- synth_check FAIL (WNS < −0.5 ns)           → rtl_coding        （最多 2×） `timing`
-- synth_check FAIL (area > 120% estimate)    → module_planning   （最多 1×） `power_area`
-- rtl_signoff FAIL (missing modules)         → module_planning   （最多 1×） `spec_gap`
-- rtl_signoff FAIL (quality issues)          → rtl_coding        （最多 2×） `functional`
+- design_input_check FAIL (input set wrong: duplicate include basename, stale or sibling generated tree, missing path, shadowing config) → escalate: "input_setup: <file> resolves from <path used> ahead of <path intended> - repoint the filelist, include path or config; no RTL was edited"
+- design_input_check FAIL (registration only: a module this run added is missing from a tool's source list) → rtl_coding (add the file to each list that misses it; edit no RTL; max 1×) `connectivity`
+- lint_check FAIL (rule check did not complete; cause in the input set, or not attributed to RTL this run wrote) → escalate: "input_setup: lint stopped before any rule ran - <evidence>; the RTL was not evaluated and no RTL was edited"
+- lint_check FAIL (rule check did not complete; parse error confined to RTL this run wrote, design_input_check PASS) → rtl_coding (counts toward the 5× below; `tool_error`, never `functional`)
+- lint_check FAIL (errors > 0, rule check completed) → rtl_coding (max 5×) `functional`
+- lint_check FAIL (front-end check: converted RTL does not parse in the downstream tool) → rtl_coding (fix the source construct, never the converted file; counts toward the 5× above) `tool_error`
+- cdc_rdc_analysis FAIL (unwaived violations) → rtl_coding (max 3×) `connectivity`
+- synth_check FAIL (parse or elaboration error in the synthesis front-end, e.g. a yosys syntax error on sv2v output) → rtl_coding (fix the source construct, then re-run the lint gate's front-end check; max 2×) `tool_error`
+- synth_check FAIL (black box or undefined module that resolves to first-party RTL) → rtl_coding (add the file to the synthesis source list; edit no RTL; max 1×) `connectivity`
+- synth_check FAIL (black box with no first-party RTL: missing library, macro or IP view) → escalate: "input_setup: <module> has no definition in the synthesis inputs - supply its library or stub view"
+- synth_check FAIL (WNS < −0.5 ns) → rtl_coding (max 2×) `timing`
+- synth_check FAIL (area > 120% estimate) → module_planning (max 1×) `power_area`
+- rtl_signoff FAIL (missing modules) → module_planning (max 1×) `spec_gap`
+- rtl_signoff FAIL (quality issues) → rtl_coding (max 2×) `functional`
 
 ## Sign-off Criteria
 - lint_errors: 0
@@ -82,15 +82,14 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 3. 达到最大迭代次数时必须明确升级，展示当前状态和根因，具体流程见 Stage Gating and Escalation 第 3 条。
 4. 输出 RTL 包：filelist.f、全部 .sv 文件、断言、含源列表注册信息的设计输入报告、lint/CDC 报告及前端检查结果。
 
-5. 第一阶段前读取 `<MEM>/rtl-design/knowledge.md`。无论 signoff、escalation、超过最大迭代、提前错误或用户中断，只要流程结束，都要写入 `<MEM>/rtl-design/experiences.jsonl`。如果未达到 signoff，`signoff_achieved` 必须为 false，只记录已完成 stage。
+5. 第一阶段前读取 `<MEM>/rtl-design/knowledge.md`。在**每次任务调用结束时**都向 `<MEM>/rtl-design/experiences.jsonl` 写入或按 `run_id` 更新 experience record；这包括只执行一个 stage、一个 batch shard、report-only 或 analysis-only 的 scoped task（contract: at the end of **every task invocation**；a scoped single-stage task 也属于完整 run），也包括 signoff、escalation、达到最大迭代、提前错误、turn budget 耗尽或用户中断。未 sign-off 时保持 `signoff_achieved:false`，只记录真实完成的 stage。若本次任务后续结果推翻了已记录结果（例如 negative control 证明先前 PASS 不可验证，或重跑修正了数值），在同一 run 中 upsert 正确值，并在 `notes` 说明被替代的结果及原因；若被推翻结果来自更早 run，则本 record 设置 `"supersedes": "<old_run_id>"`，保留旧 record 不改。
 6. 关闭一个已 claim 的 `fix_request` 时：将其 `status` 设置为 `fixed`，填充 `rtl_response`（`diff_summary`、`files_changed`、`fixed_at`），并向该 fix_request 的 `history[]` 追加记录。顶层 `history[]` 使用 `constraint_ref=<fix_request.id>`。不得修改本次运行未设置为 `claimed` 的其他 fix_request。
 7. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 8. Checkpoint gate 仅在 `rtl_signoff` 生效；如果 prompt 中传入 `fix_request.id`，则处于 fix-request-servicing 模式，应跳过 gate。设置 `rtl.signoff=true` 前读取 `pipeline_config.checkpoints` 和 `approved_checkpoints`。如果 `rtl_signoff` 需要人工批准但尚未批准，则原子设置 `pending_approval.type="checkpoint"`，写入 stage/agent/reason/QoR 摘要，追加 `decision:"await_approval"` 的 history，输出 gate 提示并停止。重新调用后若已批准，则清空 `pending_approval` 并继续。
 9. Constraint validation 在 `module_planning` 执行；fix-request-servicing 模式跳过。必填：`clock.clk_mhz`。缺失或 null 时，原子设置 `pending_approval.type="constraint_gap"`，stage 为 `module_planning`，agent 为 `rtl-design-orchestrator`，history 使用 `decision:"escalate"`、`failure_class:"spec_gap"`、`suggested_next_step:"escalate"`、`constraint_ref:"clock.clk_mhz"` 并停止。可选约束缺失时使用 schema 默认值并在 stage reason 中注明 fallback。评估 QoR 时，使用相应 `constraint_ref` 标记约束来源。
-10. 修复请求门控：处理 fix_request 时，关闭前运行编辑可能影响的全部门控，不只 lint_check。下方 RTL Lint Gate 同样适用于修复输出，且此前须执行规则 11。始终运行 lint_check；下游转换 RTL 时也运行前端检查（RTL Lint Gate 第 8 项），因为修复最容易引入转换器无法降低的结构。编辑跨时钟/复位域信号、同步器、复位路径时重跑 cdc_rdc_analysis；改变时序路径逻辑深度、增删状态、增加模块/文件时重跑 synth_check（同时重跑规则 11 注册检查）。仅 lint_check 为 0 错误且前端检查通过，其他受影响门控通过或附理由报告 NOT RUN 时，才设 status=fixed。在 rtl_response.diff_summary 记录各门控结果（工具、命令、错误/警告数、退出状态），或为何判断未受影响。lint_check 回退上限内仍无法干净，或触发回归、无进展、意图偏移防护时，保持 claimed 并升级；pipeline-orchestrator 将仍 claimed 的请求标为 abandoned。不得通过改变请求未要求改变的行为来压下失败并关闭请求。
+10. Fix-request gate: in fix-request-servicing mode, run **every gate the edit could affect** before closing the `fix_request`, not only `lint_check`. Always run `lint_check`, including the **front-end check** wherever a downstream flow converts the RTL; re-run `cdc_rdc_analysis` when the edit touches a clock/reset crossing or synchronizer; re-run `synth_check` when it changes timing-path depth, state, modules/files, or synthesis-visible structure. A gate that cannot run is **reported NOT RUN with the reason**. Only after every affected gate is measured clean (or explicitly NOT RUN with reason, leaving signoff false) may the request be set `fixed`; otherwise keep it `claimed` and escalate as required.
 
-11. 输入集合门控：首次 lint_check 前运行 design_input_check；之后每次 lint_check 前，若 filelist、include 路径、生成头文件树或工具项目/配置文件自上次通过后改变，则重新检查，包括处理 fix_request 模式。仅工具读取预期文件且规则检查完成，lint 才构成 RTL 证据。design_input_check FAIL（本次新增模块仅缺列表注册的例外除外），或 lint_check 因非本次写入 RTL 解析错误的原因未完成时，不编辑任何 .v/.sv；追加终止 history[]，包含 decision=escalate、failure_class=input_setup、retry_strategy=escalate、suggested_next_step=escalate，reason 指出文件、工具实际路径、预期路径、应改行。处理修复请求时保持 claimed。输入集合通过前，绝不删除端口、信号或声明来消除重复声明/未声明标识符消息。
-
+11. Input-set gate: run `design_input_check` before the first `lint_check`, and again if a filelist, include path, generated-header tree or tool project/config changed. On FAIL other than the registration-only case, or when lint rule checking did not complete for a cause not confined to RTL this run wrote, **edit no `.v`/`.sv` file**; record `input_setup` and escalate with actual/intended paths. **Never delete a port, signal or declaration** to silence duplicate-declaration or undeclared-identifier messages before this gate passes.
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
 每条 `history[]` 记录都携带两个字段：`failure_class` 表示发生了什么故障，
@@ -186,21 +185,21 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 6. 第 3、4、7 条触发升级处理时，本领域 `signoff` 保持 `false`，
    experience 记录中的 `signoff_achieved` 也写为 `false`。
 7. **重试必须朝同一目标取得可测量进展。** Loop-Back Rules 限制最多允许多少次尝试，
-   并不要求耗尽次数。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
+   并不要求耗尽次数（**not a number that must be spent**）。本条可提前停止循环，优先于规则剩余次数；对于 `unlimited` 行，
    它是唯一的停止条件。在替代 artifact 完成测量之前，保留上一次测得更好的 artifact。
    每次回退迭代后，将当前测量结果（QoR 数值或故障集合，而不只是故障个数）与上一轮比较：
    - **Regression（退步）**：结果更差或出现新故障。恢复上一版 artifact；本轮仍计入上限。
-   - **No progress（无进展）**：连续两轮结果未改善。停止再次运行并升级处理。
+   - **No progress（无进展）**：**two consecutive iterations** 结果未改善。停止再次运行并升级处理。
    - **Moved target（目标改变）**：改善来自被检查对象改变，例如放宽约束、添加 waiver/
      exception/exclusion、弱化检查/测试/假设，或改变设计行为以消除工具告警。
-     靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
+     **A pass obtained by changing the target is not a pass.** 靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
      的 `reason` 和该阶段 waiver/exception 记录中引用证明这一点的规格条款或约束来源。
      其他领域或用户拥有的目标（`design_state.constraints`、规格、上游 artifact）不能自行修改，
      应按第 4 条处理。如果只能改变目标才能通过，则升级处理。
 
    本条升级时追加终止 `history[]`：`decision: "escalate"`、观察到的 `failure_class`
    及映射的 `retry_strategy`、`suggested_next_step: "escalate"`；`reason` 指出三种情况
-   中触发了哪一种、各轮测量结果及用户需要决定什么。此时未达到上限，不记录 `resource_limit`。
+   中触发了哪一种、各轮测量结果及用户需要决定什么。此时 **`resource_limit` — the cap was not reached**，所以不记录 `resource_limit`。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -208,13 +207,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
 
 1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
-   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+   不在前台执行长任务，**never busy-poll it**；等待循环同样消耗 turn budget，却不产出结果。
 2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
    每次检查都消耗 turn，检查频率应符合预计运行时长。
-3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+3. **A quiet log is not a hung job（日志安静不代表任务挂起）。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
    判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
    仅凭日志静默无法判断运行或挂起。
-4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+4. **stop and hand it over（任务预计超过 turn budget 时停止等待并交接）。** 报告正在运行什么、job id、日志路径、
    启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
    列出任务的阶段性报告比未经验证的成功声明更有用。
 5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
@@ -242,25 +241,25 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
-   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+8. **Run the gates your change triggers, not only the gates you were asked about.** 第 1–7 条约束任务明确点名的 gate；
+   改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和 **path filters, do not guess**；
+   找出所改路径触发的 CI job，**run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.** 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** — signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**。不能将上次结果冒充本次实测。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
 <!-- BEGIN SHARED:rtl-lint-gate (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## RTL Lint Gate
 适用于本 Orchestrator 编写、修改或生成的全部可综合 RTL，包括回退迭代和处理 `fix_request`
-时的修改。Testbench（`*_tb.sv`、`tb_*.sv`）及仅用于仿真的行为模型豁免：
-其中 `initial`、`#delay` 和 blocking assignment 是正确用法。
+时的修改。Testbench（`*_tb.sv`、`tb_*.sv`）及仅用于仿真的行为模型通常豁免：
+其中 `initial`、`#delay` 和 blocking assignment 是正确用法。**但如果 CI 的 lint target 会编译它们，第 10 条仍然适用。**
 
 1. **文件离开阶段前执行 lint。** RTL 最后一次编辑后未经 lint，无论改动多小，都按 Reporting Contract 标为 NOT RUN。
 2. **Slang 必须完整 elaboration。** 执行 `slang -Weverything --ignore-unknown-modules <files>`。
@@ -301,7 +300,8 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
    列表是 `.f` 或可导出为 `.f` 时，使用 `plugins/rtl-design/skills/rtl-design/` 下的
    `check_design_inputs.py <filelist.f> --rtl-dir <rtl> --list <name>=<file> ...`，
    它会列出每个遗漏磁盘上 module 的列表。
-10. **可选：`hdl-rtl-skill`。** 若其 `rtl-lint` 脚本可用，将它作为 slang runner，执行第 2–4 条。
+10. **Lint with the tool version CI runs, on everything CI lints（使用 CI 实际运行的版本检查 CI 实际检查的全部文件）。** 版本必须来自 CI job log 中真正执行的 `verilator --version`、lockfile、固定 container 或 download script，**not from a comment or README that names a version**，因为说明文字会过期。新版工具会新增 warning；在旧版本本地 clean 并不能证明 CI gate 会 clean。实测案例：注释写 Verilator 5.036，而 CI 实际运行 5.048；5.048 新增 `PROCASSINIT`，使一个 declaration initializer 与 `always` 同时写同变量的 behavioural SRAM model 在 `-Wall` 下失败。第 1 条的 TB/model 豁免在 CI lint target 边界处结束：**a CI lint target compiles is gated like RTL**。本地没有 CI 对应版本时，构建/获取该版本（仓库内 build 也可以），否则 **report the gate NOT RUN with the version you could not run**。需要 power-up 初值时，对 procedurally written variable 用 `initial` block，不用 declaration initializer；`always_ff` target 更不能由其他过程写（IEEE 1800 9.2.2.4，VCS `ICPD`）。
+11. **可选：`hdl-rtl-skill`。** 若其 `rtl-lint` 脚本可用，将它作为 slang runner，执行第 2–4 条。
     `BLOCKER`/`HIGH` 算 error，`MEDIUM` 算 warning，`LOW`/`INFO` 算 informational，
     `MANUAL_REVIEW_REQUIRED` 需升级处理。不可用时，上述规则仍独立适用；该脚本补充而不替代本 gate。
 <!-- END SHARED:rtl-lint-gate -->
@@ -342,11 +342,17 @@ signoff 或 escalation/abandon 后，在 `<MEM>/rtl-design/experiences.jsonl` �
   "issues_encountered": ["<description>", "..."],
   "fixes_applied": ["<description>", "..."],
   "signoff_achieved": false,
+  "supersedes": null,
   "notes": "<free-text observations>"
 }
 ```
 
 只有所有 sign-off 判据 measured-PASS 时，`signoff_achieved` 才可设为 true。中断、报错、超过 turn、escalation 或 partial run 都保持 false。
+
+
+**Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
+
+**RTL hand-off contract：** **Write it on every termination path**. `rtl.files[]` is the block's complete current file set；`rtl.unverified[]` 累积本次 run 各阶段未经工具证明的声明；lint/CDC/synth/signoff 状态只有在本次 run 实测 clean 时才能写 true——`true` only when measured clean in this run。
 
 ## Design State
 
