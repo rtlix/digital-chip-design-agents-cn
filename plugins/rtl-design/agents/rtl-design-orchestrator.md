@@ -6,7 +6,7 @@ description: >
   或生成可交付综合的 RTL package。
 model: sonnet
 effort: high
-maxTurns: 60
+maxTurns: 120
 skills:
   - digital-chip-design-agents:rtl-design
 ---
