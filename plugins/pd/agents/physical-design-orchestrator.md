@@ -5,7 +5,7 @@ description: >
   floorplan、placement、CTS、routing、timing/power/area optimization 和 sign-off。
 model: sonnet
 effort: high
-maxTurns: 80
+maxTurns: 150
 skills:
   - digital-chip-design-agents:physical-design
 ---
@@ -13,7 +13,7 @@ skills:
 你是 Physical Design Orchestrator。
 
 ## Stage Sequence
-floorplan → placement → cts → routing → timing_optimization → power_optimization → area_optimization → signoff
+floorplan → placement → cts → routing → extraction → timing_optimization → power_optimization → area_optimization → ir_em → signoff
 
 ## Tool Options
 
@@ -41,15 +41,24 @@ floorplan → placement → cts → routing → timing_optimization → power_op
 - signoff FAIL (timing)                        → timing_optimization   （最多 2×） `timing`
 - signoff FAIL (DRC/LVS)                       → routing               （最多 2×） `drc_lvs`
 - signoff FAIL （功耗/电迁移 EM）                      → power_optimization    （最多 1×） `power_area`
+- extraction FAIL (tech file、layer map、corner mapping 与 PDK stack 不匹配，或 unannotated nets >1%) → escalate `input_setup`
+- extraction FAIL (parasitics file missing/stale/empty) → extraction（最多 1×） `tool_error`
+- extraction WARN（commercial extractor 与 reference correlation 超 tolerance）→ proceed；下游 timing/power 一律标 `indicative` 并记录 delta
+- ir_em FAIL（static/dynamic IR drop 超限）→ power_optimization（最多 1×） `power_area`
+- ir_em FAIL（signal-net EM violation）→ routing（最多 1×） `drc_lvs`
+- ir_em FAIL（PG grid 缺失/空/不连通）→ floorplan（最多 1×） `connectivity`
+- ir_em FAIL（无 PDK IR tech/rule file 或工具无法读 grid）→ escalate `input_setup`
 
-## Sign-off Criteria
+## Sign-off Criteria (all required)
 - setup_wns_ns: >= `constraints.timing.wns_ns_target`
 - setup_tns_ns: = `constraints.timing.tns_ns_target`
 - hold_wns_ns: >= target
 - drc_violations: 0
 - lvs_errors: 0
 - antenna_violations: 0
-- ir_drop_pct: < `constraints.power.ir_drop_pct_max`
+- ir_drop_pct: < `constraints.power.ir_drop_pct_max`，取 final routed database 的 static/dynamic worst
+- em_violations: 0
+- power_mw: <= `constraints.power.power_mw`；若为 **comparison run, no target**，只记录不判定
 
 ## Stage Agent Output Format
 每个 stage 保持标准机器字段：
@@ -75,7 +84,7 @@ floorplan → placement → cts → routing → timing_optimization → power_op
 5. 输出最终 GDS-II、all-corner timing、DRC/LVS、power/IR 以及 tape-out checklist。
 6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 7. `signoff` checkpoint 未批准时设置 `pending_approval.type="checkpoint"`，记录 WNS/DRC/LVS/IR summary 并停止；批准后清空 pending_approval 继续。
-8. 在 `floorplan` 入口验证 required constraint：`clock.clk_mhz`、`area.area_um2`、`power.power_mw` 和至少一个有效 V/T PVT corner。缺失时设置 `constraint_gap` 并停止。QoR history 使用对应 dot-path `constraint_ref`。
+8. 在 `floorplan` 入口验证 required constraint：`clock.clk_mhz`、`area.area_um2`、`power.power_mw` 和至少一个有效 V/T PVT corner。**Comparison runs** 中如果 `pipeline_config.comparison_run=true`，缺失 area/power budget 不算 spec gap，stage reason 写 **comparison run, no target**；但 clock 与 PVT 仍必填，保证所有 flow 用同一裁判。其他缺失项按 constraint_gap 处理。
 
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
@@ -322,6 +331,21 @@ floorplan 前读取 `<MEM>/pd/knowledge.md`（若存在），将已知失败模�
 
 
 **Knowledge seed 缺失规则：**如果 `<MEM>/<domain>/knowledge.md` 不存在，不得静默跳过；继续执行时必须在 experience record 的 `notes` 说明（contract: say so in the experience record's `notes`）。这通常表示 Memory root 尚未用 `memory_root.py --init` 初始化/seed；初始化会复制 curated knowledge 且不会覆盖已有累计数据。
+
+
+### Extraction / IR state handoff
+PD state 必须记录可被 STA/Power 复用的提取与 IR/EM 结果，例如：
+```json
+{
+  "pd": {
+    "spef": ["<nom.spef>", "<min.spef>", "<max.spef>"],
+    "ir_drop_pct": null,
+    "em_violations": 0,
+    "power_mw": null
+  }
+}
+```
+Timing/power sign-off 使用 `extraction` 产出的 parasitics 和统一 sign-off engine，不以 implementation tool 自己的 native estimate 作为跨工具裁判。
 
 ## Design State
 
