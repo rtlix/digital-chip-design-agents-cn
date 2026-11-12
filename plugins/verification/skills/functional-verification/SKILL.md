@@ -24,8 +24,8 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 
 在执行或建议**任何**阶段之前，如果以下文件存在，应先读取：
 
-1. `memory/verification/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。每个阶段的决策都应吸收其中经验；若不存在则继续执行。
-2. `memory/verification/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`）。用于中断后的正确恢复；如果不存在，表示开始新运行，Orchestrator 会在第一阶段前创建。
+1. `<MEM>/verification/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。每个阶段的决策都应吸收其中经验；若不存在则继续执行。
+2. `<MEM>/verification/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`）。用于中断后的正确恢复；如果不存在，表示开始新运行，Orchestrator 会在第一阶段前创建。
 
 无论本 Skill 是由用户直接加载，还是由 Orchestrator 在中途调用，都必须执行上述预读，以确保任何诊断前都已查询历史修复经验。
 
@@ -351,7 +351,7 @@ priority:     P0
 ### 每阶段完成后写入
 
 每个阶段完成后，无论当前是否处于完整 Orchestrator 会话，都应以 `run_id` 为键，
-在 `memory/verification/experiences.jsonl` 中写入或覆盖一条 JSON 记录。
+在 `<MEM>/verification/experiences.jsonl` 中写入或覆盖一条 JSON 记录。
 这样即使流程被中断或只单独调用某阶段，信息也能持久化。
 
 `run_id` 使用 `verification_<YYYYMMDD>_<HHMMSS>`，在流程开始时只生成一次，后续阶段复用。
@@ -359,7 +359,7 @@ priority:     P0
 
 ### Run state（第一阶段前写入，每阶段后更新）
 
-在启动任何工具之前，第一件事就是写入 `memory/verification/run_state.md`：
+在启动任何工具之前，第一件事就是写入 `<MEM>/verification/run_state.md`：
 
 ```markdown
 run_id:      verification_<YYYYMMDD>_<HHMMSS>
