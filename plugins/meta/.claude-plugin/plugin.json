@@ -1,6 +1,6 @@
 {
   "name": "chip-design-meta",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "跨领域 Pipeline Orchestrator——通过 design_state.json fix_requests 驱动 Verification↔RTL 闭环反馈",
   "author": {
     "name": "chuanseng-ng",
