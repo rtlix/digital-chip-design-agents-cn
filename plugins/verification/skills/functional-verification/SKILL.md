@@ -52,6 +52,100 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 
 ---
 
+## Stage: simulator_portability
+
+仅在**端口模式**进入：已有 testbench（cocotb 或 UVM）已经在一个 simulator 上稳定通过，现在要移植到新的 simulator（例如 Verilator-only regression 移到 VCS/Xcelium）。现有 testbench 及其检查属于输入，不在本阶段重新设计；原先能通过的 simulator 是 **reference simulator**，新的 simulator 必须与它对照。
+
+### Domain Rules — cocotb invocation
+1. cocotb 通过 `SIM` 选择 simulator：`verilator`、`icarus`、`vcs`、`xcelium`、`questa`。以已安装版本的 `cocotb-config --makefiles` 为准。参数通过 cocotb 标准变量传递：
+   - `COMPILE_ARGS`：define、include dir、parameter override、timescale、访问权限
+   - `EXTRA_ARGS`：compile/elaborate 额外参数
+   - `SIM_ARGS`：runtime 参数，例如 `-licqueue`、coverage run flag
+   - `PLUSARGS`：`+SEED=`、`+UVM_TESTNAME=`
+   - `SIM_BUILD`：每个 simulator 独立 build 目录
+   cocotb 2.x 将 `MODULE/TOPLEVEL` 改名为 `COCOTB_TEST_MODULES/COCOTB_TOPLEVEL`，不得假设版本。
+2. 先用 `make -n SIM=<sim>` 读取 cocotb 自带 Makefile 已加参数，再添加自己的。**Never set `EXTRA_ARGS` on the `make` command line** for `SIM=xcelium`：命令行变量会覆盖 Makefile.xcelium 自己的 `EXTRA_ARGS +=`，可能丢掉 `-top`、`-xmlibdirpath`、`-licqueue`。应在共享 include 中转换到独立变量，或显式 `override undefine EXTRA_ARGS` 后再追加，并用 `make -n` 验证 cocotb 自带参数仍存在。
+
+### Domain Rules — Translating Verilator-only idioms
+3. 每个 reference flag 都必须翻译到新 simulator。关键映射如下：
+
+| Verilator | VCS | Xcelium (`xrun`) |
+|---|---|---|
+| `-G<P>=<v>` | `-pvalue+<top>.<P>=<v>` | `-defparam <top>.<P>=<v>` |
+| string parameter | `-pvalue+<top>.<P>=...`，注意 recipe shell 再转义 | 观测到 `BDDSTR` 对 string `-defparam` ignored；生成额外 top，以 hierarchical `defparam` 赋值 |
+| `+define+X=1` / `-DX=1` | `+define+X=1` | `+define+X=1` / `-define X=1` |
+| `-I<dir>` / `+incdir+<dir>` | `+incdir+<dir>` **并加** `-y <dir> +libext+.sv+.v` | 同样加 `-y <dir> +libext+.sv+.v` |
+| `--timescale 1ns/1ps` | `-timescale=1ns/1ps` | `-timescale 1ns/1ps` |
+| `--timescale-override` | `-override_timescale=1ns/1ps` | `-override_timescale 1ns/1ps` |
+| VPI access | `-debug_access+all` / `+acc` | `-access +rwc` |
+| `-Wno-*` / `-Wall` / `--lint-only` / trace/build/thread flags | drop | drop |
+| `--x-assign` / `--x-initial` | drop，不能改变语义 | drop |
+| coverage flags | 转成 `-cm ...` | 转成 `-coverage ...` |
+
+   String parameter 必须在 smoke run 中读回实际值并与 reference 比较。任何 `PRM_ILLG`、`BDDSTR`、`parameter not found`、`ignored` 都是 translation FAIL。Verilator 的 `-I` 还能按文件名搜索 module，所以商业 simulator 侧需映射为 library search，更推荐直接补全 filelist。
+4. **One shared make include, not per-target edits.** 全部转换放在一个共享文件（如 `sim_portability.mk`），每条规则都以 `SIM` guard；不能每 target 复制一份。
+5. **Reference command line 保持 byte-identical。** 加 include 前后保存每个 target 的 `make -n SIM=<reference>`，逐文件 `cmp -s`。如果 port 主机没有 reference simulator，可把同名 stub 放在 PATH 前面，用 `make -n -i` 抓命令，并对 make 自身 `Makefile:NNN:` 行号做相同归一化。交付前仍需按 CI 真正执行的版本重跑 reference lint/regression。
+6. 每个 simulator 独立 `SIM_BUILD`（如 `sim_build_vcs`、`sim_build_xcelium`）；reference 原目录保持不变。
+7. Verilator-only lint/test 在商业 simulator 上标记 NOT RUN，逐项列名，从 pass floor 中扣除；**never count them as passed**。
+8. Simulator 从 non-interactive shell 解析。用户 alias 不进入 make；例如 VCS 显式写 `-full64`，并记录 `command -v vcs`。
+
+### Domain Rules — Triage
+9. **LRM strictness：先分类再修改。** VCS/Xcelium 拒绝而 Verilator 接受的代码分：
+   - **RTL defect**：违反 IEEE 1800，例如 use-before-declaration、multi-driver、`always_ff` target 又被别处写、implicit net。引用 LRM 条款并写 `fix_request`，禁止 testbench/define/`-nowarn` workaround。典型：LRM **9.2.2.4**、VCS `ICPD`。
+   - **Testbench defect**：相同问题位于 TB/bind；修 TB，但 checking 不能变松。
+   - **Tool dialect**：合法代码只是厂商选项/语法不同；在共享 include 中加入 vendor flag，并记录 message ID。
+10. **Simulator semantics differences 必须 root-cause。** 跨 simulator 结果不同先 FAIL，记录 `sim_differences`。优先检查 X/初始化、scheduling race、随机 seed、4-state vs 2-state。Verilator 中未驱动/未写状态可能表现为 0，VCS/Xcelium 为 X；禁止用 `COCOTB_RESOLVE_X` 或 mask 把根因吞掉。
+11. 已知无害的 VCS+cocotb GPI/VPI debug 行不能直接作为 FAIL。绝不能 grep simulation log 的 ERROR 判 verdict。
+
+### Domain Rules — Pass/fail and scope
+12. **Pass/fail 来自 `results.xml`，never from `make`'s exit code。** cocotb 1.9.2 在 VCS/Xcelium 上观测到 test fail 但 make exit 0。运行前删 stale results 或用 `--newer-than` stamp，随后用 `wrap-cocotb-results.sh`。missing/empty/unparsable/0 testcase 都 FAIL。
+13. **Negative control before trusting any PASS.** 每个 simulator 先注入一个已知失败，确认 wrapper 正确报 FAIL，再移除；无法证明 pipeline 能报 FAIL，就不能信任 PASS。
+14. **Staged scope.** 先 compile 全部 test module，再每模块至少一个 smoke、P0 优先；清零 unexplained difference 后才允许 full regression。
+15. **Skips must match the reference.** 新 simulator 的 skipped testcase 名称集合必须与 reference 对齐；只比 count 不够，simulator-specific skip 必须有理由。
+16. Smoke/full launch 前执行 `regression_signoff` 的 license/resource/disk gate。
+17. 每 run 独立 results file 与 `SIM_BUILD`。使用 `COCOTB_RESULTS_FILE` 或支持时 `SIM_RESULTS_IN_BUILD`；不能隔离的部分串行，总 testcase 数与 reference 对账。
+18. Hierarchy access 集中在一个 helper，处理 dotted path / flattened generate name / packed-struct slice fallback，不能每 test 自己 try/except。
+19. 每次运行导出 **UTF-8** locale（如 `LANG=C.UTF-8`、`LC_ALL=C.UTF-8`），避免非 ASCII docstring 触发 `UnicodeEncodeError`。
+
+### QoR Metrics to Evaluate
+- `reference_cmdlines_identical=true`：每 target 前后 `cmp -s` exit 0
+- `compile_errors_per_sim=0`
+- `negative_control_detected=true` 每 simulator
+- `smoke_pass_pct=100%`，或差异全部进入 `sim_differences`
+- `testcase_count_delta=0`
+- `skip_set_match=true`
+- `unexplained_sim_differences=0`
+- `lint_counted_as_compile=0`
+- `param_override_warnings=0`
+- `verilator_only_not_run` 逐项列名并从 pass floor 扣除，never count them as passed
+
+### Common Issues & Fixes
+| Issue | Fix |
+|---|---|
+| make exit 0 但 test fail | `wrap-cocotb-results.sh` 读取 `results.xml` |
+| String parameter 回到默认值 | 修 make+shell quoting，并在 smoke 中读回 |
+| VCS/Xcelium 找不到 signal handle | 按需要加入 `-debug_access+all` / `-access +rwc` |
+| Verilator PASS、商业 simulator 出 X | 查 reset/read-before-reset，分类 RTL/TB defect |
+| Xcelium 启动卡住 | `-licqueue` 等 seat；外层 `timeout` + `lmstat` |
+| make 内找不到 `vcs` | alias 不存在；真实 binary + 显式 `-full64` |
+| `*W,BDDSTR ... ignored` | string parameter 用 generated `defparam` top |
+| `Warning-[PRM_ILLG]` | VCS `-pvalue+` string shell 转义错误 |
+| Xcelium 丢 `-top/-licqueue` | 命令行覆盖了 `EXTRA_ARGS` |
+| VCS/Xcelium module not found | Verilator `-I` 隐式找到了；修 filelist 或 `-y/+libext+` |
+| VCS `ICPD` | `always_ff` target 又被 declaration initializer/`initial` 写 |
+| testcase 少于 reference | results.xml 被 rollup/concurrent job 覆盖 |
+| `UnicodeEncodeError` | 缺 UTF-8 locale |
+
+### Output Required
+- 共享 make include（`sim_portability.mk` 或等价文件）及 translation table
+- `before/`、`after/` 的 `make -n` capture 与逐 target `cmp -s` 结果
+- 每 simulator 的 negative-control、smoke、full-run `wrap-cocotb-results.sh` JSON
+- Triage log：每条处理过的 compile message，含 RTL/TB/dialect 分类、evidence、owner
+- `sim_differences`：每个跨 simulator 结果不同的 test 一条记录
+- 每 simulator 相对 reference 的 skip-set comparison
+
+---
+
 ## Stage: tb_architecture
 
 ## Domain Rules（领域规则）
