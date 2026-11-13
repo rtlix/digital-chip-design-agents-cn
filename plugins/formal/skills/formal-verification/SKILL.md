@@ -239,3 +239,6 @@ Formal domain 没有必填 design constraint；缺失 optional constraint 时使
 ### Optional: claude-mem index
 如果 `mcp__plugin_ecc_memory__add_observations` 可用，把 applied fix 写入
 `chip-design-formal-fixes`；否则静默跳过，JSONL 为 canonical record。
+
+- Synopsys Formality (`fm_shell`, dialect `synopsys`)
+- Cadence Conformal LEC (`lec`, dialect `cadence`)
