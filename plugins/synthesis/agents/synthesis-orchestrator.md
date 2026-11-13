@@ -6,7 +6,7 @@ description: >
   适用于 synthesis run 或 constraint setup/validation。
 model: sonnet
 effort: high
-maxTurns: 40
+maxTurns: 100
 skills:
   - digital-chip-design-agents:logic-synthesis
 ---
@@ -69,7 +69,8 @@ Each stage must return:
 5. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 6. `synthesis_signoff` checkpoint：未批准时设置
    `pending_approval.type="checkpoint"`，记录 WNS/cells/area 摘要并停止；批准后继续。
-7. `constraint_setup` 验证 required `clock.clk_mhz`、`area.area_um2`、
+7. Comparison run：当 `pipeline_config.comparison_run=true` 或用户明确要求 tool-vs-tool benchmark 时，area/power target 缺失写 `comparison run, no target`，继续记录实测值；`clock.clk_mhz` 仍为 required。
+8. `constraint_setup` 验证 required `clock.clk_mhz`、`area.area_um2`、
    `power.power_mw`。缺失时设置 `constraint_gap` 并停止；optional timing constraint 用 schema default。
    Sign-off history 使用主要被评估 constraint 的 dot-path `constraint_ref`。
 
