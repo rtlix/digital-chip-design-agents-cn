@@ -17,6 +17,10 @@
 - **OpenROAD DFT**：`openroad -dft` 可用于简单设计的 scan insertion，但目前不支持跨 IP hierarchy 的 scan-chain stitching。SoC 级 scan 建议使用 Yosys DFT plugin 或商业 DFT 工具。
 - **Yosys `synth -flatten` 的影响**：scan insertion 前 flatten 可以消除阻碍 chain stitching 的 hierarchy boundary，但大型设计的运行时间会明显增加。更推荐只在 scan boundary 层级选择性 flatten。
 
+- **Tessent 2025.4（实测）**：legacy `add_scan_groups` / `add_scan_chains` 流程可以干净退出但实际一个 scan cell 都没插入；应使用 DFT Skill Tool Notes 中的 context-based flow。dofile 中止后，`tessent -shell` 若没有 `< /dev/null` 会等待 stdin；不加 `-replace` 时旧日志可能残留，看起来像本次结果。`add_processors -number` 在该版本中会被拒绝。
+- **Tessent + sky130_fd_sc_hd cell library**：只有 Liberty 不足以提供 ATPG/scan cell 行为；需要生成 Verilog model（使用 gate primitive，不能只写裸 `assign`），再通过 LibComp 编译，并人工检查 `dft_cell_selection`。实测自动选择曾错误选到 `lpflow_*` cell。
+- **Tessent MemoryBIST**：generated pattern 默认可能打开 `reduced_address_count`；做 fault-injection proof 时必须关闭，否则并未覆盖完整地址空间。对于 1RW1R macro，controller 会按 logical port 分多个 pass，因此 cycle count 不能直接和一次完成的自研 March 流程比较。
+
 ## 备注
 
 - JTAG boundary-scan connectivity（`jtag_setup`）应在流片前使用 BSDL checker 验证。BSDL 语法错误会导致测试设备在来料/生产测试阶段拒绝识别器件。
