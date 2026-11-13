@@ -265,6 +265,12 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 ### Unverified-claims entries
 本阶段凡是**没有工具运行**却得到的 CDC/reset/FSM/protocol/arithmetic/parameter 结论，都立刻追加到 unverified-claims list，不等到 sign-off。
 
+### Aborted-run contract（上游同步）
+- 规则检查在 parse/elaboration fatal 前就终止时，the run **ran **zero** rules**；ERROR/WARNING 数量未知，**never `0`**。
+- 这种 aborted run is **not evidence about the RTL**，并且 is **never classified `functional`**。
+- 输入树混用的典型签名是 **duplicate-declaration **and** undeclared-identifier** 同时出现；应归为 `input_setup`，不改 RTL。
+- Wrapper/流程返回 **non-zero exit is not "lint failed"**；必须读取 lint 工具自己的 rule/error summary。
+
 ## Stage: cdc_rdc_analysis
 
 ### CDC 规则
