@@ -420,3 +420,9 @@ History entry to append:
   "constraint_ref": "<dot-path constraint key or null, e.g. memory_ip.repair_yield_pct_min>"
 }
 ```
+
+
+## Experience Record 补充规则（上游同步）
+- at the end of **every task invocation**（每次任务调用结束时）都必须写 experience，包括 scoped single-stage task、单个 shard、report-only/analysis-only 请求，以及 signoff、escalation、错误、turn budget 或用户中断。
+- 同一任务内后续结果推翻已记录结果时，按同一 `run_id` upsert，并在 `notes` 说明 superseded 内容；若被推翻结果来自更早 run，则新记录包含 `"supersedes": null`，实际更正时把 null 替换为旧 `run_id`。
+- 若解析后的 `<MEM>/memory-ip/knowledge.md` 不存在，不得静默跳过：必须 say so in the experience record's `notes`，并提示 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py --init`。
