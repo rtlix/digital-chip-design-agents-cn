@@ -39,7 +39,7 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 
 ## Loop-Back Rules
 - design_input_check FAIL（输入错误：include 同名、陈旧/同级生成树、路径缺失、覆盖配置）→ escalate: "input_setup: <file> 从 <path used> 而非 <path intended> 解析，重新指定 filelist/include/配置；未修改 RTL。"
-- design_input_check FAIL（仅注册：本次新增模块缺少于某工具列表）→ rtl_coding（加入所有缺失列表，不改 RTL，最多 1×）`connectivity`
+- design_input_check WARN（仅注册：本次新增模块缺少于某工具列表）→ rtl_coding（加入所有缺失列表，edit no RTL，max 1×）`connectivity`
 - lint_check FAIL（规则未完成，原因位于输入或不能归因本次写入 RTL）→ escalate: "input_setup: lint 未运行任何规则便停止，<evidence>；RTL 未评估且未修改。"
 - lint_check FAIL（规则未完成，解析错误仅在本次写入 RTL，输入检查 PASS）→ rtl_coding（计入下方 5×；`tool_error`，不能 `functional`）
 - lint_check FAIL (errors > 0, rule check completed) → rtl_coding        （最多 5×） `functional`
