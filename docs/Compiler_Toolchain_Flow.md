@@ -1,4 +1,8 @@
 # 编译器工具链开发流程 — 完整架构设计
+
+## Stage Sequence
+
+isa_analysis → backend_dev → assembler_dev → linker_config → runtime_libs → toolchain_validation → toolchain_signoff
 ## Orchestrator + Stage Agents + Skills
 
 > **目的**：面向自定义处理器 ISA 或嵌入式 SoC 的 AI 驱动编译器工具链开发与验证流程。覆盖 ISA 分析、compiler backend、assembler、linker、runtime library 和 toolchain validation。这是让软件真正能够在目标芯片上运行的关键软件层。
