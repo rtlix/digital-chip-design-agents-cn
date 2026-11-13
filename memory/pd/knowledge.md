@@ -21,3 +21,9 @@
 ## Notes
 
 - Sign-off 时 `core_area_util_pct >85%` 属于 hard stop；sky130 + OpenROAD 在该密度以上 routing/ECO closure 会非常困难。
+
+
+## Commercial PD measured notes
+- ICC2：`set_ignored_layers -min_routing_layer met1` 不够；`global_min_layer_mode` 默认 soft，需按 flow 设为 hard。
+- Innovus：每个 analysis view 保留独立 latency file，创建 view 时带 `-latency_file`，`update_constraint_mode` 后重新应用。
+- RedHawk：`INSTANCE_POWER_FILES` 必须用复数形式；单数形式可能被接受但忽略。
