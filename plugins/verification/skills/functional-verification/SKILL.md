@@ -332,6 +332,16 @@ priority:     P0
 ### Report-only mode
 当用户只要求 review/audit/list coverage hole 时，设置 `coverage_mode: report_only`。此模式不自动写 test/constraint/waiver，**the two `coverage_analysis` loop-backs** 不触发；coverage 低于 target 只记 WARN(`coverage_gap`)，不得 sign-off。
 
+### Coverage collection mechanics（上游同步）
+- VCS：每个 test/seed 使用唯一 `-cm_name <test>_<seed>` 与 `-cm_dir <db>.vdb`；多 top 的 `-cm_hier` 以 `+filelist <rtl.f>` 开头。
+- Xcelium：使用唯一 `-covtest <test>_<seed>`、`-covworkdir`、`-covscope`、`-covoverwrite`。
+- 并发 run 共用数据库名会 **overwrite silently**，因此每个 shard 必须独立数据库。
+- VCS merge/report 使用 `wrap-urg.sh`；不同 testbench top 合并时使用 `urg -lca -flex_merge modules`。
+- Xcelium merge/report 使用 `wrap-imc.sh`；IMC 不存在就是 NOT RUN，不是 0%。
+- Verilator 用 `verilator_coverage --write-info` 合并每个 run 的 coverage.dat。
+- 若 URG dashboard 的 **every metric is `--`**，结果为 unverified/NOT RUN。
+- VCS 对 **generate-loop iteration** 可分别计 line/branch；跨 simulator 比较前必须翻译 waiver/exclusion。
+
 ## Stage: formal_assist
 
 ### Formal 使用场景
