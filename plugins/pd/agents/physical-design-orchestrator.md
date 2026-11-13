@@ -59,6 +59,8 @@ floorplan → placement → cts → routing → extraction → timing_optimizati
 - antenna_violations: 0
 - ir_drop_pct: < `constraints.power.ir_drop_pct_max`
 
+- em_violations: 0
+
 ## Stage Agent Output Format
 每个 stage 保持标准机器字段：
 ```json
