@@ -102,7 +102,7 @@ perf_modelling → power_area_estimation → risk_assessment → arch_signoff
     - **回退完整流程。** refinement_needed=true 但 candidates[] 为空（持久化候选机制引入前的状态）时，从 spec_analysis 运行全部阶段，将 refinement_request 作为 arch_exploration 输入。
     - **关闭请求。** 仅 arch_signoff 通过时，将 refinement_request 加 `{ "serviced_by_run": "<run_id>", "outcome": "<选中候选及相对 constraint_ref 的重新估计值>" }` 追加到 architecture.refinement_history[]，将 refinement_request 设为 null、refinement_needed 设为 false，并更新 selected_candidate。其他终止路径保持这两个字段及 refinement_history[] 原值。
 
-10. Candidate persistence and refinement mode: 每个 architecture candidate 在生成/评估后立即写入 `design_state.architecture.candidates[]`。如果 `architecture.refinement_needed=true`，从已持久化的 candidate 恢复并重新进入 `perf_modelling`，不要从空白重新探索；完成 refinement 后更新 selected candidate，并清理已处理的 refinement request。
+10. Candidate persistence and refinement mode: 每个 architecture candidate（包括 **rejected** candidate）生成/评估后都按稳定 candidate id **upsert** 到 `design_state.architecture.candidates[]`，不得重写/丢弃旧候选。如果 `architecture.refinement_needed=true`，从已持久化 candidates 恢复并重新进入 `perf_modelling`，不要从空白重新探索；完成 refinement 后更新 selected candidate，并清理已处理的 refinement request。
 
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
