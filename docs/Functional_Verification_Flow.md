@@ -1,7 +1,7 @@
 # 功能验证流程 — 完整架构设计
 ## Orchestrator + Stage Agents + Skills（UVM）
 
-> **目的**：基于 UVM 的 AI 驱动功能验证流程。覆盖 testbench architecture、test planning、stimulus generation、coverage closure、assertion-based verification 和 regression sign-off。
+> **目的**：基于 UVM 的 AI 驱动功能验证流程。覆盖 testbench architecture、test planning、stimulus generation、coverage closure、assertion-based verification 和 regression sign-off；在 port mode 下，还支持把已有 testbench 移植到 VCS/Xcelium/Questa，并以 report-only 模式审查 coverage hole 而不自动做 closure。
 
 ---
 
@@ -30,6 +30,7 @@
 {
   "run_id": "verif_001",
   "design_name": "my_block",
+  "mode": "full | port | report_only_coverage",
   "inputs": {
     "rtl_filelist":    "path/to/filelist.f",
     "dut_spec":        "path/to/spec.md",
@@ -37,6 +38,7 @@
     "interface_list":  ["AXI4", "APB", "custom_if"]
   },
   "stages": {
+    "simulator_portability": { "status": "pending", "output": {} },
     "tb_architecture":     { "status": "pending", "output": {} },
     "test_planning":       { "status": "pending", "output": {} },
     "uvm_tb_build":        { "status": "pending", "output": {} },
@@ -66,11 +68,20 @@
 tb_architecture → test_planning → uvm_tb_build → directed_tests → constrained_random → coverage_analysis → formal_assist → regression_signoff
 ```
 
+Port mode — 已经在 reference simulator 上通过的 testbench 移植到新 simulator 时，跳过重新设计/编写 testbench 的阶段：
+
+```text
+simulator_portability → coverage_analysis → regression_signoff
+```
+
+`simulator_portability` 把 reference simulator 的 flag 翻译进一个 `SIM`-gated make include，并用 `make -n` + `cmp -s` 证明 reference command line byte-identical；每个 simulator 使用独立 `SIM_BUILD`；每个新 compile error 都分类为 RTL defect、testbench defect 或 tool dialect；每个 simulator 先跑 negative control；最终 verdict 只来自 `results.xml` 和 `wrap-cocotb-results.sh`，**never from `make`'s exit code**。`coverage_analysis` 可运行 report-only mode，只生成排序后的 coverage-hole list，不自动写新 test。长 regression 后台分 shard，并把状态写入 `run_state.md`，恢复 session 时继续未完成 shard。
 回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`verification-orchestrator.md`](../plugins/verification/agents/verification-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
 ---
 
 ## 4. Skill 文件说明
+
+下面保留最初设计草图；当前权威规则（包括 `simulator_portability`、VCS `-cm/urg`、Xcelium `-coverage/imc`、Verilator `--coverage-*/verilator_coverage` 以及 regression license/resource 规则）以 [functional-verification/SKILL.md](../plugins/verification/skills/functional-verification/SKILL.md) 为准。
 
 ### 4.1 `sv-verif-tb-arch/SKILL.md`
 
