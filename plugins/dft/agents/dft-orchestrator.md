@@ -363,3 +363,13 @@ History schema：
   "constraint_ref": "<dot-path constraint key or null, e.g. dft.saf_coverage_pct>"
 }
 ```
+
+
+## Experience Record 补充规则（上游同步）
+- at the end of **every task invocation**（每次任务调用结束时）都必须写 experience，包括 scoped single-stage task、单个 shard、report-only/analysis-only 请求，以及 signoff、escalation、错误、turn budget 或用户中断。
+- 同一任务内后续结果推翻已记录结果时，按同一 `run_id` upsert，并在 `notes` 说明 superseded 内容；若被推翻结果来自更早 run，则新记录写：
+```json
+"supersedes": null
+```
+实际发生跨 run 更正时把 null 替换成旧 `run_id`，旧记录保留不改。
+- 若解析后的 `<MEM>/dft/knowledge.md` 不存在，不得静默跳过：必须 say so in the experience record's `notes`，并提示可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py --init` 初始化/迁移 seed。
