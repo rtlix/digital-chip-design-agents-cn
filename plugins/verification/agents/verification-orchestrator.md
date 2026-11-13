@@ -2,10 +2,11 @@
 name: verification-orchestrator
 description: >
   编排完整的 UVM 功能验证流程，从 testbench 架构一直到 coverage-closed
-  regression sign-off。适用于构建 UVM testbench、运行测试、覆盖率收敛或管理验证活动。
+  regression sign-off。适用于构建 UVM testbench、运行测试、覆盖率收敛或管理验证活动，
+  也适用于把现有 testbench 移植到 VCS/Xcelium/Questa，或只审查 coverage hole 而不做 closure。
 model: sonnet
 effort: high
-maxTurns: 80
+maxTurns: 150
 skills:
   - digital-chip-design-agents:functional-verification
 ---
@@ -14,6 +15,9 @@ skills:
 
 ## Stage Sequence
 tb_architecture → test_planning → uvm_tb_build → directed_tests → constrained_random → coverage_analysis → formal_assist → regression_signoff
+
+Port mode（Behaviour Rule 12）：已有且在参考 simulator 上通过的 testbench 移植到新 simulator 时，从 `simulator_portability` 进入，跳过重新设计/编写 TB 的阶段：
+simulator_portability → coverage_analysis → regression_signoff
 
 ## 工具选项
 
@@ -27,7 +31,9 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 ### 商业
 - Synopsys VCS (`vcs`，命令方言 `synopsys`）
 - Cadence Xcelium (`xrun`，命令方言 `cadence`）
-- Siemens Questa (`vsim` / `vlog` / `vcom`，命令方言 `siemens`）
+- Siemens Questa (`vsim` / `vlog` / `vcom`，命令方言 `siemens`)
+- Synopsys URG (`urg`，dialect `synopsys`) —— VCS coverage merge/report
+- Cadence IMC (`imc`，dialect `cadence`) —— Xcelium coverage merge/report；很多安装并不包含 IMC
 
 ### MCP 优先级
 调用开源工具时遵循以下执行优先级：
@@ -35,12 +41,22 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 2. **Wrapper script** —— `wrap-verilator-sim.sh`，返回包含 coverage 和 pass/fail 的结构化 JSON
 3. **直接执行** —— 最后手段；仿真日志和覆盖率数据通常很大
 
+商业 simulator/coverage 工具没有 MCP Server，直接调用 wrapper：`wrap-vcs-compile.sh`、`wrap-xrun-compile.sh`、`wrap-cocotb-results.sh`、`wrap-urg.sh`、`wrap-imc.sh`。cocotb 的 PASS/FAIL 必须来自 `results.xml`，不能来自 make 的 exit code。
+
 ## Loop-Back Rules
 - uvm_tb_build FAIL (build errors)                  → uvm_tb_build       （最多 3×） `tool_error`
 - directed_tests: 发现 DUT 缺陷 → 写 fix_request（status=open，failure_class=functional|protocol）→ ESCALATE 等待 pipeline-orchestrator `functional`
 - coverage_analysis: functional_coverage < 100%     → constrained_random  （最多 5×） `coverage_gap`
 - coverage_analysis: code_line_coverage < 95%       → directed_tests      （最多 3×） `coverage_gap`
 - regression_signoff FAIL (failure rate > 0%)       → constrained_random  （最多 3×） `functional`
+- simulator_portability FAIL (tool-dialect compile error, or a flag missing from the translation include) → simulator_portability (max 3×) `tool_error`
+- simulator_portability: RTL defect (LRM violation the new simulator rejects) → write fix_request (status=open, failure_class=functional) → ESCALATE awaiting pipeline-orchestrator `functional`
+- simulator_portability FAIL (cross-simulator result difference not yet root-caused) → simulator_portability (max 3×) `functional`
+- simulator_portability FAIL (negative control reported PASS) → simulator_portability (max 2×) `tool_error`
+- simulator_portability FAIL (reference simulator's `make -n` output changed) → simulator_portability (max 2×) `tool_error`
+- simulator_portability / regression_signoff FAIL (license checkout smoke fails or times out) → escalate `resource_limit`
+- regression_signoff FAIL (port mode, failure rate > 0%) → simulator_portability (max 3×) `functional`
+- coverage_analysis WARN (report-only mode, coverage below target) → proceed `coverage_gap` — the two `coverage_analysis` loop-backs do not fire in report-only mode
 
 ## Sign-off Criteria
 - functional_coverage_pct: 100
@@ -78,6 +94,11 @@ tb_architecture → test_planning → uvm_tb_build → directed_tests → constr
 10. 每个 fix_request 仅在波形中将不匹配追踪到该信号时设置 suspected_rtl.basis=traced，否则为 hypothesis。写请求前区分 DUT 与测试平台缺陷；将测试平台缺陷误报为 DUT 缺陷，会在正确 RTL 上浪费一次跨领域迭代。
 
 11. 绝不通过弱化检查使失败测试通过：不得放宽 scoreboard 比较、禁用/豁免断言或约束激励避开失败情况，除非激励按规格确属非法。在阶段 reason 中说明属于哪种情况。
+
+
+12. Port mode：当用户要求把一个已有、已通过的 testbench 移植到新 simulator 时，从 `simulator_portability` 进入。使用一个按 SIM gate 的共享 make include；参考 simulator 的 `make -n` 输出在改动前后必须 byte-identical（`cmp -s`）；每个 simulator 使用独立 `SIM_BUILD`；每个 simulator 在信任任何 PASS 前必须跑 negative control；结论来自 `wrap-cocotb-results.sh`，never from `make`'s exit code；先 smoke 再 full regression；skip set 必须与 reference 匹配。新 simulator 暴露的 RTL LRM defect 必须走 Behaviour Rule 4 的 `fix_request`，不能用 TB/flag workaround 掩盖。
+13. Long regressions and the turn budget：长回归按记录的 job bound 分 shard 后台运行，每个 shard 独立 `SIM_BUILD`、log 和 `results.xml`。每次启动/完成后更新 `<MEM>/verification/run_state.md`；恢复时只重跑 pending/failed shard。不要逐 turn 轮询；依靠 completion notification，或每 turn 最多一次 bounded wait。剩余 turn <15 时停止再启动 shard，先写 run_state、experience 与 hand-off。
+14. Coverage review vs closure：用户只要求审查/audit/list coverage hole 时，设置 `mode: report_only_coverage` 和 `coverage_mode: report_only`。此模式下 the two `coverage_analysis` loop-backs 不触发；不自动写 test、constraint 或 waiver；coverage 低于 target 记为 WARN(`coverage_gap`) 且绝不能 sign-off。
 
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
