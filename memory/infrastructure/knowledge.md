@@ -33,3 +33,9 @@ host 匹配的经验，因为 tool version/quirk 强依赖机器。Lockfile 仍�
 
 - 该 domain 与 design 无关，`design_name` 通常为 null；record 由 environment fingerprint 区分。
 - `key_metrics.tool_versions` 是核心价值：比较多次 run 可快速找出导致 previously-passing flow 失败的版本变化。
+
+
+## Shared licensed-host lessons
+- `pgrep` gate 会竞态；使用 host-wide **flock**，例如 `exec 9>>$LOCK; flock -x 9`，锁覆盖完整 tool child tree。
+- `safe_run.sh` 在启动前检查 `MemAvailable` 与 load，使用 MemoryMax、<=2 threads、setsid；超时时 kill process group。
+- 长商业工具启动可达 30-65 min；runtime 记录主机 load。
