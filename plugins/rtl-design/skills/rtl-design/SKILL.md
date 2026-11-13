@@ -24,8 +24,8 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 
 在执行或建议**任何** stage 前，如果以下文件存在，应先读取：
 
-1. `memory/rtl-design/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。每个 stage 的决策都应吸收其中经验。
-2. `memory/rtl-design/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`），用于中断后恢复。若不存在，表示新运行开始，Orchestrator 会在第一阶段前创建。
+1. `<MEM>/rtl-design/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。每个 stage 的决策都应吸收其中经验。
+2. `<MEM>/rtl-design/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`），用于中断后恢复。若不存在，表示新运行开始，Orchestrator 会在第一阶段前创建。
 
 无论本 Skill 是由用户直接加载还是由 Orchestrator 中途调用，都必须执行上述预读，确保诊断前已查询历史修复经验。
 
@@ -357,7 +357,7 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 ### 每个 stage 完成后写入
 
 每个 stage 完成后，无论当前是否处于完整 Orchestrator 会话，都以 `run_id` 为键，
-在 `memory/rtl-design/experiences.jsonl` 中写入或覆盖一条 JSON 记录。
+在 `<MEM>/rtl-design/experiences.jsonl` 中写入或覆盖一条 JSON 记录。
 这样即使流程中断或单独调用 stage，也能持久化结果。
 
 `run_id` 使用 `rtl-design_<YYYYMMDD>_<HHMMSS>`，流程开始时只生成一次，后续 stage 复用。
@@ -365,7 +365,7 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 
 ### Run state
 
-在启动任何工具之前，第一件事写入 `memory/rtl-design/run_state.md`：
+在启动任何工具之前，第一件事写入 `<MEM>/rtl-design/run_state.md`：
 
 ```markdown
 run_id:      rtl-design_<YYYYMMDD>_<HHMMSS>

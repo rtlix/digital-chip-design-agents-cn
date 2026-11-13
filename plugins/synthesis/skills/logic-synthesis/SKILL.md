@@ -21,9 +21,11 @@ allowed-tools: Read, Write, Bash
 在 active Orchestrator 内再次启动自身会造成 recursive delegation，必须禁止。
 
 ## Pre-run Context
+
+`<MEM>` below is the resolved memory root（以下 `<MEM>` 表示已经解析出的 Memory 根目录），never the literal `memory/` directory。解析优先级为显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库 seed；可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径。
 任何 stage 前，如存在则读取：
-1. `memory/synthesis/knowledge.md`
-2. `memory/synthesis/run_state.md`
+1. `<MEM>/synthesis/knowledge.md`
+2. `<MEM>/synthesis/run_state.md`
 应用历史 failure pattern、有效 tool flag、PDK/tool quirk 与 run state。
 
 ## Purpose
@@ -208,7 +210,7 @@ Optional：
 ## Memory
 
 ### Write on stage completion
-每 stage 后按 `run_id` upsert `memory/synthesis/experiences.jsonl`。
+每 stage 后按 `run_id` upsert `<MEM>/synthesis/experiences.jsonl`。
 实现方式为读取全部行、删除同 run_id 旧 record、追加更新后的 record，然后原子替换。
 每条 record 必须有顶层 `run_id`：
 `synthesis_<YYYYMMDD>_<HHMMSS>`，一次生成全流程复用。
