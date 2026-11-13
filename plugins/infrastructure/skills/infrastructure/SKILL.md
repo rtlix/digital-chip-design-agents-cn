@@ -590,7 +590,7 @@ Tools via modules : 5
 - 更新后的 `tool-status.json`
 - `load-modules.sh`：任一工具状态为 `FOUND_PREFER_MODULE` 或 `MISSING_LOAD_MODULE` 时生成；没有符合工具时省略。不能仅按 module_system 推断省略：module_system 为 none，或已检测到系统但 module_listing 为 UNAVAILABLE 时均无符合工具；后者须报告 WARN，不能干净跳过。
 
-`module-status.json` 数据结构：
+`module-status.json` is a module-discovery receipt（模块发现凭据）：
 ```json
 {
   "module_system": "tclmod | custom | none",
