@@ -40,6 +40,9 @@ constraint_setup → compile_explore → compile_final → netlist_qc → synthe
 - netlist_qc FAIL（黑盒为有自有 RTL 定义的未定义模块）→ escalate: "input_setup: <module> (<file>) 缺少于综合列表 <list>，须上游注册，重新综合无法解决。"
 - netlist_qc FAIL（黑盒无自有 RTL，缺库/宏/IP 视图）→ escalate: "input_setup: <module> 在综合输入中无定义，请提供库或 stub 视图。"
 
+- netlist_qc FAIL (black box or undefined module that resolves to first-party RTL) → escalate `input_setup`：补齐 synthesis source list，不能靠重跑 compile 修复
+- netlist_qc FAIL (black box with no first-party RTL: missing library, macro or IP view) → escalate `input_setup`：提供 library/macro/IP view
+
 ## Sign-off Criteria
 - wns_ns: >= `design_state.constraints.timing.wns_ns_target`
 - lec_unmatched_points: 0
