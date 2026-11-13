@@ -29,7 +29,8 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 
 无论本 Skill 是由用户直接加载，还是由 Orchestrator 在中途调用，都必须执行上述预读，以确保任何诊断前都已查询历史修复经验。
 
-## Purpose（目的）
+## Purpose
+Also guides **port mode**（现有 testbench 的跨 simulator 移植）以及 coverage report-only review。（目的）
 
 指导完整的 UVM 功能验证流程，从 testbench 架构一直到覆盖率收敛后的 regression sign-off。
 最终产出带有覆盖率记录、且回归干净的已验证 RTL 包。
@@ -52,6 +53,62 @@ Orchestrator 负责强制执行下文定义的阶段顺序、loop-back 规则和
 
 ---
 
+## Stage: simulator_portability
+
+仅在 **port mode** 进入：已有 testbench 在 reference simulator 上通过，现在要移植到 VCS、Xcelium、Questa 等新 simulator。此阶段不重新设计 testbench，而是证明同一 testbench、同一检查语义在不同 simulator 上可复现。
+
+### Domain Rules — cocotb invocation
+1. cocotb 通过 `SIM=verilator|icarus|vcs|xcelium|questa` 选择 simulator。参数通过 `COMPILE_ARGS`、`EXTRA_ARGS`、`SIM_ARGS`、`PLUSARGS`、`SIM_BUILD` 传递，不直接修改 cocotb 自带 makefile。
+2. **Never set `EXTRA_ARGS` on the `make` command line**：这会覆盖 cocotb simulator makefile 自己追加的 `-top`、`-xmlibdirpath`、`-licqueue` 等参数。需要扩展时放到独立变量或共享 include。
+3. 参考 simulator 的 `make -n` 在修改前后保存到 before/after 文件，使用 `cmp -s` 证明 byte-identical；reference command line 改变即 FAIL。
+4. Verilator 参数翻译：
+   - `-G<P>=<v>` → VCS `-pvalue+<top>.<P>=<v>`
+   - `-G<P>=<v>` → Xcelium `-defparam <top>.<P>=<v>`
+   - Verilator 的 `-I <dir>` 既可作为 include search，也可能让 module-by-name 被找到；VCS/Xcelium 还需要 `-y <dir> +libext+.sv+.v` 或修正 filelist。
+   - `--timescale`、define、incdir、VPI access 必须翻译为目标 simulator 方言；`-Wno-*`、`--trace`、`--x-assign`、`--x-initial` 不直接照搬。
+5. String parameter 必须特别验证：Xcelium 对 `*W,BDDSTR ... ignored` 一类 warning 视为 FAIL；必要时生成带 hierarchical defparam 的 top。VCS 的 `-pvalue+` 字符串要正确 shell escaping。
+6. **LRM strictness**：参考 simulator 接受而 VCS/Xcelium 拒绝的代码，先按 LRM 分类。典型 `always_ff` 多驱动/初始化冲突参考 IEEE 1800-2023 **9.2.2.4**。如果是 RTL defect，创建 `fix_request`；不能通过放宽 testbench 或加 suppress flag 掩盖。
+7. Verilator-only 的 lint/elaboration guard、`*_neg` 等目标在目标商业 simulator 上属于 NOT RUN，必须按名称列出并从 pass floor 中扣除，**never count them as passed**。
+8. 可用 `make -n -i` 配合 stub binary 比对 command parity；即使 reference simulator 本机不存在，也能验证 make translation。
+9. 每次运行使用独立 `COCOTB_RESULTS_FILE`（或安装版本支持时的 `SIM_RESULTS_IN_BUILD`）以及独立 `SIM_BUILD`，防止并发覆盖 `results.xml`、`ucli.key`、`xrun.log`。
+10. 所有 cocotb run 环境必须是 **UTF-8**（例如 `LANG=C.UTF-8`、`LC_ALL=C.UTF-8`）。
+11. Pass/fail 从 `results.xml` 读取，**never from `make`'s exit code**。使用 `wrap-cocotb-results.sh`；missing/empty/unparseable `results.xml` 都是 FAIL。
+12. **Negative control before trusting any PASS.** 每个 simulator 都注入一个已知失败检查，确认 wrapper 能报告 FAIL，再删除 control 并恢复正常计数。
+13. **Skips must match the reference.** 比较 testcase 名称集合而非只比较数量；目标 simulator 独有 skip 必须说明 simulator-specific 原因。
+14. 先 compile 全部 test module，再运行 smoke subset，消除所有未解释差异后才允许 full regression。
+15. 4-state vs 2-state、X-propagation、scheduler race、random seed、VPI hierarchy 差异必须 root-cause；不得用 X mask/resolve 让测试“变绿”。
+
+### QoR Metrics to Evaluate
+- `reference_cmdlines_identical=true`
+- 每个 simulator `compile_errors_per_sim=0`
+- `negative_control_detected=true`
+- smoke pass 100%，或所有差异均已分类
+- testcase name/count 与 reference 一致
+- skip set match
+- unexplained simulator difference = 0
+- parameter override warning = 0
+
+### Common Issues & Fixes
+| Issue | Fix |
+|---|---|
+| make exit 0 但 testcase fail | 从 `results.xml` 读取并使用 `wrap-cocotb-results.sh` |
+| `*W,BDDSTR ... ignored` | 使用 generated defparam top，不能假设 `-defparam` 字符串可靠 |
+| VCS `Warning-[PRM_ILLG]` | 修正 `-pvalue+` 的字符串 quoting |
+| Xcelium 丢 `-top/-licqueue` | 不要在 make command line 覆盖 `EXTRA_ARGS` |
+| Verilator 能找到 module、VCS/Xcelium 找不到 | 修 filelist，或增加 `-y <dir> +libext+.sv+.v` |
+| VCS `ICPD` | 依据 9.2.2.4 判断 RTL 多驱动/初始化 defect |
+| testcase 少于 reference | 检查 `results.xml` 被 rollup/concurrent job 覆盖 |
+| cocotb `UnicodeEncodeError` | 设置 UTF-8 locale |
+
+### Output Required
+- 共享 simulator translation include（如 `sim_portability.mk`）
+- reference before/after `make -n` 与 `cmp -s` 结果
+- 每个 simulator 的 negative-control/smoke/full-run wrapper JSON
+- compile-message triage log（RTL/TB/dialect）
+- `sim_differences`
+- skip-set comparison
+
+---
 ## Stage: tb_architecture
 
 ## Domain Rules（领域规则）
