@@ -378,3 +378,10 @@ algorithm_analysis 前读取 `<MEM>/hls/knowledge.md`（若存在），将已知
 - at the end of **every task invocation**（每次任务调用结束时）都必须写 experience，包括 scoped single-stage task、单个 shard、report-only/analysis-only 请求，以及 signoff、escalation、错误、turn budget 或用户中断。
 - 同一任务内后续结果推翻已记录结果时，按同一 `run_id` upsert，并在 `notes` 说明 superseded 内容；若被推翻结果来自更早 run，则新记录包含 `"supersedes": null`，实际更正时把 null 替换为旧 `run_id`。
 - 若解析后的 `<MEM>/hls/knowledge.md` 不存在，不得静默跳过：必须 say so in the experience record's `notes`，并提示 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py --init`。
+
+
+### RTL Lint Gate — CI version supplement
+- **Lint with the tool version CI runs, on everything CI lints**。
+- 工具版本来自 CI log/lockfile，**not from a comment or README that names a version**。
+- **a CI lint target compiles is gated like RTL**。
+- 无法运行精确版本时，**report the gate NOT RUN with the version you could not run**。
