@@ -286,7 +286,7 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 ### `tool-status.json` is a discovery-state artifact
 ```json
 {
-  "python_env": {"exec":"","type":"module | system | custom | venv","bin_dir":"","module_name":null},
+  "python_env": {"exec":"","type":"module | system | custom | venv","bin_dir":"","module_name":null,"candidates":[{"exec":"","type":"module | system | custom | bundled","version":""}]},
   "tools": [{"tool":"","command":"","status":"FOUND | MISSING | PROPRIETARY_ONLY","version":"","path":"","role":null,"dialect":null}]
 }
 ```
@@ -321,7 +321,7 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
    f. 找不到则在 `tool-status.json` 把 python3 记为 `MISSING` 并立即 FAIL；所有 wrapper/Python package 都依赖它。
    g. 分类：
       - `system`：`PYTHON_EXEC == /usr/bin/python3`
-      - `module_system == "custom"`：其他路径（pyenv/conda/venv/custom prefix）
+      - `custom`：非 system、非 module、非已激活 venv 的自定义解释器路径（pyenv/conda/custom prefix）；candidate 若来自 EDA vendor tree 可标记 `"type": "module | system | custom | bundled"`，但 bundled **is never selected as `PYTHON_EXEC`**，也 **never fall back to a `bundled` one**。同时枚举 `python3.N`（例如 python3.11/python3.12），不要只执行裸 `which python3`。
 
    **步骤 C：完成记录：**
    h. 无论如何解析到 `PYTHON_EXEC`，均设置 `PYTHON_BIN_DIR = $(dirname "$PYTHON_EXEC")`。
@@ -458,27 +458,6 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 仅当 `module_listing` 为 `"LISTED"` 时，空 `tools_via_modules` 才能证明主机没有可提供的模块。不能将调用阶梯耗尽报告为“没有找到模块”；不读取 `module_listing` 就无法区分两种情况。
 
 修复文字同时列出两种初始化脚本，因为探测始终在 `bash -c` 下运行，而用户手工重跑时可能使用 `bash` 或 `tcsh`。
-
-#### `module-status.json` is a module-discovery receipt
-```json
-{
-  "module_system": "tclmod | custom | none",
-  "module_system_detail": "",
-  "module_invocation": "",
-  "module_listing": "LISTED | UNAVAILABLE",
-  "module_listing_error": null,
-  "tools_via_modules": [
-    {
-      "tool": "<command>",
-      "module_names": [],
-      "versions_available": [],
-      "selected": null,
-      "selected_basis": "site_default | highest_release | highest_any | null",
-      "candidates": []
-    }
-  ]
-}
-```
 
 #### Module-to-tool mapping table（模块到工具映射表）
 
@@ -676,7 +655,7 @@ module load cadence/xcelium/20.09
 
 9. 每个脚本末尾按 `module_system` 输出注册指引：
    - `tclmod`：若尚未存在，将 `$EDA_MODULEFILES_ROOT` 注册到 `$MODULEPATH`。
-   - `module_system == "custom"`：说明站点 Wrapper 以自身方式注册 modulefile，可能完全不读 `$MODULEPATH`；注册机制须参考站点自身文档，不能将 `$MODULEPATH` 行当作操作指令。
+   - `module_system == "custom"`：说明站点 Wrapper 以自身方式注册 modulefile，可能完全不读 `$MODULEPATH`；注册机制须参考 the **site's own documentation**，不能将 `$MODULEPATH` 行当作操作指令。
    - `none`：说明目前没有可注册的模块系统，安装 Environment Modules 后才适用 `$MODULEPATH` 行。
 
 10. 将全部 `install-<toolname>.sh` 写入 `install-missing-tools/`，目录不存在时创建；没有 MISSING 工具时，不创建目录或任何脚本。
@@ -754,10 +733,10 @@ echo "Modulefile written: ${MODFILE_DIR}/${TOOL_VERSION}"
 - 每个 modulefile 至少设置 `PATH`、`LD_LIBRARY_PATH`
 - 适用时添加 `MANPATH`、`PKG_CONFIG_PATH`、`PYTHONPATH`
 - 工具特有根变量（存在时设置）：按命令名，即 `tool-status.json` 中的 `tool` 值匹配，不按括号中的产品名匹配。Python 包使用包名，所以 cocotb 行匹配 `cocotb`，而非探测命令 `cocotb-config`：
-  - `verilator`（Verilator）→ `VERILATOR_ROOT`
-  - `yosys`（Yosys）→ `YOSYS_DATDIR`
-  - `llvm-config`（LLVM）→ `LLVM_DIR`
-  - `cocotb`（Python 包）→ `COCOTB_SHARE_DIR`
+  - `verilator` (Verilator) → `VERILATOR_ROOT`
+  - `yosys` (Yosys) → `YOSYS_DATDIR`
+  - `llvm-config` (LLVM) → `LLVM_DIR`
+  - `cocotb` (cocotb Python package; detection probe `cocotb-config`) → `COCOTB_SHARE_DIR`
 
 ### Package Name Mapping Table
 
@@ -797,6 +776,9 @@ echo "Modulefile written: ${MODFILE_DIR}/${TOOL_VERSION}"
 ## Stage: wrapper_deployment
 
 ### Domain Rules
+- Inventory contract: **all 25 wrappers** must be present; **25 executable wrapper scripts** are expected.
+- Validation contract: **wrapper scripts with executable bit set (target: 25)**; a clean install therefore has **all 25 wrappers** and **25 executable wrapper scripts**.
+- `wrap-verilator-sim.sh` takes a simulation binary; its smoke result must be **never a mis-invocation** of `--version` as a simulator binary.
 1. 将全部 25 个 Wrapper 脚本部署到 `plugins/infrastructure/tools/`
 2. 对每个 Wrapper 运行 `chmod +x`；权限被拒绝时判为 FAIL，并以 `sudo chmod +x` 指引升级处理
 3. 无论退出码如何，每个 Wrapper 均须输出符合下方数据结构的 JSON
@@ -829,16 +811,18 @@ echo "Modulefile written: ${MODFILE_DIR}/${TOOL_VERSION}"
 找不到的 metric 用 null/省略，绝不能伪造 0。
 
 ### QoR Metrics to Evaluate
-- `wrappers_deployed`：已设置可执行位的 Wrapper 数量（目标：11）
+- `wrappers_deployed`：已设置可执行位的 Wrapper 数量（目标：25）
 
 ### Output Required
-- plugins/infrastructure/tools/ 中的 11 个可执行 Wrapper 脚本
+- plugins/infrastructure/tools/ 中的 25 个可执行 Wrapper 脚本
 
 ---
 
 ## Stage: mcp_configuration
 
 ### Domain Rules
+- Count contract: **10 tool-server** configs / **10 tool servers**; **tool-server snippet files written (target: 10)**. Optional `mcp-memory.json` is not one of these 10.
+- Machine receipt carries `"snippets_expected": 10`.
 1. 输出 10 个工具服务器（8 个批处理、2 个会话）的 MCP 配置片段。另解析可选 `chip-design-memory` 服务器的 `mcp-memory.json` 路径；该服务器提供编排器语义经验查询使用的 `query_experiences`，不属于工具服务器、不计入数量，因此 `plugins/infrastructure/mcp/` 共 11 个文件。
 2. 所有批处理配置使用 `"command": "python3"` 配合 `mcp-adapter.py`；绝不能直接将 Wrapper 脚本设为 command，因为 Wrapper 不是 MCP 服务器。
 3. 会话配置使用 `mcp-session-adapter.py`，参数为 `--tool openroad` 或 `--tool opensta`；`mcp-memory.json` 直接运行 `mcp-memory.py`，不使用 `--wrapper` 或 `--tool`。
@@ -993,6 +977,7 @@ Memory (optional) — `mcp-memory.py` is the server itself:
 - [ ] tool-status.json 每项均记录 role 和 dialect，所有涉及专有工具的同角色不同方言共存均已报告
 
 ### Output Required
+`tool-manifest.json` is a validation receipt（验证凭据），不是第二份工具清单。下面的 JSON schema 是本阶段唯一权威 shape。
 - 环境验证报告
 - `tool-manifest.json`：由本阶段创建。此前没有 manifest 可更新，因为前面的阶段均不生成它。
 
