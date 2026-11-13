@@ -257,7 +257,7 @@ Agent 流程：
 - 首次启动/载入复杂库可能 **30-65 min**。Layer policy 使用 `global_min_layer_mode`；必要约束应设为 **`hard`**，不能依赖 soft preference。
 - PG via 定义用 `set_pg_via_master_rule`；scenario PVT 用 `set_process_number`、`set_voltage`、`set_temperature`。
 - 多对象命令注意 `-object_list`；错误用法可触发 **CHF-002**；STA/power 报告按 `-scenarios`。
-- Hold repair 避免只用 weak **`ZBUF`/`ZINV`**；通过 `set_lib_cell_purpose -include hold` 明确可用 cell。**`add_buffer` drops the new cell off the row grid** 时必须合法化。
+- Hold repair 避免只用 weak `ZBUF`/`ZINV`；通过 `set_lib_cell_purpose -include hold` 明确可用 cell。**`add_buffer` drops the new cell off the row grid** 时必须合法化。
 - Fat wire 使用 **fat_table**；实测为避免 strap spacing DRC，需要 **0.1 um met4 routing blockages**；相关 rule 如 **m4.5ab**。
 - Pin access 可用 `set_routing_rule -min_routing_layer met3 -min_layer_mode allow_pin_connection`。
 - Antenna ECO：`diode_mode 1`，可 **drive the antenna ECO from the OpenROAD list**，但需重新 DRC。
