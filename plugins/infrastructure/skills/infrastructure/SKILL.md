@@ -480,23 +480,24 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 }
 ```
 
-#### Module-to-tool mapping
-保持以下机器匹配模式不变：
+#### Module-to-tool mapping table（模块到工具映射表）
 
-| Tool command | Module name pattern |
+| Tool command | Module name patterns to match (case-insensitive substring) |
 |---|---|
 | `vcs` | `vcs`, `synopsys-vcs`, `synopsys/vcs` |
 | `xrun` | `xcelium`, `cadence-xcelium`, `cadence/xcelium` |
 | `dc_shell` | `design-compiler`, `synopsys/dc`, `dc_shell` |
 | `innovus` | `innovus`, `cadence/innovus`, `cadence-innovus` |
 | `vsim` | `questa`, `questasim`, `mentor/questa` |
+| `urg` | `vcs`, `synopsys-vcs`, `synopsys/vcs` |
+| `imc` | `imc`, `vmanager`, `xcelium`, `cadence/xcelium` |
 | `pt_shell` | `primetime`, `synopsys/pt`, `pt_shell` |
 | `fm_shell` | `formality`, `synopsys/formality`, `fm_shell` |
 | `genus` | `genus`, `cadence-genus`, `cadence/genus` |
 | `fc_shell` | `fusion-compiler`, `synopsys/fc`, `fc_shell` |
 | `icc2_shell` | `ic-compiler`, `icc2`, `synopsys/icc2` |
 | `tempus` | `tempus`, `cadence-tempus`, `cadence/tempus` |
-| `conformal` | `conformal`, `cadence-conformal`, `cadence/conformal` |
+| `lec` | `conformal`, `cadence-conformal`, `cadence/conformal` |
 | `jg` | `jaspergold`, `cadence-jg`, `cadence/jg` |
 | `vcf` | `vc-formal`, `vcf`, `synopsys/vcf` |
 | `qformal` | `questa-formal`, `qformal`, `mentor/qformal` |
@@ -513,7 +514,19 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 | `artisan` | `artisan`, `arm-artisan`, `arm/artisan` |
 | `siliconsmart` | `siliconsmart`, `synopsys/siliconsmart` |
 | `liberate` | `liberate`, `cadence-liberate`, `cadence/liberate` |
-| `starrc` | `starrc`, `synopsys-starrc`, `synopsys/starrc` |
+| `StarXtract` | `starrc`, `synopsys-starrc`, `synopsys/starrc` |
+| `grdgenxo` | `starrc`, `synopsys-starrc`, `synopsys/starrc` |
+| `quantus` | `quantus`, `cadence-quantus`, `cadence/quantus` |
+| `Techgen` | `quantus`, `cadence-quantus`, `cadence/quantus` |
+| `lc_shell` | `library-compiler`, `synopsys/lc`, `lc_shell` |
+| `icc2_lm_shell` | `ic-compiler`, `icc2`, `synopsys/icc2`, `fusion-compiler` |
+| `joules` | `joules`, `cadence-joules`, `cadence/joules` |
+| `redhawk` | `redhawk`, `ansys/redhawk` |
+| `totem` | `totem`, `ansys/totem` |
+| `calibre` | `calibre`, `mentor/calibre`, `siemens/calibre` |
+| `pvs` | `pvs`, `pegasus`, `cadence/pvs` |
+| `magic` | `magic` |
+| `netgen` | `netgen` |
 | `voltus` | `voltus`, `cadence-voltus`, `cadence/voltus` |
 | `armcc` | `armcc`, `arm-compiler`, `arm/armcc` |
 | `JLinkGDBServer` | `jlink`, `segger`, `segger/jlink` |
