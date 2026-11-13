@@ -5,7 +5,7 @@ description: >
   floorplan、placement、CTS、routing、timing/power/area optimization 和 sign-off。
 model: sonnet
 effort: high
-maxTurns: 80
+maxTurns: 150
 skills:
   - digital-chip-design-agents:physical-design
 ---
@@ -13,7 +13,7 @@ skills:
 你是 Physical Design Orchestrator。
 
 ## Stage Sequence
-floorplan → placement → cts → routing → timing_optimization → power_optimization → area_optimization → signoff
+floorplan → placement → cts → routing → extraction → timing_optimization → power_optimization → area_optimization → ir_em → signoff
 
 ## Tool Options
 
@@ -41,6 +41,14 @@ floorplan → placement → cts → routing → timing_optimization → power_op
 - signoff FAIL (timing)                        → timing_optimization   （最多 2×） `timing`
 - signoff FAIL (DRC/LVS)                       → routing               （最多 2×） `drc_lvs`
 - signoff FAIL （功耗/电迁移 EM）                      → power_optimization    （最多 1×） `power_area`
+
+- extraction FAIL (tech file, layer map or corner mapping does not match the PDK stack; unannotated nets above 1 %) → escalate `input_setup`
+- extraction FAIL (parasitics file missing, stale or empty) → extraction (max 1×) `tool_error`
+- extraction WARN (commercial vs reference extractor correlation outside tolerance) → proceed；所有下游 timing/power 数字标记 `indicative`
+- ir_em FAIL (static or dynamic IR drop above limit) → power_optimization (max 1×) `power_area`
+- ir_em FAIL (EM violations on signal nets) → routing (max 1×) `drc_lvs`
+- ir_em FAIL (power grid missing/empty/unconnected) → floorplan (max 1×) `connectivity`
+- ir_em FAIL (缺少 PDK IR tech/rule file 或工具无法读取 grid) → escalate `input_setup`
 
 ## Sign-off Criteria
 - setup_wns_ns: >= `constraints.timing.wns_ns_target`
@@ -371,3 +379,16 @@ History entry to append:
 - at the end of **every task invocation**（每次任务调用结束时）都必须写 experience，包括 scoped single-stage task、单个 shard、report-only/analysis-only 请求，以及 signoff、escalation、错误、turn budget 或用户中断。
 - 同一任务内后续结果推翻已记录结果时，按同一 `run_id` upsert，并在 `notes` 说明 superseded 内容；若被推翻结果来自更早 run，则新记录包含 `"supersedes": null`，实际更正时把 null 替换为旧 `run_id`。
 - 若解析后的 `<MEM>/pd/knowledge.md` 不存在，不得静默跳过：必须 say so in the experience record's `notes`，并提示 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py --init`。
+
+
+### PD Design State 补充
+```json
+{
+  "pd": {
+    "spef": ["<nominal.spef>", "<min.spef>", "<max.spef>"],
+    "ir_drop_pct": null,
+    "em_violations": null,
+    "power_mw": null
+  }
+}
+```
