@@ -186,7 +186,7 @@ Each stage must return:
   或预算/上限已耗尽；动作是 `escalate` 或 `abandon`。
 - **none（无故障）**：仅与 `failure_class: "none"` 配对（PASS、`await_approval`）。
 
-`input_setup` 表示工具在错误输入上正确运行：filelist、include 路径、项目或配置文件、
+`input_setup` means **the tool ran correctly on the wrong inputs**（工具在错误输入上正确运行）：filelist、include 路径、项目或配置文件、
 生成的头文件或库视图解析到了错误目录树。它不是 `tool_error`，因为重试会原样重现；
 也不能作为被检查 artifact 的证据，因为该 artifact 根本没有被评估。
 当证据指向输入集合（同一文件出现两个路径、本次运行未写入的文件、检查前就中止）时，
@@ -206,7 +206,7 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 映射的 `escalate` 也不会覆盖它。仍然记录映射出的 `retry_strategy`，让冲突在 `history[]`
 中可见，而不是静默解决。Stage Gating and Escalation 第 4、7 条性质不同：它们依据证据
 停止循环（上游故障或重试不收敛），不受规则剩余次数影响。`input_setup` 也具有该优先级：
-任何 Loop-Back Rules 行都不能覆盖它，因为回退规则会发送到修改 artifact 的阶段，
+**no Loop-Back Rules row overrides it**（任何 Loop-Back Rules 行都不能覆盖它），因为回退规则会发送到修改 artifact 的阶段，
 而此时 artifact 本身并没有问题。
 
 某个条件完全没有对应 Loop-Back Rules 行时，没有可遵循的规则，也没有可据以映射的分类。
@@ -308,18 +308,18 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
+8. **Run the gates your change triggers, not only the gates you were asked about.**（执行改动触发的 gate，而不只是任务点名的 gate。） 第 1–7 条约束任务明确点名的 gate；
    改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+   找出所改路径触发的 CI job：读取 **path filters, do not guess**；并 **run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.**（无论结果如何，都交接本次已建立的信息。） 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** —— signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**（不能将上次结果冒充本次实测）。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
 ## Design State
