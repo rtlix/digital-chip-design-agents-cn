@@ -71,7 +71,7 @@ openroad -no_init -exit sta.tcl > sta.log 2>&1
 
 1. 公平比较时每个 (library corner, RC corner) 使用 **one `pt_shell` per (library corner, RC corner)**，避免状态泄漏；输入 library 包括 every macro `.db`。
 2. 每个 run 在脚本内校验 **SDC md5**，然后 `read_sdc`；real clock 执行 `set_propagated_clock`，但 propagated **virtual** clock ignores its network latency。
-3. RC 用 `read_parasitics` with `-format spef <spef>`。保存 SPEF md5；Annotation gate 使用 `report_annotated_parasitics`，包括 `-pin_to_pin_nets`。PrimeTime 自己的读取摘要写入 **parasitics_command.log**；SPEF 中 net 不存在可见 **PARA-124**。
+3. RC 用 `read_parasitics -format spef <spef>`。保存 SPEF md5；Annotation gate 使用 `report_annotated_parasitics`，包括 `-pin_to_pin_nets`。PrimeTime 自己的读取摘要写入 **parasitics_command.log**；SPEF 中 net 不存在可见 **PARA-124**。
 4. 更新 timing 后运行 `check_timing -verbose`、`report_global_timing`、`report_qor`。设 `report_default_significant_digits 4`，否则极小负 slack 会被舍入成 0。
 5. Clean setup 时 `report_global_timing` 可能打印 **No setup violations found.**；脚本必须仍提取 **non-empty setup and hold WNS**，空 metric 不能 PASS。
 6. **`read_sdc` stops at the first unsupported command**，但 shell 可能继续执行，造成看似正常却约束不完整的结果。**Innovus-exported SDC is not PT-readable** as-is；必须转换/对比并重新校验 md5。
