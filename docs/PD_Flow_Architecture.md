@@ -60,9 +60,11 @@
     "placement": {"status":"pending","qor":{},"issues":[],"output":{}},
     "cts": {"status":"pending","qor":{},"issues":[],"output":{}},
     "routing": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "extraction": {"status":"pending","qor":{},"issues":[],"output":{}},
     "timing_optimization": {"status":"pending","qor":{},"issues":[],"output":{}},
     "power_optimization": {"status":"pending","qor":{},"issues":[],"output":{}},
     "area_optimization": {"status":"pending","qor":{},"issues":[],"output":{}},
+    "ir_em": {"status":"pending","qor":{},"issues":[],"output":{}},
     "signoff": {"status":"pending","qor":{},"issues":[],"output":{}}
   },
   "global_qor": {
@@ -88,6 +90,8 @@ floorplan → placement → cts → routing → extraction → timing_optimizati
 ```
 
 回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`physical-design-orchestrator.md`](../plugins/pd/agents/physical-design-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
+
+`extraction` 将 routed database 转换为 per-corner SPEF，并检查 annotation coverage；`ir_em` 在完整 power grid 上执行 IR drop / EM。设置这两个独立 stage 的目的，是让 sign-off timing、power 与 IR 来自 extracted parasitic 上的 sign-off engine，而不是 implementation tool 自己的估计。商业工具在 open PDK 上所需的 `## PDK Enablement`、以及 Innovus、ICC2、StarRC、RedHawk、Magic/KLayout/Netgen 的实测命令与失败模式，以 [physical-design/SKILL.md](../plugins/pd/skills/physical-design/SKILL.md) 为准。
 
 ---
 
@@ -344,9 +348,9 @@ OUTPUT: { updated_state_object, stage_result }
 ```python
 def run_pd_flow(state):
     stage_sequence = [
-        "floorplan", "placement", "cts", "routing",
+        "floorplan", "placement", "cts", "routing", "extraction",
         "timing_optimization", "power_optimization",
-        "area_optimization", "signoff"
+        "area_optimization", "ir_em", "signoff"
     ]
 
     current_index = 0
@@ -426,9 +430,11 @@ def run_pd_flow(state):
 | Placement | PASS | 1 | — |
 | CTS | PASS | 1 | — |
 | Routing | PASS | 2 | DRC 短路，已修复 |
+| Extraction | PASS | 1 | SPEF/annotation clean |
 | Timing Optimization | PASS | 1 | — |
 | Power Optimization | PASS | 1 | — |
 | Area Optimization | WARN | 1 | 利用率 82%，在允许范围内 |
+| IR/EM | PASS | 1 | IR/EM within limits |
 | Sign-off | PASS | 1 | — |
 
 ## 输出文件
