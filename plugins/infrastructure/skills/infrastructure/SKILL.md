@@ -40,6 +40,8 @@ allowed-tools: Read, Write, Bash
 - **OpenROAD** (`openroad`) — RTL-to-GDS
 - **LibreLane / OpenLane2** (`openlane`) — 开源 ASIC flow
 - **KLayout** (`klayout`) — GDS/OASIS viewer + DRC
+- **Magic** (`magic`) — layout editor、DRC 与 extraction
+- **Netgen** (`netgen`) — LVS netlist comparison
 - **OpenSTA** (`sta`) — gate-level STA
 - **SymbiYosys** (`sby`) — formal verification
 - **gem5** (`gem5`) — full-system microarchitecture simulation
@@ -68,28 +70,34 @@ allowed-tools: Read, Write, Bash
 | `sta` | `sta` | `opensta` |
 | `sby` | `formal` | `symbiyosys` |
 | `klayout` | `drc_lvs` | `klayout` |
+| `magic` | `drc_lvs` | `magic` |
+| `netgen` | `drc_lvs` | `netgen` |
 | `bambu-hls` | `hls` | `bambu` |
 | `gem5` | `arch_simulator` | `gem5` |
 | `nextpnr` | `fpga_pnr` | `nextpnr` |
 
 其他开源工具——`slang`、`surelog`、`sv2v`、`abc`、`openFPGALoader`、`cocotb`、`llvm-config`、`gcc`、`openocd`、`xschem`、`gtkwave`、`uv`、`python3`——在此没有同功能的其他工具，记录为 `"role": null, "dialect": null`。不要编造角色填充字段：`null` 不会产生虚假的冲突。
 
-### Proprietary（只检测，绝不自动安装）
+### Proprietary (detect only — never install)（商业工具：只检测，绝不安装）
 
-| Tool | Command (alt) | `role` | `dialect` | Version probe (license-free) |
+| 工具 | Command (alt) | `role` | `dialect` | Version probe（无需占用许可证的版本探测） |
 |---|---|---|---|---|
-| Synopsys VCS | `vcs` | `rtl_simulator` | `synopsys` | `vcs -ID` — 解析 `Compiler version` line only |
-| Cadence Xcelium | `xrun` (`xmsim`) | `rtl_simulator` | `cadence` | `xrun -version` — 解析 `TOOL:<tab>xrun(64)<tab><version>` 行 |
+| Synopsys VCS | `vcs` | `rtl_simulator` | `synopsys` | `vcs -ID` — parse the `Compiler version` line only |
+| Cadence Xcelium | `xrun` (`xmsim`) | `rtl_simulator` | `cadence` | `xrun -version` — parse the `TOOL:<tab>xrun(64)<tab><version>` line |
 | Mentor QuestaSim | `vsim` (`questa`, `questasim`, `vlog`, `vcom`) | `rtl_simulator` | `siemens` | none — UNVERIFIED |
-| Synopsys Design Compiler | `dc_shell` (`dc_shell-t`) | `synthesis` | `synopsys` | `dc_shell -version` — 解析 `dc_shell version` 行 |
-| Cadence Genus | `genus` | `synthesis` | `cadence` | `genus -version` — 解析 `Program Name:` 行 |
+| Synopsys URG | `urg` | `coverage_report` | `synopsys` | `urg -version` — parse the `URG Version` line |
+| Cadence IMC | `imc` | `coverage_report` | `cadence` | none — UNVERIFIED |
+| Synopsys Design Compiler | `dc_shell` (`dc_shell-t`) | `synthesis` | `synopsys` | `dc_shell -version` — parse the `dc_shell version` line |
+| Cadence Genus | `genus` | `synthesis` | `cadence` | `genus -version` — parse the `Program Name:` line |
 | Synopsys Fusion Compiler | `fc_shell` | `synthesis` | `synopsys` | none — UNVERIFIED |
-| Cadence Innovus | `innovus` | `physical_design` | `cadence` | none — UNVERIFIED |
+| Synopsys Library Compiler | `lc_shell` | `library_prep` | `synopsys` | `lc_shell -version` — parse the `lc_shell version` line |
+| Cadence Innovus | `innovus` | `physical_design` | `cadence` | `innovus -version` — parse the `@(#)CDS: Innovus v` line |
 | Synopsys IC Compiler 2 | `icc2_shell` | `physical_design` | `synopsys` | none — UNVERIFIED |
-| Synopsys PrimeTime | `pt_shell` (`pt_shell64`) | `sta` | `synopsys` | `pt_shell -version` — 解析 `pt_shell version` 行 |
-| Cadence Tempus | `tempus` | `sta` | `cadence` | none — UNVERIFIED |
-| Synopsys Formality | `fm_shell` (`formality`) | `lec` | `synopsys` | `fm_shell -version` — 解析 `Formality (R) Version` 行 |
-| Cadence Conformal | `conformal` | `lec` | `cadence` | none — UNVERIFIED |
+| Synopsys IC Compiler II Library Manager | `icc2_lm_shell` | `library_prep` | `synopsys` | `icc2_lm_shell -version` — parse the `lm_shell version` line |
+| Synopsys PrimeTime | `pt_shell` (`pt_shell64`) | `sta` | `synopsys` | `pt_shell -version` — parse the `pt_shell version` line |
+| Cadence Tempus | `tempus` | `sta` | `cadence` | none — UNVERIFIED (optional; absent on some hosts — use PrimeTime) |
+| Synopsys Formality | `fm_shell` (`formality`) | `lec` | `synopsys` | `fm_shell -version` — parse the `Formality (R) Version` line |
+| Cadence Conformal LEC | `lec` | `lec` | `cadence` | `lec -version` — parse the `Tool:` line (`Tool:<tab>lec<tab><version>`) |
 | Cadence JasperGold | `jg` | `formal` | `cadence` | none — UNVERIFIED |
 | Synopsys VC Formal | `vcf` | `formal` | `synopsys` | none — UNVERIFIED |
 | Siemens Questa Formal | `qformal` | `formal` | `siemens` | none — UNVERIFIED |
@@ -106,33 +114,125 @@ allowed-tools: Read, Write, Bash
 | ARM Artisan | `artisan` | `mem_compiler` | `arm` | none — UNVERIFIED |
 | Synopsys SiliconSmart | `siliconsmart` | `characterisation` | `synopsys` | none — UNVERIFIED |
 | Cadence Liberate | `liberate` | `characterisation` | `cadence` | none — UNVERIFIED |
-| Synopsys StarRC | `starrc` | `extraction` | `synopsys` | none — UNVERIFIED |
-| Cadence Voltus | `voltus` | `power_analysis` | `cadence` | none — UNVERIFIED |
+| Synopsys StarRC | `StarXtract` | `extraction` | `synopsys` | none — UNVERIFIED |
+| Synopsys StarRC grdgenxo | `grdgenxo` | `extraction_tech` | `synopsys` | `grdgenxo -v` — parse the `Version` line of the StarRC banner |
+| Cadence Quantus | `quantus` | `extraction` | `cadence` | `quantus -version` — parse the `Version        :` line |
+| Cadence Quantus Techgen | `Techgen` | `extraction_tech` | `cadence` | `Techgen -version` — parse the `Version        :` line |
+| Cadence Voltus | `voltus` | `power_analysis` | `cadence` | none — UNVERIFIED (optional; absent on some hosts — use RedHawk for IR/EM, PrimePower for power) |
+| Cadence Joules | `joules` | `power_analysis` | `cadence` | `joules -version` — parse the `Program Name:` line |
+| Ansys RedHawk | `redhawk` | `ir_em` | `ansys` | `redhawk -v` — parse the release (`2025 R2.2`) at the start of the first line |
+| Ansys Totem | `totem` | `ir_em` | `ansys` | `totem -v` — parse the release at the start of the first line |
+| Siemens Calibre | `calibre` | `drc_lvs` | `siemens` | `calibre -version` — parse the `//  Calibre v` line |
+| Cadence Pegasus/PVS | `pvs` | `drc_lvs` | `cadence` | `pvs -version` — parse the `Version        :` line |
 | Arm Compiler 6 | `armcc` | `embedded_compiler` | `arm` | none — UNVERIFIED |
 | SEGGER J-Link GDB Server | `JLinkGDBServer` | `debug_probe` | `segger` | none — UNVERIFIED |
 | Lauterbach TRACE32 | `t32marm` | `debug_probe` | `lauterbach` | none — UNVERIFIED |
 | Arm Development Studio | `armds` | `debug_probe` | `arm` | none — UNVERIFIED |
 
-**`vcs -ID` 也会打印 FLEXlm host ID。** 仅解析并保存 `Compiler version` 的值，绝不能将 host ID 写入 `tool-status.json`。
+**Commercial PD/signoff probes, measured 2026-10-25 on a second EDA host** (stdin `/dev/null`,
+each probe in its own process group, 120 s budget, light load): `lc_shell -version` 30 s,
+`icc2_lm_shell -version` 41 s (`lm_shell version X-2025.06`), `grdgenxo -v` 4 s (StarRC banner
+`Version X-2025.06-SP1`), `quantus -version` 32 s and `Techgen -version` 2 s (`Version        :
+23.1.1-p051`), `fm_shell -version` 38 s, `lec -version` 20 s (`Tool:	lec	24.10-p100`),
+`pvs -version` 36 s (`Version        : 24.12-s015`), `calibre -version` 62 s (`//  Calibre
+v2026.1_17.11`), `redhawk -v` 5 s and `totem -v` 53 s (`2025 R2.2 ...`), `genus -version` 75 s
+(`Version: 23.14-s090_1`), `joules -version` 30 s (`Version: 23.14-s077_1`), `innovus -version`
+**123 s** (`@(#)CDS: Innovus v23.14-s088_1`) and `pt_shell -version` **≈120 s** — all exit 0
+with the named line, and recorded in the table above. **On that host `dc_shell -version`
+printed `dc_shell version    -  X-2025.06-SP3` but exited 1** (twice), so parse the line and
+do not gate on the exit code. `StarXtract -v` printed `Version: X-2025.06-SP1` and also exited 1
+(twice); it stays UNVERIFIED until a clean probe is found. `icc2_shell -version` and
+`fc_shell -version` printed nothing within 120 s and stay UNVERIFIED. An earlier pass at
+load average ~10 with a 60 s budget timed out on `pt_shell`, `genus`, `innovus` and `joules` as
+well — which is why rule 4 below now budgets 180 s. **A vendor launcher is a shell script that execs a
+child (`pt_shell` → `pt_shell_exec`); `timeout` kills only the script and the child survives
+holding a licence.** Run every probe in its own process group (`setsid`) and kill the group
+(`kill -- -<pgid>`) on timeout, then confirm with `ps` that no `*_exec` child remains.
 
-**只有在真实安装上确认过的探测选项才列入表中**，猜测选项可能打开交互 Shell 或占用许可证。上方选项均经过测量：1–26 秒内退出码为 0，指定行存在，且未进入许可证队列。`dc_shell -version` 会先输出无关的 ASLR 提示，因此应解析含 `version` 的行，而非输出首行。`genus -version` 同样经过测量：冷缓存 26 秒、热缓存 12 秒，因此下方规则 4 将超时设为 60 秒，而非原先的 10 秒。
+**Two command fixes.** Cadence Conformal's batch command is `lec` (the product was listed as
+`conformal`, which is not a binary), and StarRC's is `StarXtract` (`starrc` is not a binary);
+both resolve under their install `bin/` on the second host. `tempus`, `voltus`, `icv` and
+`redhawk_sc` are absent there: Tempus and Voltus are kept as optional rows, and a flow that
+needs signoff STA, power or IR/EM uses PrimeTime / PrimePower and RedHawk/Totem instead.
+`magic` and `netgen` are commonly not on the host PATH at all but inside the LibreLane container
+image; detect them there when the flow runs LibreLane.
 
-**原来的两个 `UNVERIFIED` 行在上游也未验证，并非遗漏。** 参考主机上两者均无法确认，障碍在安装而非选项：`innovus -version` 退出码为 0，但报告构建授权过期；`vsim -version` 退出码为 0，但无法加载 `libXext.so.6`。在这两种工具安装正常的站点，应确认选项并贡献到本表。
+**`vcs -ID` also prints a FLEXlm host ID.** Parse and store the `Compiler version`
+value only — never write the host ID into `tool-status.json`.
 
-**上方其余 `UNVERIFIED` 行完全没有探测证据，应准确记录，避免后续贡献者盲目重复测量：** `voltus -version` 和 `tempus -version` 均退出 0，但缺少 `cds_plat.dat`，与 `innovus` 失败类似。参考主机的 `<root>/linux/<version>/bin/` 下，`joules`、`conformal`、`starrc`、`liberate` 和 `jg` 均无法解析到可执行文件。三个退出 0 的案例未打印版本行，因此规则 4 将“退出 0 但无版本行”单独判为 WARN，而非通过。
+**A probe flag is listed only once confirmed on a real install** — a guessed flag can open
+an interactive shell or check out a license. The flags above were each measured: exit 0
+with the named line present, in 1–26 s, no license queue. `dc_shell -version` prints an
+unrelated ASLR advisory first, so parse the line containing `version`, never the first line
+of output. `genus -version` was measured the same way: 26 s cold, 12 s warm, which is why
+rule 4 below sets the probe timeout at 180 s (originally 10 s, then 60 s): `innovus` and
+`pt_shell` took about 2 minutes on the second host.
 
-Formality 说明：主命令为 `fm_shell`；`formality` 是旧版 GUI Wrapper，近期安装中已不存在，因此列为备用命令。
+**The two original `UNVERIFIED` rows were unverified upstream, not an oversight** (Innovus has
+since been measured on a second host; see the commercial-probe paragraph above). Neither
+could be confirmed on the reference host, and in both cases the obstacle was the install
+rather than the flag: `innovus -version` exits 0 reporting an expired build authorisation,
+and `vsim -version` exits 0 failing to load `libXext.so.6`. A site with a working install of
+either should confirm the flag and contribute it here.
 
-即使用途相似，`role` 相同而 `dialect` 不同仍意味着工具无法互换。`environment_validation` 会报告这种共存情况。
+**The remaining `UNVERIFIED` rows above have no probe evidence at all, which is worth
+recording precisely so a later contributor does not re-measure it blind:**
+`voltus -version` and `tempus -version` each exit 0 but with `cds_plat.dat` absent, the
+same shape as the `innovus` failure. `joules`, `conformal`, `starrc`, `liberate`, and `jg`
+did not resolve to a binary under `<root>/linux/<version>/bin/` on the reference host at
+all. Three of the exit-0 cases print no version line, which is exactly why rule 4's WARN
+conditions below treat "exits 0, no version line" as its own case rather than a pass.
 
-**单成员角色是有意设计，并非遗漏**：可能具有相同功能的其他工具已归入其主要角色，所以目前这些角色不会产生命令方言冲突 WARN：
-- `lint_cdc` 仅含 `spyglass`。`jg` 和 `vsim` 也能处理跨时钟域问题，但分别记录于 `formal` 和 `rtl_simulator`。`tool-status.json` 中每个工具只有一个 `role`，二者的主要工作已归入其他角色。
-- `mem_compiler` 仅含 `artisan`。Synopsys 存储器编译器与 `siliconsmart` 共用可执行文件，后者按实际工作记录于 `characterisation`。
-- `extraction` 仅含 `starrc`；本仓库没有 Skill 列出第二个提取工具。
-- `power_analysis` 包含三个有命令的同类工具，以及下方三个无命令的产品；`voltus`、`primepower`、`joules`、`powerpro` 都没有第二个相同方言的替代工具。
-- `embedded_compiler` 中只有 `armcc` 有命令，Green Hills 和 IAR 是无命令的同类产品。
+**`urg` and `imc` read the coverage databases their simulator writes, and nothing else.** `urg`
+ships in the VCS tree (`$VCS_HOME/bin/urg`); `urg -version` was measured on the reference host:
+exit 0 in under 1 s, `URG Version Y-2026.03`, no license checkout. `imc` is **not** reliably
+installed with Xcelium: it ships under `$XCELIUM_HOME/tools/bin` on some installs and with
+vManager/IMC on others, and is often off PATH even when `xrun` is on it. On the reference host
+the Xcelium 24.03 tree holds only `tools/bin/launch_rmi_imc.sh` and no `imc` binary anywhere,
+which is why `imc` has no measured probe. `tool_discovery` rule 4 searches for it off PATH and
+records a missing one as a coverage-reporting gap, not as a coverage failure.
+The two share the role `coverage_report` and are not substitutable: each reads only its own
+simulator's database (`.vdb` vs `cov_work/**/*.ucd`), so a VCS database cannot be reported by
+`imc`, nor an Xcelium one by `urg`.
 
-**领域 Skill 中列出、但未记录命令的产品无法由本表检测**（本表以 `which <command>` 为键，无命令的行无法探测）：Synopsys Platform Architect（`arch_simulator`/`synopsys`）、ARM Performance Models（`arch_simulator`/`arm`）、Cadence Virtual System Platform（`arch_simulator`/`cadence`）、Green Hills MULTI（`embedded_compiler`/`greenhills`）、IAR Embedded Workbench（`embedded_compiler`/`iar`）、Synopsys Synplify（`synthesis`/`synopsys`）、Siemens Aprisa（`physical_design`/`siemens`）、Synopsys PrimePower、Cadence Joules RTL、Siemens Questa PowerPro（均为 `power_analysis`）及 Synopsys VC Static（`lint_cdc`/`synopsys`）。命令名与探测选项一样不能猜测；应在所属领域 Skill 的使用位置赋予 `role` 和 `dialect`。
+Note on Formality: the primary command is `fm_shell`. `formality` is the legacy GUI wrapper
+and is absent from recent installs, so it is listed as the alternate.
+
+Same `role` with a different `dialect` means the two tools are not interchangeable
+however similar their purpose. `environment_validation` reports such coexistence.
+
+**Single-member roles are intentional, not an oversight** — each is a role whose only
+plausible peers are already claimed by their primary role, so the role can never produce a
+dialect-conflict WARN today:
+- `lint_cdc` holds only `spyglass`. `jg` and `vsim` also do clock-domain-crossing work, but
+  `jg` is recorded under `formal` and `vsim` under `rtl_simulator` — a tool carries one
+  `role` in `tool-status.json`, and each already does its primary job elsewhere.
+- `mem_compiler` holds only `artisan`. Synopsys's memory compiler shares a binary with
+  `siliconsmart`, which is recorded under `characterisation` — the job that binary performs.
+- `extraction` holds `StarXtract` (synopsys) and `quantus` (cadence): two dialects, and their
+  tech files (`nxtgrd` vs `qrcTech`) are not interchangeable either. `extraction_tech` holds the
+  two tech-file generators, `grdgenxo` and `Techgen`, kept apart from the extractors because they
+  run once per PDK, not once per design.
+- `library_prep` holds `lc_shell` and `icc2_lm_shell`, both synopsys: `.lib`→`.db` and the NDM
+  reference library. The Cadence flows read `.lib`/LEF directly and need no peer.
+- `ir_em` holds `redhawk` and `totem` (ansys). Voltus would be its cadence peer but is filed under
+  `power_analysis`, the job it is used for here.
+- `power_analysis` has three single-command peers plus three commandless ones (below); none
+  of `voltus`, `primepower`, `joules`, or `powerpro` has a second same-dialect alternative.
+- `embedded_compiler` holds only `armcc` with a command; Green Hills and IAR are its
+  commandless peers.
+
+**Products named in domain skills with no documented command, so not detectable by this
+table** (the table is keyed on `which <command>`; a row with no command cannot be probed):
+Synopsys Platform Architect (`arch_simulator`/`synopsys`), ARM Performance Models
+(`arch_simulator`/`arm`), Cadence Virtual System Platform (`arch_simulator`/`cadence`),
+Green Hills MULTI (`embedded_compiler`/`greenhills`), IAR Embedded Workbench
+(`embedded_compiler`/`iar`), Synopsys Synplify (`synthesis`/`synopsys`), Siemens Aprisa
+(`physical_design`/`siemens`), Synopsys PrimePower (it runs inside `pt_shell`, so detecting
+PrimeTime is detecting it) and Siemens Questa PowerPro (both `power_analysis`; Cadence Joules
+now has its `joules` row above), Synopsys VC Static (`lint_cdc`/`synopsys`). A command name
+is not guessed here any more than a probe flag is above; each is instead given its `role`
+and `dialect` at the point of use in its domain skill.
 
 ---
 
