@@ -5,7 +5,7 @@
 
 > 翻译自 [`rtlix/digital-chip-design-agents`](https://github.com/rtlix/digital-chip-design-agents)。
 > This repository is the Chinese translation of [rtlix/digital-chip-design-agents](https://github.com/rtlix/digital-chip-design-agents). For the original project README, see the [English README](https://github.com/rtlix/digital-chip-design-agents/blob/master/README.md).
-> 本译本已同步至英文仓库 [`38736b1`](https://github.com/rtlix/digital-chip-design-agents/commit/38736b1)（v1.9.1，2026-10-07）。
+> 当前中文译本以英文仓库 [`04ee9ab`](https://github.com/rtlix/digital-chip-design-agents/commit/04ee9ab965d8c893687307939930dc8ffd6d6ed3)（2026-11-10）为对照基准，并持续同步各领域规则与文档。
 
 [![Validate](https://github.com/hdl-tools/digital-chip-design-agents/actions/workflows/validate.yml/badge.svg)](https://github.com/hdl-tools/digital-chip-design-agents/actions/workflows/validate.yml)
 
@@ -76,13 +76,23 @@ Claude 会在执行前自动加载正确的 Skill。
 
 ## Memory 系统
 
-每个领域 Orchestrator 都会从 `memory/` 下的两级持久化 Memory 中读取和写入信息：
+项目采用**两级持久化 Memory**：`knowledge.md` 保存可复用的领域经验，
+`experiences.jsonl` 按 `run_id` 记录各次任务的运行结果。
+**实际运行时的 Memory 默认保存在机器级中央目录，而不是本仓库的 `memory/` 目录。**
+因此，在不同项目工作目录中运行的 Agent 可以共享累积的知识。
 
-- **`memory/<domain>/knowledge.md`** —— 已蒸馏的经验总结，例如失败模式、有效工具参数、PDK/工具特殊行为；每次会话开始时读取。
-- **`memory/<domain>/experiences.jsonl`** —— 每次运行一条记录，以 `run_id` 进行 upsert；无论 sign-off、escalation 还是 abandon 都会写入。
+默认位置：Linux/macOS 为
+`${XDG_DATA_HOME:-$HOME/.local/share}/chip-design-agents/digital/memory`，
+Windows 为 `%LOCALAPPDATA%\chip-design-agents\digital\memory`。
+可用环境变量 `CHIP_DESIGN_MEMORY_ROOT` 或脚本参数 `--memory-root`
+覆盖默认位置；仅在中央目录不可写时才回退使用仓库内的 `memory/`。
 
-可使用 `memory-keeper` Skill 将积累的运行记录重新蒸馏进 `knowledge.md`，并使用 `tools/qor_trends.py` 跟踪多次运行中的 QoR 趋势。完整 schema、蒸馏流程和 QoR 示例见 **[memory/README.md](memory/README.md)**。
+- **`<MEM>/<domain>/knowledge.md`** —— 已蒸馏的失败模式、工具参数、PDK 特性等经验，Agent 在任务开始时读取。
+- **`<MEM>/<domain>/experiences.jsonl`** —— 每次运行按 `run_id` 更新的记录，包括正常签核、升级和放弃的终止路径。
+- **仓库内的 `memory/<domain>/knowledge.md`** —— 受版本控制的初始知识种子；初始化中央目录时仅复制尚不存在的文件，不覆盖运行期间积累的内容。
 
+使用 `memory-keeper` Skill 蒸馏经验，并通过 `tools/qor_trends.py` 跟踪 QoR 趋势。
+详细路径优先级、初始化流程和记录格式见 **[memory/README.md](memory/README.md)**。
 ---
 
 ## 仓库结构
@@ -92,7 +102,7 @@ digital-chip-design-agents/
 ├── .claude-plugin/marketplace.json   ← Marketplace 注册表（全部 16 个插件）
 ├── plugins/                          ← 每个插件独立目录（Skill + Orchestrator）
 ├── ides/                             ← IDE 专用配置（Copilot / Gemini / OpenCode / Codex）
-├── memory/                           ← 各领域持久化两级 Memory（见 memory/README.md）
+├── memory/                           ← 受版本控制的 Memory 种子（见 memory/README.md）
 ├── docs/                             ← 安装说明、流水线图、各领域流程文档
 ├── tools/qor_trends.py               ← QoR 趋势与回归检测
 └── .github/workflows/                ← CI（validate.yml）和发布流程（release.yml）
