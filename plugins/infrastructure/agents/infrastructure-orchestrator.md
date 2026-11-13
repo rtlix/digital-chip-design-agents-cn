@@ -31,11 +31,12 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 - xschem、GTKWave、uv
 
 ### Proprietary（只检测，绝不安装）
-跟踪 34 个专有工具（完整命令/探测表见基础设施 Skill 的 Proprietary 章节）。此处按 role 分组，因为方言冲突以角色为单位警告；同角色不同 dialect 的工具不能互换，一种方言的命令行对同角色另一方言无效。
+跟踪 46 个专有工具（完整命令/探测表见基础设施 Skill 的 Proprietary 章节）。此处按 role 分组，因为方言冲突以角色为单位警告；同角色不同 dialect 的工具不能互换，一种方言的命令行对同角色另一方言无效。
 
 | `role` | dialects present (tool `command`) |
 |---|---|
 | `rtl_simulator` | `synopsys` (`vcs`) · `cadence` (`xrun`) · `siemens` (`vsim`) |
+| `coverage_report` | `synopsys` (`urg`) · `cadence` (`imc`) |
 | `synthesis` | `synopsys` (`dc_shell`, `fc_shell`, Synplify) · `cadence` (`genus`) |
 | `physical_design` | `cadence` (`innovus`) · `synopsys` (`icc2_shell`) · `siemens` (Aprisa) |
 | `sta` | `synopsys` (`pt_shell`) · `cadence` (`tempus`) |
@@ -47,8 +48,12 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 | `fpga_pnr` | `xilinx` (`vivado`) · `intel` (`quartus_sh`) · `microchip` (`libero`) |
 | `mem_compiler` | `arm` (`artisan`) — 单一命令方言 |
 | `characterisation` | `synopsys` (`siliconsmart`) · `cadence` (`liberate`) |
-| `extraction` | `synopsys` (`starrc`) — 单一命令方言 |
+| `extraction` | `synopsys` (`StarXtract`) · `cadence` (`quantus`) |
+| `extraction_tech` | `synopsys` (`grdgenxo`) · `cadence` (`Techgen`) |
+| `library_prep` | `synopsys` (`lc_shell`, `icc2_lm_shell`) — 单一方言 |
+| `ir_em` | `ansys` (`redhawk`, `totem`) — 单一方言 |
 | `power_analysis` | `cadence` (`voltus`, Joules RTL) · `synopsys` (PrimePower) · `siemens` (PowerPro) |
+| `drc_lvs` | `klayout` · `magic` · `netgen`（开源）· `siemens` (`calibre`) · `cadence` (`pvs`) |
 | `embedded_compiler` | `arm` (`armcc`) · `greenhills` (MULTI) · `iar` (Embedded Workbench) |
 | `debug_probe` | `segger` (`JLinkGDBServer`) · `lauterbach` (`t32marm`) · `arm` (`armds`) |
 | `arch_simulator` | `synopsys` (Platform Architect) · `arm` (Performance Models) · `cadence` (VSP) |
@@ -98,8 +103,13 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
     "exec": null,
     "type": null,
     "bin_dir": null,
-    "module_name": null
+    "module_name": null,
+    "base_exec": null,
+    "floor": null,
+    "venv_planned": false,
+    "candidates": []
   },
+  "coverage_reporting_gaps": [],
   "module_system": null,
   "module_system_detail": null,
   "module_listing": null,
