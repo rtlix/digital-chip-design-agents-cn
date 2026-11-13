@@ -68,9 +68,9 @@ floorplan → placement → cts → routing → extraction → timing_optimizati
 - `lvs_errors`：0。
 - `antenna_violations`：0。
 - `core_area_util_pct`：≤ `design_state.constraints.area.utilization_pct_max`（默认 85%）。
-- `ir_drop_pct`：小于 `design_state.constraints.power.ir_drop_pct_max`（默认 5%）；取最终布线数据库的 `ir_em` 阶段测得的静态/动态最差值。
-- `em_violations`：0。
-- `power_mw`：若存在功耗预算，则必须 ≤ `design_state.constraints.power.power_mw`；没有目标预算的对比运行仅记录结果，不用于判定，并标注 `comparison run, no target`。
+- ir_drop_pct: 小于 `design_state.constraints.power.ir_drop_pct_max`（默认 5%）；取最终布线数据库的 `ir_em` 阶段测得的静态/动态最差值。
+- em_violations: 0。
+- power_mw: 若存在功耗预算，则必须 ≤ `design_state.constraints.power.power_mw`；没有目标预算的对比运行仅记录结果，不用于判定，并标注 `comparison run, no target`。
 - `metal_density`：处于晶圆厂规定的窗口内。
 - 上述时序和功耗指标必须来自**提取寄生参数后的签核 STA 引擎**（`extraction` 阶段），不得采用实施工具自己的估计作为判定依据；可保留实施工具数字，但必须标为 `native`（见 STA Skill 跨工具公平比较规则）。
 
