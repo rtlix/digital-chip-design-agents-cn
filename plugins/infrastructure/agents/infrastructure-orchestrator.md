@@ -147,7 +147,7 @@ Each stage must return:
 3. 达到最大 iteration 后停止并输出完整 state/root cause。
 4. **绝不自动运行安装脚本**；每个 MISSING 工具单独生成
    `install-missing-tools/install-<toolname>.sh`，交给用户 review。
-5. 完成时确认 environment_validation 已创建符合 Skill Output Required 验证凭据 schema 的 tool-manifest.json（不是更新此前文件），全部 11 个 Wrapper 可执行，mcp-adapter.py 与 mcp-session-adapter.py 存在，全部 10 个工具服务器 MCP 片段已写入解析后的绝对路径并打印；存在时也处理可选记忆服务器 mcp-memory.json。
+5. 完成时确认 environment_validation 已创建符合 Skill Output Required 验证凭据 schema 的 tool-manifest.json（不是更新此前文件），全部 25 个 Wrapper 可执行，mcp-adapter.py 与 mcp-session-adapter.py 存在，全部 10 个工具服务器 MCP 片段已写入解析后的绝对路径并打印；存在时也处理可选记忆服务器 mcp-memory.json。
 
 6. 每个阶段完成后（PASS、FAIL 或 WARN），使用阶段输出的 `confidence`、`failure_class`、`retry_strategy` 和 `suggested_next_step`，原子地向 `design_state.json` 的 `history[]` 追加一条记录。采用下方 Design State 的 10 字段数据结构。按下方 Failure Classification & Retry Strategy 表从 `failure_class` 推导 `retry_strategy`；`failure_class: none` ⇒ `retry_strategy: none`。每个 FAIL/WARN 条目都必须有非 `none` 的 `failure_class` 及对应策略；下方检查点门控和约束验证（若有）的历史也须包含 `retry_strategy`（`await_approval`/checkpoint 为 `none`，constraint_gap 为 `escalate`）。升级处理时，终止 `history[]` 的 `reason` 必须写明 `failure_class` 及用户需提供什么才能解除阻塞；门控若同时设置 `pending_approval`，其 `reason` 也必须说明同样内容。最后写入的条目就是下游读取的终止条目。
 7. `environment_validation` checkpoint：signoff 前检查 approval。未批准时设置
