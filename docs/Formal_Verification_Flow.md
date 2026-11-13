@@ -1,4 +1,8 @@
 # 形式验证流程 — 完整架构设计
+
+## Stage Sequence
+
+property_planning → environment_setup → fpv_run → cex_analysis → lec_run → formal_signoff
 ## Orchestrator + Stage Agents + Skills
 
 > **目的**：AI 驱动的 Formal Verification 流程，覆盖 Formal Property Verification（FPV）、Logical Equivalence Checking（LEC）以及 CDC/RDC formal analysis。它与 simulation-based verification 互补，用穷尽证明补足仿真覆盖不到的状态空间。
