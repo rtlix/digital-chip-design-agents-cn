@@ -36,6 +36,8 @@ Multi-corner ECO loop 会在同一个已加载 design 上反复查询 timing，�
 4. **Wrapper** —— `wrap-opensta.sh` / `wrap-openroad.sh`。
 5. **Direct execution** —— 最后选择；multi-corner timing report 很大。
 
+**Fair Cross-Tool Comparison**：跨 implementation-tool 比较必须使用 same SDC、same extractor/tech、same STA engine、same activity assumptions；native report 只作诊断，不直接排名。
+
 ## Loop-Back Rules
 - path_analysis: violations found             → exception_review       （不限次数） `timing`
 - exception_review: invalid exceptions       → path_analysis          （最多 3×） `timing`
