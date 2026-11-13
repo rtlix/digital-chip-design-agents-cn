@@ -102,7 +102,11 @@ perf_modelling → power_area_estimation → risk_assessment → arch_signoff
     - **回退完整流程。** refinement_needed=true 但 candidates[] 为空（持久化候选机制引入前的状态）时，从 spec_analysis 运行全部阶段，将 refinement_request 作为 arch_exploration 输入。
     - **关闭请求。** 仅 arch_signoff 通过时，将 refinement_request 加 `{ "serviced_by_run": "<run_id>", "outcome": "<选中候选及相对 constraint_ref 的重新估计值>" }` 追加到 architecture.refinement_history[]，将 refinement_request 设为 null、refinement_needed 设为 false，并更新 selected_candidate。其他终止路径保持这两个字段及 refinement_history[] 原值。
 
-10. Candidate persistence and refinement mode: 每个 architecture candidate（包括 **rejected** candidate）生成/评估后都按稳定 candidate id **upsert** 到 `design_state.architecture.candidates[]`，不得重写/丢弃旧候选。如果 `architecture.refinement_needed=true`，从已持久化 candidates 恢复并重新进入 `perf_modelling`，不要从空白重新探索；完成 refinement 后更新 selected candidate，并清理已处理的 refinement request。
+10. Candidate persistence and refinement mode:
+    - **Persist every candidate.** 在 `arch_exploration` 把完整 trade-off matrix 写入 `design_state.architecture.candidates[]`，包括 **rejected** 和 infeasible candidate，并保存 `rejection_reason`。按 `name` **upsert**：已有项更新，新项追加，**never clear the array**。后续 stage 更新重新评分的 `freq_mhz`、`area_um2`、`power_mw`、`risk`、`status`；必须且只能有一个 `status: "selected"`，与 `selected_candidate` 一致。
+    - **Enter refinement mode**：当 session-start 读取到 `architecture.refinement_needed == true`、非 null `refinement_request`、且 `architecture.candidates[]` 非空，并且 prompt 没有 `fix_request.id` 时，跳过 `spec_analysis`/`arch_exploration`，**start at `perf_modelling`**。使用 downstream measured result 重新评分所有持久化 candidate，包括 rejected candidate。
+    - **Fall back to the full flow**：如果 `refinement_needed` 为 true 但 **`candidates[]` is empty**，说明状态来自旧版本；从 `spec_analysis` 开始，并把 `refinement_request` 作为 `arch_exploration` 输入。
+    - **Close the request only when `arch_signoff` passes**：把 request 加上 serviced run/outcome 追加到 **`refinement_history[]`**，然后清空 `refinement_request`、把 `refinement_needed` 设为 false 并更新 selected candidate。其他终止路径保持 request/history 不变；也就是 flag **only when `arch_signoff` passes** 才清除。
 
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
@@ -286,7 +290,7 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 
 如果存在 `query_experiences` MCP，可在第一阶段前使用 `domain="architecture"`、当前目标/失败问题作为 query，并提供已知 `pdk`、`tool_used`、`design_name` filter。工具不存在时继续只使用 `knowledge.md`。
 
-### Write（会话结束）
+### Write (session end)
 任何终止路径都按 `run_id` upsert `<MEM>/architecture/experiences.jsonl`。实现方式：读取 JSONL，过滤掉相同 run_id 的旧行，追加新 record，再通过临时文件 + rename 原子替换，避免 partial write。
 
 ```json
