@@ -20,3 +20,11 @@
 ## Notes
 
 - 每次 netlist change 后都应运行 LEC，而不是只在 sign-off。未验证 netlist 进入 PD 后再暴露 LEC fail，会造成完整 PD 重跑。
+
+
+## Commercial Flow Measured Notes
+- **DC-NXT NDM topographical**：NDM flow 使用 `dcnxt_shell -topographical_mode`。传统 `dc_shell -topographical_mode` 属于 Milkyway flow，不能假设具备相同 NDM 命令。
+- **SVF**：在 DC 中 `set_svf <file>` 应位于 `analyze` 前，供 Formality 解释 constant/merge 优化。
+- **tt-only ripple adder risk**：仅 tt + aggressive area recovery 曾形成 ripple-carry adder，zero-wire PrimeTime 在 ss 角约 -10.5 ns；用 MCMM ss/tt setup + ff/tt hold 重新综合并 `set_fix_hold`。
+- **Genus physical-aware**：`read_mmmc` + `read_physical -lef` + `syn_generic -physical` + `syn_map -physical` + `syn_opt`。缺 qrcTechFile 时 `syn_opt -spatial` 可报 PHYS-1015。
+- **Command ownership**：`compile_ultra` 属于 Design Compiler；Genus 使用 `syn_*`；Fusion Compiler 使用 `compile_fusion`。
