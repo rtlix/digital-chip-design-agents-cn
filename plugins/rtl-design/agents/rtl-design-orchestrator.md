@@ -53,7 +53,7 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 - rtl_signoff FAIL (missing modules)         → module_planning   （最多 1×） `spec_gap`
 - rtl_signoff FAIL (quality issues)          → rtl_coding        （最多 2×） `functional`
 
-- design_input_check FAIL (input set wrong: duplicate include basename, stale or sibling generated tree, missing path, shadowing config) → escalate: "input_setup: repoint the filelist/include/config; no RTL was edited"
+- design_input_check FAIL (input set wrong: duplicate include basename, stale or sibling generated tree, missing path, shadowing config) → escalate: "input_setup: repoint the filelist/include/config; **edit no `.v`/`.sv` file**"
 - design_input_check FAIL (registration only: a module this run added is missing from a tool's source list) → rtl_coding (add the file to each list that misses it; edit no RTL; max 1×) `connectivity`
 - lint_check FAIL (rule check did not complete; cause in input set or not attributed to RTL this run wrote) → escalate `input_setup`
 - lint_check FAIL (rule check did not complete; parse error confined to RTL this run wrote, design_input_check PASS) → rtl_coding `tool_error`, never `functional`
