@@ -2,6 +2,314 @@
 
 ## [Unreleased]
 
+
+### 商业 RTL→GDS：Sky130 三流程对比的实测 Tool Notes
+
+下面“商业 RTL→GDS 脚手架”中的概念性说明，现已替换为真实命令和实测失败模式。测试环境是一台
+8 vCPU / 15 GB 主机，对约 3 万 cell、10 个 SRAM macro 的 Sky130 CPU macro 分别执行
+DC-NXT → ICC2、Genus → Innovus，并以 OpenROAD/LibreLane 为参考，使用
+StarRC + PrimeTime/PrimePower 统一评估，Formality/Conformal 做等价验证，
+Magic/KLayout/Netgen 做物理检查，RedHawk 做 IR/EM。
+所有 Tool Notes 都注明实测工具版本；未实测内容不会被写成“可直接照做”的 recipe。
+
+插件版本：
+`chip-design-pd`、`-sta`、`-synthesis`、`-formal` 从 1.3.0 升到 1.4.0；
+`chip-design-infrastructure` 从 1.4.0 升到 1.5.0；
+其他领域因 Memory-root 文案更新做 patch bump。
+
+#### 新增
+
+- **PD：`## PDK Enablement` → “Measured on Sky130”**
+  - `lc_shell` 在 `read_lib` 完成后可能于进程退出阶段 segfault，必须根据生成物 read-back 判断，而不能只看 exit code。
+  - 从 tech LEF 构造 `.tf` 时处理 LIB-007、gapless mask、各 block routing direction。
+  - ICC2 multi-corner 使用一个 **multi-pane NDM**，并运行 `check_workspace -allow_missing`。
+  - 记录 `grdgenxo` / `Techgen` runtime。
+  - 修复 `generateCapTbl` 把 li1 当 POLY 的问题，以及 ICT 中 `li1 → met0` 映射。
+  - 增加 StarRC vs OpenRCX correlation、RedHawk tech conversion、Genus/Innovus MMMC dialect 分离。
+
+- **PD Tool Notes（实测）**
+  - Innovus 23.14：每 view 使用 `-latency_file`；`update_io_latency false`；完整 MMMC 消除 ss reg-to-reg 漏检；
+    `holdTargetSlack 0.2` 对冲实测约 0.17 ns 的 ff optimism；
+    activity 0.2 vs 0.1；`create_inst` / `editAddRoute` 静默无效时改用
+    `addInst -physical` / `add_shape`；`refinePlace` 必须先于 `ecoRoute`；
+    antenna 修复采用 source 端 tap；记录 `npc.2` 等 rule。
+  - ICC2 X-2025.06-SP1：`global_min_layer_mode hard`；fat-table 到 power strap 的 met4 spacing
+    不会自动保证，因此增加 0.1 um halo；PVT pane selection；tt-only hold 可能形成弱 delay chain；
+    `add_buffer` 后可能落到 row grid 外；支持 forced min-layer reroute；
+    antenna ECO 可由 OpenROAD list 驱动；使用 `change_names -case_insensitive` +
+    `write_verilog -exclude supply_statements`；cold startup 实测 30–65 min。
+  - 新增 **StarRC**、**RedHawk** Tool Notes：
+    `INSTANCE_POWER_FILES` 必须用复数；实例名建议 escape-free；
+    `ENABLE_AUTO_EM 1`；PEAK-mode EM 不能直接判 PASS/FAIL；
+    dynamic IR 与 decap 配置相关。
+  - 新增 **Magic/KLayout/Netgen** 实测说明：部分 full-chip 检查约需 11 GiB，
+    工具应单独运行；区分 SRAM footprint 和 `nwell.4` 等 artifact 类别。
+
+- **STA**
+  - 新增 PrimeTime X-2025.06 multi-corner judge recipe：每 library × RC corner 独立 session；
+    SDC 以 md5 验证；pin-to-pin annotation gate；拒绝空 metric。
+  - 记录 `read_sdc` 遇到首个 unsupported command 后会丢弃后续约束的风险，特别是 Innovus 导出的 SDC。
+  - 区分工具自己写出的 SDC variant。
+  - PrimePower activity 与 OpenSTA 对齐。
+  - Fair-comparison rule 7：通过 md5 证明每次 judge 用到的输入；
+    rule 8：implementation 必须在实际被 judge 的 corner 中 closure。
+
+- **Synthesis**
+  - DC-NXT X-2025.06-SP3：NDM 使用 `dcnxt_shell -topographical_mode`；
+    TLU+；SVF；tt-only area recovery 可能生成 ripple adder，改为 MCMM。
+  - Genus 23.14：记录 `syn_*` timing、缺 QRC tech file 时的 PHYS-1015、SDC-200。
+  - 记录 peak RSS。
+
+- **Formal**
+  - 增加 Formality / Conformal Tool Notes：SVF 和 read order、Genus dofile 使用 `lec -xl`、
+    `tclmode`、direct/flat confirmation、diode-stripped compare。
+  - Flat netlist negative control 改为按结构定位 mutant anchor，不能依赖容易变化的 literal instance name。
+
+- **Infrastructure**
+  - 新增 *Licensed tools on a small shared host*：
+    用 `flock` 替代 `pgrep` gate；
+    启动前检查 load / memory，放进可 group-kill、带 MemoryMax 的 scope；
+    线程数 ≤2；考虑共享 VM 上慢 license startup；长任务用 done-marker 等待。
+
+- 将本轮 campaign 的经验蒸馏进
+  `memory/{pd,sta,synthesis,formal,infrastructure}/knowledge.md`。
+
+#### 变更
+
+- 所有 domain Skill 都使用解析后的 `<MEM>` 根目录，而不是字面量 `memory/`。
+- `wrap-innovus.sh` / `wrap-genus.sh` 的示例更新为实测调用：
+  `innovus -nowin -files … -log … -overwrite`、
+  `genus -no_gui -overwrite -f …`。
+
+### 商业 RTL→GDS 脚手架：PD/signoff wrapper、extraction/IR stage 与公平对比
+
+为在 open PDK 上引入商业流程并和 OpenROAD/LibreLane 公平比较，新增
+DC/Genus/FC、Innovus/ICC2、StarRC/Quantus、PrimeTime/PrimePower、
+RedHawk、Formality/Conformal 的基础设施和流程结构。
+未实测部分明确标成 scaffolding，后续实测结果见上一节。
+
+插件版本：
+`chip-design-infrastructure` 1.3.0 → 1.4.0；
+`chip-design-pd`、`chip-design-sta`、`chip-design-formal`、`chip-design-synthesis`
+1.2.1 → 1.3.0。
+
+#### 新增
+
+- **11 个 wrapper（14 → 25）**：
+  `wrap-dc.sh`、`wrap-genus.sh`、`wrap-innovus.sh`、`wrap-icc2.sh`
+  （`WRAP_ICC2_TOOL=fc_shell`）、`wrap-pt.sh`、`wrap-starrc.sh`、
+  `wrap-fm.sh`、`wrap-lec.sh`、`wrap-redhawk.sh`
+  （`WRAP_REDHAWK_TOOL=totem`）、`wrap-magic.sh`、`wrap-netgen.sh`。
+  与已有 wrapper 使用相同 contract。
+  Message prefix 必须按行首匹配：Synopsys `Error:/Warning:` + code，
+  Cadence `**ERROR:/**WARN:`，Conformal `// Error:`，避免把 “0 error(s)” 当错误。
+  Formality 的 `FAILED/INCONCLUSIVE`、Conformal 的 `Non-equivalent/Abort`、
+  Netgen 的 `Netlists do not match` 即使 exit 0 也判 FAIL。
+  `wrap-starrc.sh` 判断 command file 指向的 SPEF 是否新鲜、是否有 `*SPEF` header 和 `*D_NET`，
+  而不是只看 log。所有 wrapper 的 `--version` 不启动重工具。
+
+- **PD 新增 `extraction` 与 `ir_em` stage**：
+  `… routing → extraction → timing_optimization … → ir_em → signoff`。
+  增加 annotation coverage gate、IR 前 PG-shape 检查以及 `## PDK Enablement`。
+  包括每 corner `.lib→.db`（含 macro）、tech LEF → NDM、MMMC、
+  authored ITF/ICT → `nxtgrd/qrcTech`，并和 OpenRCX/Magic correlation，
+  以及 RedHawk tech 和开源 Magic/KLayout/Netgen deck。
+
+- **STA Fair Cross-Tool Comparison**
+  - 比较 flow 必须使用相同 SDC（记录 md5）、相同 extractor + tech、相同 STA engine、
+    相同 activity assumption。
+  - 工具自身报告仅标为 `native`，不能直接跨工具排名。
+  - PrimeTime multi-corner / PrimePower outline。
+  - 未 annotation 的 parasitic 以 `input_setup` FAIL。
+
+- **Formal**：`lec_run` 增加 Formality 和 Conformal，并要求在相信 EQUIVALENT 前跑 mutated-netlist negative control。
+
+- **Synthesis**：
+  DC topographical、Genus（`read_mmmc`、`read_physical`、`syn_*`）、
+  FC（`compile_fusion`）流程 outline。
+
+- **Infrastructure**
+  - 增加 `lc_shell`、`icc2_lm_shell`、`grdgenxo`、`quantus`、`Techgen`、
+    `joules`、`redhawk`、`totem`、`calibre`、`pvs`、`magic`、`netgen`。
+  - 第二台主机实测 version probe：Innovus 约 123 s、PrimeTime 约 120 s，
+    因此 probe budget 从 60 s 提到 180 s。
+  - Vendor launcher 的 `*_exec` child 可能在裸 `timeout` 后继续占 license，
+    所以必须以 process group 运行。
+  - ≤16 GB 主机一次只跑一个重 PD/STA tool。
+
+- **QoR trends**：新增 `power_mw`、`runtime_s`、`peak_rss_gb`；
+  PD 还增加 `hold_wns_ns`、`tns_ns`、`util_pct`、`wirelength_um`。
+
+#### 变更
+
+- `conformal` → `lec`，`starrc` → `StarXtract`；旧名字都不是实际 binary。
+- Tempus/Voltus 作为 optional row；主机缺少时可用 PrimeTime/PrimePower + RedHawk。
+- PD Agent sign-off criteria 新增 IR drop、EM、power、density。
+- Comparison run（`pipeline_config.comparison_run`）允许 synthesis/PD 缺 area/power target，
+  记录为 **“comparison run, no target”**，不升级为 spec_gap。
+- maxTurns：synthesis 40→100，PD 100→150。
+- PD/STA/Synthesis Skill 全部使用解析后的 `<MEM>`。
+
+#### 修复
+
+- `memory/formal/knowledge.md`：
+  `sby --depth/--vacuity/--multiclock` 不是 CLI flag；
+  depth/multiclock 属于 `.sby [options]`，vacuity 使用 cover/reachability 检查。
+  删除 JasperGold 2024.12 console 中不存在的 `jg -allow_empty_cex`。
+- `memory/synthesis/knowledge.md`：
+  原文把 `compile_ultra` 错归到 Genus/Fusion Compiler；已纠正为 Design Compiler 命令。
+
+### SpyGlass 与 Tessent：证明静态检查真的执行，并固化 Tessent 流程
+
+本轮来自同一主机上的 SoC SpyGlass lint/CDC/RDC、Tessent scan+ATPG 和 Tessent MemoryBIST 实测。
+这些工具都曾出现“exit 0，但实际上没有检查任何东西”的情况，因此新增 fail-capable contract。
+
+#### 新增
+
+- **rtl-design `cdc_rdc_analysis` rules 7–9**
+  - CDC/RDC 只有在 negative-control design（未同步 crossing、已同步 crossing、跨域 async reset）
+    能被正确识别时才算实际执行，否则阶段是 NOT RUN。
+  - 实测 SpyGlass `cdc_verify_struct` 在全部 crossing rule 被跳过时仍 exit 0；
+    日志出现 `Ac_license01`，请求 feature `cdc_adv_checker`，而 server 只列出 `Advanced_CDC`。
+  - 必须解析 skipped-rule 与 license failure。
+
+- **rtl-design `lint_check` rule 16**
+  - First-party module 被 black-box 后，其 finding 数是 unknown，不是 0。
+  - SpyGlass 遇到带 `string` 或 `real` parameter 的 module 可能 black-box，甚至把 SoC top 整体移除。
+  - 修复方式是 line-count-preserving analysis copy，绝不能修改真实 RTL 来迁就 lint 工具。
+
+- **DFT Skill：Siemens Tessent Tool Notes**
+  - context-based scan insertion + ATPG。
+  - legacy `add_scan_groups` 流程曾“成功退出但插入 0 个 cell”。
+  - LibComp → `.tcelllib`、`dft_cell_selection` 人工筛选、MemoryBIST、TCD trap。
+  - Batch 使用 `< /dev/null`、`-replace`，并清理 stale TSDB。
+
+- **DFT fail-capable rules**
+  - ATPG 6–8：pattern-subset simulation 必须明确是 subset；
+    pattern testbench 必须能让 broken-scan-link netlist 失败；
+    由同一 source 生成的两个模型不是独立验证。
+  - BIST 6–8：按 fault class 做 detection；
+    使用独立 golden model；
+    fault proof 覆盖完整地址空间（关闭 `reduced_address_count`）；
+    与自研 MBIST 做 like-for-like 比较。
+  - scan insertion rule 10：只有架构明确要求某些 flop 不进 scan chain 时，才允许把 Scan DRC error 降为 warning。
+  - DFT Orchestrator Behaviour Rule 10 指向这些 fail-capable check。
+
+- **Seed knowledge**
+  - `memory/dft`：Tessent 2025.4。
+  - `memory/rtl-design`：SpyGlass X-2025.06（`mthresh`、license feature）以及 Cadence HAL `-NOHALSYNTH`。
+
+#### 变更
+
+- DFT `dft_architecture` rule 2：
+  如果项目 DFT architecture 已固定 chain count，则该值优先；√(flip-flops) 仅在未指定时作为 fallback。
+- 除 Infrastructure 外的 15 个 Orchestrator：
+  如果解析后的 `knowledge.md` 不存在，继续流程但必须在 experience record 中明确记录，
+  并提示 `memory_root.py --init`，不再静默忽略。
+
+### 商业仿真器移植：VCS/Xcelium、Coverage Review 与“不要相信 exit code”
+
+来自一个约 1100 个 testcase 的 Verilator-only cocotb regression 移植到
+Synopsys VCS 与 Cadence Xcelium，并加入 code coverage。
+`chip-design-verification` 和 `chip-design-infrastructure` 从 1.2.0 升到 1.3.0。
+
+#### 新增
+
+- **`wrap-cocotb-results.sh`、`wrap-urg.sh`、`wrap-imc.sh`（11→14 wrapper）**
+  - `wrap-cocotb-results.sh` 不运行 simulator，只汇总 cocotb `results.xml`。
+    failure/error >0、testcase=0、missing/empty/unparseable/stale 文件都判 FAIL。
+    原因：cocotb 1.9.2 在 VCS/Xcelium 下即使 testcase 失败，`make` 也可能 exit 0。
+  - `wrap-urg.sh` 解析 VCS Y-2026.03 实测格式的 `dashboard.txt` 并拒绝 stale report。
+  - `wrap-imc.sh` 会在 PATH 之外继续查找 `$XCELIUM_HOME/tools/bin` 等目录；
+    如果 Xcelium 安装本身没有 IMC，则报告 clean tool-missing，而不是伪造 coverage。
+
+- **Verification port mode + `simulator_portability` stage**
+  `simulator_portability → coverage_analysis → regression_signoff`。
+  包括 cocotb `SIM` 与 make variable、Verilator→VCS/Xcelium flag translation、
+  单一 SIM-gated make include、`make -n + cmp -s` 证明 reference simulator 未被改动、
+  per-simulator `SIM_BUILD`、LRM strictness triage、每 simulator negative control、
+  staged scope 以及按 testcase 名称匹配 skip set。
+  新 simulator 暴露的 RTL LRM defect 必须走 `fix_request`，不能用 TB workaround 掩盖。
+
+- **Coverage mechanics**
+  - VCS / Xcelium / Verilator 命令表。
+  - DUT scope/exclusion。
+  - 每 test 唯一 coverage DB，merge 后再 report。
+  - 新增 report-only mode：禁止两个 coverage loop-back，只输出排序后的 hole list。
+
+- **Turn cap**
+  - DFT Orchestrator 50→150。
+  - RTL Design Orchestrator 60→120。
+  - 原因是实测单个 scoped Tessent task 和几个小型 RTL fix task 会在旧 cap 前被截断。
+  - Long-Running Jobs 已支持 checkpoint/resume，提升 cap 只是避免报告前被强制切断。
+
+- **RTL Lint Gate item 10**
+  - 使用 CI 实际运行的工具版本，并检查 CI 实际编译的所有文件。
+  - 实测 CI 注释写 Verilator 5.036，但 CI 实际是 5.048，新版 `PROCASSINIT` warning
+    会使 `-Wall` 下 behavioral SRAM model 失败。
+  - 版本来自 CI log/lockfile，而不是 README/comment。
+  - CI 会编译的 testbench/model 同样纳入 gate。
+  - 本地无法使用对应版本时必须构建或标记 NOT RUN。
+  - power-up value 使用 `initial` block，不使用 declaration initializer，也不写到 `always_ff` target。
+
+- **Multi-top coverage merge**
+  - cocotb 不同 suite 有不同 top；plain `urg -dir a.vdb b.vdb` 会静默只保留第一个 database 的 design。
+  - 使用 `urg -lca ... -flex_merge modules`。
+  - 每 build 的 `-cm_hier` 以 `+filelist` 开头。
+  - URG 全部 metric 为 `--` 即使 exit 0 也属于 NOT RUN；`wrap-urg.sh` 返回 unverified WARN。
+  - VCS 对 generate-loop iteration 的 line/branch 计数方式与 Verilator 不同，
+    waiver/exclusion 未翻译前不能直接比较 hole 数量。
+
+- **Regression license / resource rules**
+  - compile-and-run license smoke + timeout。
+  - Xcelium `-licqueue` 无 seat 时可能一直等待。
+  - job bound = `min(cores, RAM / peak, seats)`。
+  - 检查 `sim_build` free space。
+  - 长 regression 后台分 shard，并写入 `run_state.md` 以恢复。
+
+- **Infrastructure**
+  - 新增 `urg/imc`，role=`coverage_report`。
+  - 新增 `coverage_reporting_gaps`。
+  - environment validation 增加 regression resource 记录。
+  - cocotb 版本必须从 CI line 获取，并检查 1.x/2.x API 差异。
+  - csh activation script 防止 `prompt: Undefined variable`。
+
+- **VCS/Xcelium 实测移植问题**
+  - `xrun -defparam` 会忽略 string parameter（`*W,BDDSTR`），应通过 generated `defparam` top。
+  - VCS `-pvalue+` string 还需额外 shell escaping，否则出现 `PRM_ILLG`。
+  - Xcelium 绝不能在 make command line 上覆盖 `EXTRA_ARGS`。
+  - Verilator 的 `-I` 除 include 外也会帮助找 module；VCS/Xcelium 需同步为 `-y/+libext+`。
+  - 4-state `X` 来自 undriven input / unwritten state 时属于 TB defect。
+  - 使用单一 VPI hierarchy-access helper。
+  - Verilator 接受但 VCS 按 LRM 拒绝的问题（如 use-before-declare、LRM 9.2.2.4 `ICPD`）属于 RTL defect。
+  - Verilator-only test 在商业 simulator 对比时记 NOT RUN，不能计入 pass floor。
+  - Reference simulator 不存在时，`make -n` parity proof 使用 stub。
+  - 每 run 独立 results file，防止 rollup/concurrent collision。
+  - 仿真环境使用 UTF-8 locale。
+  - 长任务使用后台 notification 或每 turn 一次 bounded wait，不能 busy polling。
+
+#### 变更
+
+- **Python 选择不再直接使用 `which python3`**
+  - EDA vendor tree 内的 Python 标记为 `bundled`，永不作为 `PYTHON_EXEC`。
+  - 实测主机上的裸 `python3` 曾指向 Calibre 3.8.16。
+  - 选择满足 cocotb `Requires-Python` 的最新 `python3.N`，并优先 project-local venv。
+  - `python_env.type` 新增 `venv`；`bundled` 只存在于 `candidates[]`。
+
+- Tool resolution 使用非交互 bash 的 `command -v`，不能依赖用户 alias
+  （实测存在 `alias vcs 'vcs -full64'`）。
+
+- `environment_validation` 的 simulator smoke test 现在是**编译并运行**，不再只编译。
+
+- **Experience-record rule**
+  Verification 以及 Architecture、Compiler、DFT、Firmware、Formal、FPGA、HLS、
+  Memory-IP、PD、RTL-Design、SoC、STA、Synthesis 共 14 个 stage Orchestrator：
+  每次 task invocation 结束都写 experience record，包括 scoped single-stage task；
+  后续结果推翻旧结果时通过 `supersedes` 关联旧记录。
+  Meta/Infrastructure 使用不同 wording，不在此项修改。
+  Verification Orchestrator maxTurns 80→150，并通过 run_state 让长 regression 可恢复。
+
+
 ### Issue #35：保存架构候选并按下游差距进行细化
 
 #### 新增
