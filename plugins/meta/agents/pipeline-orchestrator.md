@@ -170,18 +170,18 @@ RTL 编排器仅在修复通过自身 `lint_check` 后设置 `status=fixed`，�
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
+8. **Run the gates your change triggers, not only the gates you were asked about.**（执行改动触发的 gate，而不只是任务点名的 gate。） 第 1–7 条约束任务明确点名的 gate；
    改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+   找出所改路径触发的 CI job：读取 **path filters, do not guess**；并 **run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.**（无论结果如何，都交接本次已建立的信息。） 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** —— signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**（不能将上次结果冒充本次实测）。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
 ## Memory
