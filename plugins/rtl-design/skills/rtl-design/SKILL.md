@@ -208,6 +208,9 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 - Include search is **first-match-wins**.
 - 多个候选 project/config 时明确检查 **user-override** 是否遮蔽 managed config。
 
+- 同名 include 文件在多个目录存在且内容不同 **is an **ERROR**, not a warning**；必须列出所有路径和 first-match-wins 的实际胜出项。
+- 普通 input-set FAIL：**Never loop back to `rtl_coding`**；记录 `"input_setup"` 并升级。只有本次新增 module 的 registration-only 缺项可回到列表编辑。
+
 ## Stage: lint_check
 
 ### 领域规则
