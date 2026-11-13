@@ -1,4 +1,8 @@
 # 嵌入式固件与设备驱动开发流程
+
+## Stage Sequence
+
+bsp_development → peripheral_drivers → rtos_integration → driver_validation → system_integration → firmware_signoff
 ## Orchestrator + Stage Agents + Skills
 
 > **目的**：面向芯片固件与设备驱动开发的 AI 驱动流程。覆盖 BSP 开发、外设驱动、RTOS 集成和固件验证。
