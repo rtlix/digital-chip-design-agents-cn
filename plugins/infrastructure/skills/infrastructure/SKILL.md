@@ -928,7 +928,7 @@ Memory (optional) — `mcp-memory.py` is the server itself:
 1. 首先验证 `python_env`：
    - type=module：`which python3` 确认 module 仍 active，否则立即 FAIL 并提示 source `load-modules.sh`
    - type=custom/system：确认当前 python3 path 与 `python_env.exec` 一致，不一致 WARN
-2. 严格按 `tool_discovery` 规则 2–3 重新检查工具存在性，包括 PATH 回退及 `python_env.type` 分支。不同检测方式会在真实安装上产生静默分歧：
+2. Re-run tool presence checks（重新检查工具存在性）：严格按 `tool_discovery` 规则 2–3，包括 PATH **fall back to** 链及 `python_env.type` 分支。不同检测方式会在真实安装上产生静默分歧：
    - `openlane`：使用 `"$PYTHON_EXEC" -m pip show openlane`，规则 3 对它没有回退。
    - `cocotb`、`uv`：custom/module 类型先尝试 `"$PYTHON_BIN_DIR/<tool>"`，再回退 PATH 命令；system 类型只用 PATH，不构造 `$PYTHON_BIN_DIR` 探测。
    在 `tool-manifest.json` 的 `resolved_via` 记录解析路径。custom/module 类型通过 PATH 回退找到包时，报告 WARN：“<tool> 从 PATH 的 <path> 解析，位于当前 Python bin 目录 <python_env.bin_dir> 之外，可能使用不同于 <python_env.exec> 的解释器”；修复指引为确认解释器或以 `"$PYTHON_EXEC" -m pip install <tool>` 重装到当前环境。工具确实存在，不能判缺失。
