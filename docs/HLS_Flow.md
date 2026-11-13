@@ -1,4 +1,8 @@
 # 高层综合（HLS）流程 — 完整架构设计
+
+## Stage Sequence
+
+algorithm_analysis → directive_planning → hls_synthesis → rtl_qc → cosimulation → hls_signoff
 ## Orchestrator + Stage Agents + Skills
 
 > **目的**：AI 驱动的 HLS 流程，把 C/C++/SystemC 算法描述转换为 RTL，连接软件与硬件两端。覆盖算法分析、HLS directive 规划、RTL 质量检查和 co-simulation 验证。
