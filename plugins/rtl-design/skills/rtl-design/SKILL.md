@@ -73,6 +73,8 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 
 ## Stage: rtl_coding
 
+Scope：本阶段只约束可综合 RTL。**Testbenches (`*_tb.sv`, `tb_*.sv`, anything under `tb/`)**、bind-only assertion、simulation-only behavioral model 不在这些 RTL coding rule 范围；它们由 functional-verification Skill 管理。
+
 适用范围：本阶段规则仅约束可综合 RTL。测试平台（`*_tb.sv`、`tb_*.sv`、`tb/` 下文件）、仅用于 bind 的断言文件、仅用于仿真的行为模型不在此范围；其中 `initial`、`#delay` 和阻塞赋值是正确用法，相应编码规则由 functional-verification Skill 定义。
 
 ### 领域规则——通用
@@ -160,6 +162,9 @@ Orchestrator 负责下文定义的 stage 顺序、loop-back 规则和 sign-off �
 
 ---
 
+### Unverified-claims entries
+本阶段凡是**没有工具运行**却得到的 CDC/reset/FSM/protocol/arithmetic/parameter 结论，都立刻追加到 unverified-claims list，不等到 sign-off。
+
 ## Stage: design_input_check
 
 lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息解读为 RTL 结论前，先确认工具读取的是预期文件。本阶段不修改任何内容，仅输出报告与 PASS/FAIL。
@@ -199,6 +204,9 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 - 阶段状态：PASS，或 FAIL 且 `failure_class: "input_setup"`
 
 ---
+
+- Include search is **first-match-wins**.
+- 多个候选 project/config 时明确检查 **user-override** 是否遮蔽 managed config。
 
 ## Stage: lint_check
 
@@ -251,6 +259,9 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 
 ---
 
+### Unverified-claims entries
+本阶段凡是**没有工具运行**却得到的 CDC/reset/FSM/protocol/arithmetic/parameter 结论，都立刻追加到 unverified-claims list，不等到 sign-off。
+
 ## Stage: cdc_rdc_analysis
 
 ### CDC 规则
@@ -279,6 +290,11 @@ lint 工具只能报告提供给它的文件。本阶段在将任何 lint 消息
 - Waiver file
 
 ---
+
+### Unverified-claims entries
+本阶段凡是**没有工具运行**却得到的 CDC/reset/FSM/protocol/arithmetic/parameter 结论，都立刻追加到 unverified-claims list，不等到 sign-off。
+
+- **No CDC tool available: the stage is NOT RUN, not PASS**；所有人工推理 crossing 写入 Unverified-claims entries。
 
 ## Stage: synth_check
 
@@ -392,3 +408,7 @@ last_stage:  null
 5. **A module the tool black-boxed got zero rules**：first-party RTL 被 black-box 时，该模块没有被检查；必须列入未验证项。
 6. 特别检查带 `string`-typed or `real` parameter 的模块，SpyGlass 等工具可能因为 front-end 限制而 black-box。
 7. **Never edit the RTL to satisfy the lint tool**：如果问题来自工具解析/配置/输入集，应修 tool setup 或升级为 input_setup，不得为了让工具安静而修改正确 RTL。
+
+
+### RTL hand-off
+Unverified claims are **handed off on every termination path**；`rtl_signoff` 的 Output Required 中包含 **Unverified-claims list**，但该列表在前序 stage 持续累积，而不是签核时才生成。
