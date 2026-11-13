@@ -1,6 +1,6 @@
 {
   "name": "chip-design-rtl",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "SystemVerilog RTL 设计——模块规划、编码规范、lint、CDC 与综合检查",
   "author": {
     "name": "chuanseng-ng",
