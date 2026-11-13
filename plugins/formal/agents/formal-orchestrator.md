@@ -28,6 +28,8 @@ property_planning → environment_setup → fpv_run → cex_analysis → lec_run
 - Cadence JasperGold (`jg`，命令方言 `cadence`）
 - Synopsys VC Formal (`vcf`，命令方言 `synopsys`）
 - Siemens Questa Formal (`qformal`，命令方言 `siemens`）
+- Synopsys Formality (`fm_shell`, dialect `synopsys`) —— LEC，使用 `wrap-fm.sh`
+- Cadence Conformal LEC (`lec`, dialect `cadence`) —— LEC，使用 `wrap-lec.sh`
 
 ### MCP Preference
 1. **MCP server** —— 如启用 `yosys` MCP，优先使用
