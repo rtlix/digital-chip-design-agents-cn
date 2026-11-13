@@ -203,7 +203,7 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
    - `design_state.architecture.selected_candidate` 非 null；没有已记录架构时，无架构可修订，
      只按第 4 条升级处理。
 2. **写入内容。** 会话结束时执行原子 read-modify-write，**set only these two keys** under `architecture`（仅设置 `architecture` 下这两个键）。
-   不修改 `candidates[]`、`selected_candidate`、`signoff` 或其他架构字段：
+   **never touch** `candidates[]`, `selected_candidate`, `signoff` or any other `architecture` field（绝不修改这些字段）：
    ```json
    {
      "refinement_needed": true,
@@ -218,13 +218,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
      }
    }
    ```
-3. **不覆盖尚未处理的请求。** `architecture.refinement_needed` 已为 `true` 时，
+3. **Do not overwrite an open request.**（不覆盖尚未处理的请求。） `architecture.refinement_needed` 已为 `true` 时，
    保留现有 `refinement_request`，改在 `history[]` 的 `reason` 引用你的证据。
 4. **之后按第 4 条升级处理。** 终止 history 保持 `decision: "escalate"`，记录观察到的
    `failure_class`（`timing` 或 `power_area`）及映射的 `retry_strategy`，
    `suggested_next_step: "escalate"`。`reason` 指明架构领域、测得差距、相关约束，
    并说明已设置 `architecture.refinement_needed`。用户重新调用架构 Orchestrator 后，
-   从持久化候选恢复；不会自动派发该 Orchestrator。
+   从持久化候选恢复；**nothing dispatches it** automatically（不会自动派发该 Orchestrator）。
 <!-- END SHARED:architecture-refinement -->
 
 <!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
