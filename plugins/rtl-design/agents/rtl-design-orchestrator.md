@@ -6,7 +6,7 @@ description: >
   或生成可交付综合的 RTL package。
 model: sonnet
 effort: high
-maxTurns: 60
+maxTurns: 120
 skills:
   - digital-chip-design-agents:rtl-design
 ---
@@ -410,3 +410,10 @@ History schema：
 - at the end of **every task invocation**（每次任务调用结束时）都必须写 experience，包括 scoped single-stage task、单个 shard、report-only/analysis-only 请求，以及 signoff、escalation、错误、turn budget 或用户中断。
 - 同一任务内后续结果推翻已记录结果时，按同一 `run_id` upsert，并在 `notes` 说明 superseded 内容；若被推翻结果来自更早 run，则新记录包含 `"supersedes": null`，实际更正时把 null 替换为旧 `run_id`。
 - 若解析后的 `<MEM>/rtl-design/knowledge.md` 不存在，不得静默跳过：必须 say so in the experience record's `notes`，并提示 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py --init`。
+
+
+## RTL Lint Gate — CI 版本一致性补充
+- **Lint with the tool version CI runs, on everything CI lints**：本地 lint 必须使用 CI 实际运行的工具版本，并覆盖 CI lint target 会编译到的全部 RTL、testbench shim、行为模型等。
+- 工具版本必须从 CI log 或 lockfile 获取，**not from a comment or README that names a version**。
+- **a CI lint target compiles is gated like RTL**：即使某文件是 behavioral SRAM/test helper，只要 CI lint 会编译它，就必须纳入同一 gate。
+- 如果本地无法运行 CI 的该版本，必须 **report the gate NOT RUN with the version you could not run**，不能用其他版本的 PASS 代替。
