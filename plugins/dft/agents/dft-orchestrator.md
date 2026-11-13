@@ -36,14 +36,14 @@ dft_architecture → scan_insertion → atpg → bist_insertion → jtag_setup �
 
 ## Loop-Back Rules
 - dft_architecture FAIL（扫描就绪发现需修改 RTL）→ escalate: "connectivity: 设计结构阻碍扫描且插入无法修复；参见审查报告实例与规则。由 RTL 流程修复后重跑 dft_architecture。"
-- scan_insertion FAIL (DRC errors repairable by insertion) → scan_insertion  （最多 3×） `drc_lvs`
+- scan_insertion FAIL（扫描插入阶段自身可修复的 DRC 错误）→ scan_insertion（最多 3 次），`drc_lvs`
 - scan_insertion FAIL（设计导致 DRC：生成时钟、不可控异步复位、非预期锁存器、组合环）→ escalate: "drc_lvs: 重新扫描插入无法改变输入设计结构，由 RTL 流程修复后重跑 scan_insertion。"
 - atpg FAIL （SAF 覆盖率未达目标）               → scan_insertion  （最多 2×） `coverage_gap`
 - dft_signoff FAIL （BIST 失败）                    → bist_insertion  （最多 2×） `functional`
 - dft_signoff FAIL （JTAG 连接失败）        → jtag_setup      （最多 2×） `connectivity`
 
-- scan_insertion FAIL (Scan DRC error caused by the design: unscannable clock/reset/black-box connectivity) → escalate `functional`；不得重跑 insertion 掩盖设计缺陷
-- scan_insertion FAIL (tool/setup error repairable by insertion retry before DRC actually ran) → scan_insertion (max 2×) `tool_error`
+- scan_insertion FAIL（设计自身造成的 Scan DRC：无法扫描的时钟/复位或黑盒连接）→ escalate，`drc_lvs`；应由 RTL 流程修复，不得靠重复运行扫描插入掩盖设计缺陷
+- scan_insertion FAIL（DRC 实际执行之前出现可通过重新插入恢复的工具/配置故障）→ scan_insertion（最多 2 次），`tool_error`
 
 ## Sign-off Criteria
 
