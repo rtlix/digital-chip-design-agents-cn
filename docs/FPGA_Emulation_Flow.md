@@ -1,4 +1,8 @@
 # FPGA 仿真与原型验证流程 — 完整架构设计
+
+## Stage Sequence
+
+rtl_adaptation → partitioning → fpga_synthesis → bring_up → sw_validation → proto_signoff
 ## Orchestrator + Stage Agents + Skills
 
 > **目的**：AI 驱动的 ASIC→FPGA 原型移植流程。用于流片前硬件/软件协同开发、性能验证和早期固件 bring-up，在硅片可用前数月提前发现问题。
