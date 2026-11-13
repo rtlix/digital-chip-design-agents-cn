@@ -1,4 +1,8 @@
 # 基础设施配置流程（Infrastructure Setup Flow）
+
+## Stage Sequence
+
+tool_discovery → module_discovery → tool_installation → wrapper_deployment → mcp_configuration → environment_validation
 ## 编排器与阶段 Skill
 
 **插件：** `chip-design-infrastructure`
