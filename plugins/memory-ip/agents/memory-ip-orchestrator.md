@@ -111,7 +111,7 @@ Each stage must return:
   或预算/上限已耗尽；动作是 `escalate` 或 `abandon`。
 - **none（无故障）**：仅与 `failure_class: "none"` 配对（PASS、`await_approval`）。
 
-`input_setup` 表示工具在错误输入上正确运行：filelist、include 路径、项目或配置文件、
+`input_setup` means **the tool ran correctly on the wrong inputs**（工具在错误输入上正确运行）：filelist、include 路径、项目或配置文件、
 生成的头文件或库视图解析到了错误目录树。它不是 `tool_error`，因为重试会原样重现；
 也不能作为被检查 artifact 的证据，因为该 artifact 根本没有被评估。
 当证据指向输入集合（同一文件出现两个路径、本次运行未写入的文件、检查前就中止）时，
@@ -131,7 +131,7 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 映射的 `escalate` 也不会覆盖它。仍然记录映射出的 `retry_strategy`，让冲突在 `history[]`
 中可见，而不是静默解决。Stage Gating and Escalation 第 4、7 条性质不同：它们依据证据
 停止循环（上游故障或重试不收敛），不受规则剩余次数影响。`input_setup` 也具有该优先级：
-任何 Loop-Back Rules 行都不能覆盖它，因为回退规则会发送到修改 artifact 的阶段，
+**no Loop-Back Rules row overrides it**（任何 Loop-Back Rules 行都不能覆盖它），因为回退规则会发送到修改 artifact 的阶段，
 而此时 artifact 本身并没有问题。
 
 某个条件完全没有对应 Loop-Back Rules 行时，没有可遵循的规则，也没有可据以映射的分类。
@@ -233,18 +233,18 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 7. **记录实际报告的结果。** 每项 Sign-off Criteria 都是 measured-PASS 时，领域 `signoff`
    和 `signoff_achieved` 才可为 `true`。任何 NOT RUN/unverified 都意味着 signoff=false，
    并在 `history[]` 的 `reason` 和 `notes` 中说明。
-8. **执行改动触发的 gate，而不只是任务点名的 gate。** 第 1–7 条约束任务明确点名的 gate；
+8. **Run the gates your change triggers, not only the gates you were asked about.**（执行改动触发的 gate，而不只是任务点名的 gate。） 第 1–7 条约束任务明确点名的 gate；
    改动落入自带 CI 的仓库时，还会触发该仓库的 gate。报告完成或推送前，读取 workflow 和路径过滤，
-   找出所改路径触发的 CI job，逐项在本地运行每个 job 的全部步骤，不只重跑上次失败的步骤。
+   找出所改路径触发的 CI job：读取 **path filters, do not guess**；并 **run every step of each locally**，不只重跑上次失败的步骤。
    只修 CI 已报告的一个错误就推送不算完成：后续步骤会在下次运行才失败，每轮都耗费一次完整 CI。
-   新文件按目录对应 job 检查，即使任务没有点名该 job。无法本地运行的步骤按第 2 条写明原因。
-9. **无论结果如何，都交接本次已建立的信息。** 合入 `design_state.json` 的领域字段是下一领域的输入，
-   缺失键意味着“未报告”，不能假定已覆盖。signoff、升级处理、达到迭代上限、NOT RUN、
+   新文件按目录对应 job 检查，**even if the task never named that job**。无法本地运行的步骤按第 2 条写明原因。
+9. **Hand off what you established, whatever the outcome.**（无论结果如何，都交接本次已建立的信息。） 合入 `design_state.json` 的领域字段是下一领域的输入，
+   缺失键意味着“未报告”，不能假定已覆盖。**On every termination path** —— signoff、升级处理、达到迭代上限、NOT RUN、
    turn budget 用尽或中断等所有终止路径，都合入本次实际建立的字段，而不仅是最终阶段的产物：
    - 列表（文件、未验证声明、waiver、待处理问题）依据已运行阶段完整写入；确实为空才写 `[]`。
-   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；不能将上次结果冒充本次实测。
+   - 本次未测量的状态/指标写 `false`/`null`，并在 `notes` 解释；**never carried over from an earlier run as if measured**（不能将上次结果冒充本次实测）。
 
-   交接清单应在产生每个条目的阶段构建，而非等到 sign-off。拒绝 signoff（第 7 条）不意味着拒绝交接。
+   **Build a hand-off list in the stage that produces each entry**，而非等到 sign-off。**Withholding signoff (item 7) never means withholding the hand-off**。
 <!-- END SHARED:reporting-contract -->
 
 <!-- BEGIN SHARED:rtl-lint-gate (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -254,7 +254,7 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 其中 `initial`、`#delay` 和 blocking assignment 是正确用法。
 
 1. **文件离开阶段前执行 lint。** RTL 最后一次编辑后未经 lint，无论改动多小，都按 Reporting Contract 标为 NOT RUN。
-2. **Slang 必须完整 elaboration。** 执行 `slang -Weverything --ignore-unknown-modules <files>`。
+2. **Slang 必须完整 elaboration。 Never pass `--lint-only`.** 执行 `slang -Weverything --ignore-unknown-modules <files>`。
    不传 `--lint-only`：它跳过 elaboration，静默漏掉 inferred-latch 和 multiple-driver 诊断，
    导致 latch 被报告为干净。`-Wall` 不是 slang 参数。Verilator 不受影响，
    `verilator --lint-only -Wall` 正确。
@@ -262,8 +262,8 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
    单独 lint 文件会将其 submodule 报告为 unknown。
 4. **Stub 并不意味着实例化它的文件有 bug。** filelist 缺少 library cell、hard macro、vendor primitive
    或 black-box IP 时，它驱动的 net 看起来像 undriven。将这些发现标为 informational，
-   并写明 stub 及其代表的库、macro 或 IP；能明确说出所代表内容时才算良性 stub。
-   能解析为本仓库自有 RTL 的 unknown module 不是 stub，而是缺少 filelist 条目（第 9 条）。
+   并写明 stub 及其代表的库、macro 或 IP；**A stub is benign only if you can name that** library/macro/IP；能明确说出所代表内容时才算良性 stub。
+   能解析为本仓库自有 RTL 的 unknown module **is not a stub: it is a missing filelist entry**（第 9 条）。
 5. **说明每项发现的证据。** 工具证明的发现引用消息及规则名；未运行工具而推理出的内容标为
    `UNVERIFIED`。干净 lint 不证明 CDC、reset sequencing、FSM reachability、protocol deadlock
    或 arithmetic overflow 正确。
@@ -271,22 +271,22 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
    使用发现集合作为测量结果：新错误是退步，连续两轮发现不变是无进展。
    为消除 warning 而改变行为（如缩窄 signal 消除 truncation warning，实际实现了截断）
    属于 intent drift，即 RTL 形式的目标改变：撤销并升级处理。
-7. **中止运行不是 lint 结果。** parse/elaboration fatal、aborted、缺文件等导致规则检查未完成时，
-   规则未执行，计数未知而非 0，无法得出 RTL 结论。编辑任何文件前先归因各 fatal。
+7. **An aborted run is not a lint result.**（中止运行不是 lint 结果。） parse/elaboration fatal、aborted、缺文件等导致规则检查未完成时，
+   **zero rules ran** 时规则未执行，计数未知而非 0，无法得出 RTL 结论。编辑任何文件前先归因各 fatal。
    重复声明伴随未声明标识符、同一文件出现两条路径、缺 include，或本次未写文件中的 fatal，
-   都指向输入集合：include search 首个匹配优先，旧树排在前面会遮蔽新树。
-   记录 `input_setup`，不编辑 RTL，并携带路径升级处理。只有本次写入的文件有 parse error，
+   都指向输入集合：include search 是 **first-match-wins**（首个匹配优先），旧树排在前面会遮蔽新树。
+   **Record `input_setup`, edit no RTL**（记录 `input_setup`，不编辑 RTL），并携带路径升级处理。只有本次写入的文件有 parse error，
    且输入集合已检查时，才由你修复。
-8. **Lint 不证明下游 front-end 接受 RTL。** Verilator、slang 和仿真 regression 原生读取 SystemVerilog。
+8. **Lint does not prove the downstream front-end accepts the RTL.**（Lint 不证明下游 front-end 接受 RTL。） Verilator、slang 和仿真 regression 原生读取 SystemVerilog。
    下游综合前若使用 sv2v、Surelog/UHDM 或 vendor SV-to-Verilog 转换，必须对 filelist 执行转换，
    并由实际消费结果的工具解析，例如：
    `sv2v <files> > out.v && yosys -q -p 'read_verilog out.v; hierarchy -check -top <top>'`。
    将 front-end check 作为独立 gate，报告命令和 exit status。SystemVerilog 合法但目标版本不支持的
    construct（典型例子为函数调用结果的 part-select：`f(x)[N-1:0]`）可能通过 lint 和所有仿真，
-   仅在此处失败，因为其他检查未读取转换文件。修复源 construct，不能直接修改转换产物。
+   仅在此处失败，因为其他检查 **never in the converted file**（从未读取转换后的文件）。修复源 construct，不能直接修改转换产物。
    先将第 4 条 stub 作为 black box 读入消费者（`read_verilog -lib <stubs>`），
    使 `hierarchy -check` 只对真正缺失的 module 失败。无转换工具时报告 NOT RUN。
-9. **新增 module 必须进入每个工具的 source list 才算集成。** 仿真、lint、综合、PD、formal 常有
+9. **A new module is not integrated until every tool's source list can see it.**（新增 module 必须进入每个工具的 source list 才算集成。） 仿真、lint、综合、PD、formal 常有
    独立列表（通常为 Makefile 变量）。添加 RTL 文件时枚举本项目每个工具输入列表，确认均含该文件，
    或说明不应包含的原因。转换器/综合器可能对缺失 module 静默 black-box；仿真因读取其他列表而无法发现。
    列表是 `.f` 或可导出为 `.f` 时，使用 `plugins/rtl-design/skills/rtl-design/` 下的
