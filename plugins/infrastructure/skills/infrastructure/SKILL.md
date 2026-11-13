@@ -152,7 +152,7 @@ Formality 说明：主命令为 `fm_shell`；`formality` 是旧版 GUI Wrapper�
 | `mcp-gem5.json` | gem5 short benchmark | 分钟，设置 TOOL_TIMEOUT_S |
 | `mcp-symbiflow.json` | SymbiYosys bounded proof | 分钟–小时 |
 
-适配器为 `plugins/infrastructure/tools/mcp-adapter.py`。每个服务器运行 `--wrapper` 指定的一个 Wrapper，但 `verilator` 例外：`mode: "lint"` 会运行已配置的 `wrap-verilator-sim.sh` 同目录中的 `wrap-verilator-lint.sh`，因为仿真 Wrapper 的第一个参数是已编译的仿真可执行文件。因此 8 个批处理服务器使用 11 个 Wrapper 中的 9 个；`wrap-vcs-compile.sh` 和 `wrap-xrun-compile.sh` 直接调用，不经过 MCP。
+适配器为 `plugins/infrastructure/tools/mcp-adapter.py`。每个服务器运行 `--wrapper` 指定的一个 Wrapper，但 `verilator` 例外：`mode: "lint"` 会运行已配置的 `wrap-verilator-sim.sh` 同目录中的 `wrap-verilator-lint.sh`，因为仿真 Wrapper 的第一个参数是已编译的仿真可执行文件。因此 8 个批处理服务器使用 25 个 Wrapper 中的 9 个；`wrap-vcs-compile.sh` 和 `wrap-xrun-compile.sh` 直接调用，不经过 MCP。
 
 ### Tier 2: Interactive session MCP servers（有状态）
 适用于 Agent 对已加载 design 反复查询，例如 ECO timing loop。进程跨调用保持，不重复 load design。
@@ -183,6 +183,25 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 
 ---
 
+### `tool-status.json` is a discovery-state artifact
+```json
+{
+  "python_env": {"exec":"","type":"module | system | custom | venv","bin_dir":"","module_name":null},
+  "tools": [{"tool":"","command":"","status":"FOUND | MISSING | PROPRIETARY_ONLY","version":"","path":"","role":null,"dialect":null}]
+}
+```
+
+### Licensed tools on a small shared host (measured)
+
+以下规则来自 8 vCPU / 15 GB VMware 共享 EDA 主机的两周 RTL→GDS 实测。
+
+- **One heavy tool at a time, enforced by a lock**：不能用“先 `pgrep` 再启动”这种 check-then-act 方式；两个 Agent 会同时通过检查。统一用 host-wide `flock -x 9`，包装成 `licensed_lock.sh <cmd>`，锁覆盖工具及其 child 的整个生命周期。对尚未接入 lock 的 caller 只用精确进程名 `pgrep -x`。
+- **Gate load/memory and kill the process group**：`safe_run.sh` 启动前检查 1-min load 与 `MemAvailable`，使用 `systemd-run --user --scope -p MemoryMax=<cap> -p MemorySwapMax=0`；CPU 线程 **2 or fewer**。超时要 kill **process group**，不能只杀 launcher。
+- Vendor launcher 常 exec `*_exec` 子进程；裸 `timeout` 会留下子进程继续占 license。不要用宽泛 `pkill -f`，它可能匹配 caller 自己。
+- 商业工具 cold start 可能 **30-65 min**；runtime 必须同时记录 load。长任务使用 `setsid`/`nohup`，结束时写 **done-marker**，session 结束后仍可恢复。
+- License yes/no 使用 vendor 的 `ckout_test` 或实际 checkout smoke；仅 `lmstat` 的 server 文本不能替代真实 checkout。
+- 日志 parser 必须找明确的 **result line**；exit 0、启动 banner 或空 report 都不是 PASS。
+
 ## Stage: tool_discovery
 
 ### Domain Rules
@@ -195,7 +214,9 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
    c. 找到 Python 模块时，按下方 **Module version selection** 选取版本，不能简单排序。运行 `module load <python-module>`，再用 `which python3` 解析 `PYTHON_EXEC`。排除非发布版本在此尤其重要：选中的解释器会保持加载整个运行过程，选中 `_test` 或 `-debug` 构建会影响所有后续阶段。设置 `python_env.type = "module"`，并在 `python_env.module_name` 记录所加载模块名。**整个编排器运行期间保持模块加载，不能卸载**；后续 `tool_installation`、`wrapper_deployment`、`environment_validation` 均依赖可解析的 `PYTHON_EXEC`。生成的 `load-modules.sh` 负责未来 Shell 会话的持续加载。
    d. `module_system` 为 `"none"`、调用阶梯耗尽（`module_listing` 为 `"UNAVAILABLE"`）或列表无 Python 模块时，进入步骤 B。检测到但无法列出的模块系统不等于不存在模块系统：虽然在此回退到 PATH 解释器，`module_discovery` 仍须报告 WARN，不能因已找到解释器而省略警告。
 
-   **Step B — PATH fallback**
+   **Venv check before generic PATH fallback:** 若当前 shell 已激活 virtual environment（`VIRTUAL_ENV` 非空）且 `$VIRTUAL_ENV/bin/python3` 可执行，优先记为 `python_env.type == "venv"`，并把该解释器作为 `PYTHON_EXEC`。只有没有有效 venv 时再进入通用 PATH。
+
+**Step B — PATH fallback**
    e. `which python3`，保存为 `PYTHON_EXEC`。
    f. 找不到则在 `tool-status.json` 把 python3 记为 `MISSING` 并立即 FAIL；所有 wrapper/Python package 都依赖它。
    g. 分类：
@@ -209,7 +230,7 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
       {
         "python_env": {
           "exec": "<absolute path>",
-          "type": "module | system | custom",
+          "type": "module | system | custom | venv",
           "bin_dir": "<absolute dir>",
           "module_name": "<module name, or null if not module-based>"
         }
@@ -245,7 +266,7 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 
 ### Output Required
 - `tool-status.json` 包含两个顶层键：
-  - `python_env`：`{ "exec": "", "type": "module|system|custom", "bin_dir": "", "module_name": "" }`，由规则 2 填充
+  - `python_env`：`{ "exec": "", "type": "module|system|custom|venv", "bin_dir": "", "module_name": "" }`，由规则 2 填充
   - `tools`：由 `{ "tool": "", "command": "", "status": "FOUND|MISSING|PROPRIETARY_ONLY", "version": "", "path": "", "role": null, "dialect": null }` 组成的数组
 
 每项始终包含 `role` 和 `dialect`，值为上表中的字符串或 `null`。每个 `FOUND` 工具以及探测成功的 `PROPRIETARY_ONLY` 工具，`version` 均非空。
@@ -257,6 +278,13 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 注：基于模块的可用状态（`FOUND_PREFER_MODULE`、`MISSING_LOAD_MODULE`）及 `module_names`/`versions_available` 字段由下一阶段 `module_discovery` 添加。
 
 ---
+
+### Python candidate classification supplement
+模块发现的 candidate 可以记录：
+```json
+{"exec":"<path>","type":"module | system | custom | bundled","version":"<python3.N>"}
+```
+其中 **bundled** 仅表示某 EDA/tool tree 内附带的 Python；它 **is never selected as `PYTHON_EXEC`**。如果 module/PATH/venv 都找不到合适解释器，也 **never fall back to a `bundled` one**。识别 `python3.N`（例如 python3.11、python3.12）时按真实版本比较，不按字符串排序。
 
 ## Stage: module_discovery
 
@@ -299,7 +327,7 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 
 结果是**该主机应使用的版本**，并不总是最新版本。模块系统指定默认版本时优先使用它；站点默认通常是经过验证的较旧构建。同一参考主机上，每个检查工具的注释默认版本都与最新版本不同，有些相差数个版本。这是预期行为，不应绕过。
 
-**选择顺序。** 采用第一个适用项：
+**Selection order.**（选择顺序）采用第一个适用项：
 
 1. 若列表标注系统 `default`，选择该条目；站点自身的选择高于任何本地计算结果。
 2. 否则按下方比较器选择最高的**发布版本（release）**。
@@ -330,6 +358,27 @@ Adapter：`plugins/infrastructure/tools/mcp-session-adapter.py`。
 仅当 `module_listing` 为 `"LISTED"` 时，空 `tools_via_modules` 才能证明主机没有可提供的模块。不能将调用阶梯耗尽报告为“没有找到模块”；不读取 `module_listing` 就无法区分两种情况。
 
 修复文字同时列出两种初始化脚本，因为探测始终在 `bash -c` 下运行，而用户手工重跑时可能使用 `bash` 或 `tcsh`。
+
+#### `module-status.json` is a module-discovery receipt
+```json
+{
+  "module_system": "tclmod | custom | none",
+  "module_system_detail": "",
+  "module_invocation": "",
+  "module_listing": "LISTED | UNAVAILABLE",
+  "module_listing_error": null,
+  "tools_via_modules": [
+    {
+      "tool": "<command>",
+      "module_names": [],
+      "versions_available": [],
+      "selected": null,
+      "selected_basis": "site_default | highest_release | highest_any | null",
+      "candidates": []
+    }
+  ]
+}
+```
 
 #### Module-to-tool mapping
 保持以下机器匹配模式不变：
@@ -635,7 +684,7 @@ echo "Modulefile written: ${MODFILE_DIR}/${TOOL_VERSION}"
 ## Stage: wrapper_deployment
 
 ### Domain Rules
-1. 将全部 11 个 Wrapper 脚本部署到 `plugins/infrastructure/tools/`
+1. 将全部 25 个 Wrapper 脚本部署到 `plugins/infrastructure/tools/`
 2. 对每个 Wrapper 运行 `chmod +x`；权限被拒绝时判为 FAIL，并以 `sudo chmod +x` 指引升级处理
 3. 无论退出码如何，每个 Wrapper 均须输出符合下方数据结构的 JSON
 4. 部署后使用 `--version` 或 `--help` 检查每个 Wrapper；允许工具 MISSING，Wrapper 必须以 `status: "FAIL"` 妥善处理工具不存在。`--version` 不产生设计结果，因此返回 `status: "WARN"`、`verified: false` 是预期结果，证明 Wrapper 可以运行并输出合法 JSON。`wrap-verilator-sim.sh` 接收仿真可执行文件而非工具参数，所以自行处理 `--version` / `--help` 并返回同样 WARN。此检查出现 FAIL 因而始终表示工具缺失或 Wrapper 损坏，而非调用方式错误。
@@ -789,7 +838,7 @@ Memory (optional) — `mcp-memory.py` is the server itself:
    此风险很常见：`tool_installation` 优先使用 astral.sh 独立 uv 安装器，安装前缀并非 `$PYTHON_BIN_DIR`；参考主机的 uv 就位于与解释器无关的共享 bin 目录。system 类型的 PATH 就是当前环境，绝不报此 WARN。
    与 `tool-status.json` 比较，该文件由 tool_discovery 写入、module_discovery 原地更新，是此时唯一工具记录。不能与本阶段输出 `tool-manifest.json` 比较，因为尚无内容可比。本阶段只读 tool-status.json；分歧为 WARN，不降级工具状态。
 
-3. 确认全部 11 个 Wrapper 脚本存在并设置可执行位。
+3. 确认全部 25 个 Wrapper 脚本存在并设置可执行位。
 
 4. 确认 `plugins/infrastructure/mcp/` 中全部 10 个工具服务器片段存在（`mcp-memory.json` 可选，缺少不判 FAIL），以及 tools 目录中的 `mcp-adapter.py` 和 `mcp-session-adapter.py` 存在。
 
@@ -823,7 +872,7 @@ Memory (optional) — `mcp-memory.py` is the server itself:
 - [ ] 所有 MISSING tool 都有 install script
 - [ ] 有 module 工具时生成 `load-modules.sh`
 - [ ] 本阶段已写入 tool-manifest.json，符合 Output Required 数据结构
-- [ ] 全部 11 个 Wrapper 已部署且可执行
+- [ ] 全部 25 个 Wrapper 已部署且可执行
 - [ ] 仿真器编译冒烟检查已运行并记录，或明确以 WARN 标为未经验证（由 design_state.pipeline_config.simulator_smoke_test 控制）
 - [ ] 两个 MCP adapter 存在
 - [ ] 全部 10 个工具服务器 MCP 片段已写入、使用解析后的绝对路径且已打印
@@ -845,7 +894,7 @@ Memory (optional) — `mcp-memory.py` is the server itself:
   "host": "",
   "tool_status_source": "tool-status.json",
   "python_env_live": {
-    "type": "module | system | custom",
+    "type": "module | system | custom | venv",
     "exec_expected": "",
     "exec_actual": "",
     "matches": false
@@ -857,7 +906,7 @@ Memory (optional) — `mcp-memory.py` is the server itself:
       "path": ""
     }
   ],
-  "wrappers": { "expected": 11, "executable": 0, "missing": [] },
+  "wrappers": { "expected": 25, "executable": 0, "missing": [] },
   "mcp": { "snippets_expected": 10, "snippets_present": 0, "adapters_present": false, "missing": [] },
   "dialect_conflicts": [
     { "role": "", "members": [ { "tool": "", "dialect": "" } ] }
