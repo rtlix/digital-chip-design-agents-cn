@@ -392,3 +392,5 @@ History entry to append:
   }
 }
 ```
+
+- power_mw: comparison run, no target（benchmark 无预算时只记录，不判定）
