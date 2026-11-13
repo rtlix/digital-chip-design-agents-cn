@@ -54,9 +54,9 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 - rtl_signoff FAIL（设计质量问题）→ rtl_coding（最多 2 次），`functional`。
 
 ### 输入集合安全原则
-**不得为了让 lint/elaboration 通过就删除端口、信号或声明。**
+**Never delete a port, signal or declaration**（严禁仅为通过 lint/elaboration 而删除端口、信号或声明）。
 当工具读取了错误的 RTL 树、include、生成文件、filelist 或配置时，
-应先纠正输入集合；不能修改 `.v`/`.sv` 来掩盖配置问题。
+应先纠正输入集合；必须 **edit no `.v`/`.sv` file**（不得修改 RTL 文件来掩盖配置问题）。
 
 ## Sign-off Criteria
 - lint_errors: 0
