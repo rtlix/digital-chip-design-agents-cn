@@ -1,6 +1,6 @@
 {
   "name": "chip-design-memory-ip",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Memory IP 设计——SRAM/Register File/ROM macro 选择、array architecture、冗余修复、view 生成与 QA",
   "author": {
     "name": "chuanseng-ng",
