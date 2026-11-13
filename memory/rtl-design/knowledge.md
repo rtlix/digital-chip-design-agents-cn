@@ -22,3 +22,9 @@
 ## Notes
 
 - RTL sign-off package 的 `filelist.f` 必须用 relative path。Absolute path 会破坏从不同 working directory 运行的 downstream synthesis flow。
+
+
+## Input-set / front-end lessons
+- Include search is **first-match-wins**；旧 sibling tree 或 user-override 排在前面会让工具检查错误文件。
+- 一个 run 若在规则执行前 abort，则 **zero rules ran**；错误/警告数量未知，不是 0。
+- **a Surelog-fronted synth_check passes RTL that breaks PD**：只用原生 SV front-end 不能证明下游转换后的 Verilog 能被 PD/synthesis 消费；必须检查实际 converted file。
