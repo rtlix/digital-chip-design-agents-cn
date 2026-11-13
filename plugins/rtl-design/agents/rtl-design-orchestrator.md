@@ -40,10 +40,10 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 ## Loop-Back Rules
 - design_input_check FAIL（输入错误：include 同名、陈旧/同级生成树、路径缺失、覆盖配置）→ escalate: "input_setup: <file> 从 <path used> 而非 <path intended> 解析，重新指定 filelist/include/配置；未修改 RTL。"
 - design_input_check WARN（仅注册：本次新增模块缺少于某工具列表）→ rtl_coding（加入所有缺失列表，edit no RTL，max 1×）`connectivity`
-- lint_check FAIL（规则未完成，原因位于输入或不能归因本次写入 RTL）→ escalate: "input_setup: lint 未运行任何规则便停止，<evidence>；RTL 未评估且未修改。"
-- lint_check FAIL（规则未完成，解析错误仅在本次写入 RTL，输入检查 PASS）→ rtl_coding（计入下方 5×；`tool_error`，不能 `functional`）
+- lint_check 失败（规则未完成，原因位于输入或不能归因本次写入 RTL）→ escalate: "input_setup: lint 未运行任何规则便停止，<evidence>；RTL 未评估且未修改。"
+- lint_check 失败（规则未完成，解析错误仅在本次写入 RTL，输入检查 PASS）→ rtl_coding（计入下方 5×；`tool_error`，不能 `functional`）
 - lint_check FAIL (errors > 0, rule check completed) → rtl_coding        （最多 5×） `functional`
-- lint_check FAIL（转换后 RTL 不被下游前端接受）→ rtl_coding（改源结构，不改转换文件，计入上方 5×）`tool_error`
+- lint_check 失败（转换后 RTL 不被下游前端接受）→ rtl_coding（改源结构，不改转换文件，计入上方 5×）`tool_error`
 - cdc_rdc_analysis FAIL (unwaived violations) → rtl_coding        （最多 3×） `connectivity`
 - synth_check FAIL（综合前端解析/elaboration 错误，如 yosys 拒绝 sv2v 输出）→ rtl_coding（修源结构，再跑 lint 前端门控，最多 2×）`tool_error`
 - synth_check FAIL（黑盒/未定义模块有自有 RTL）→ rtl_coding（加入综合列表，不改 RTL，最多 1×）`connectivity`
@@ -103,6 +103,7 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 10. Fix-request gate: in fix-request-servicing mode, run **every gate the edit could affect** before closing the request. Always run `lint_check`, including the **front-end check** wherever a downstream flow converts RTL; re-run `cdc_rdc_analysis` when clock/reset crossing or synchronizer/reset logic changed；re-run `synth_check` when timed logic depth/state/module/file changes。任何 affected gate 无法执行时必须 **reported NOT RUN with the reason**。全部 affected gate 通过后才可 `status=fixed`。
 11. Input-set gate: first `lint_check` 前运行 `design_input_check`；filelist/include/generated-tree/project config 改变后再次运行。除“本次新增 module 尚未登记到 source list”这一 registration-only case 外，input-set FAIL 均升级为 `input_setup`，不修改 RTL。
 12. Hand-off：**Write it on every termination path**。`rtl.files[]` is the block's complete current file set；lint/cdc/front-end 等状态只有在本次 run **`true` only when measured clean in this run**，否则 false/null 并在 notes 说明。
+
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
 每条 `history[]` 记录都携带两个字段：`failure_class` 表示发生了什么故障，
