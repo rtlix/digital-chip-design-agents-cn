@@ -381,3 +381,14 @@ last_stage:  null
 
 ### Optional: hdl-rtl-skill
 本会话若提供 `hdl-rtl-skill` 的 Skill（`rtl-style-guide`、`rtl-golden-templates`、`rtl-anti-patterns`、`rtl-review-signoff`、`rtl-workflow`），将其与本 Skill 配合使用：在 `lint_check` 用 `rtl-lint` 脚本运行 slang（应用规则 6–8，按规则 11 映射严重级别）；在 `rtl_coding` 为 FIFO、同步器、仲裁器、FSM、ready/valid 流水级使用标准模板；审查时参考反模式目录。本文件规则是其风格指南遵循的项目标准，若时钟/复位命名、`_i`/`_o` 等存在差异，以本文件为准。工具不存在时静默跳过；上述所有规则仍独立有效。
+
+## CDC/RDC Fail-Capable Check 补充规则
+
+### Prove the crossing rules ran
+1. 对 CDC/RDC 检查必须提供一个已知违规的 negative-control crossing，证明 checker 真的执行了 crossing rule。
+2. **If the control is not flagged, the stage is NOT RUN**，不能因为 report 看起来 clean 就判 PASS。
+3. 报告里必须写：**Negative control flagged (rule 7): must be true**。
+4. 如果脚本 request a licence feature other than the product names the licence server lists，导致高级 checker 没启动，整个 CDC/RDC stage 只能是 NOT RUN。
+5. **A module the tool black-boxed got zero rules**：first-party RTL 被 black-box 时，该模块没有被检查；必须列入未验证项。
+6. 特别检查带 `string`-typed or `real` parameter 的模块，SpyGlass 等工具可能因为 front-end 限制而 black-box。
+7. **Never edit the RTL to satisfy the lint tool**：如果问题来自工具解析/配置/输入集，应修 tool setup 或升级为 input_setup，不得为了让工具安静而修改正确 RTL。
