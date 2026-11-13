@@ -57,6 +57,12 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 
 > PATH 中未找到的专有工具仍可能由模块系统提供，包括经典 Environment Modules 或站点自定义 `module` Wrapper。`module_discovery` 分类模块系统，确认能够获得列表，枚举可用版本并生成 `load-modules.sh`。
 
+### Infrastructure count contract
+- **all 25 wrappers**；期望 **25 executable wrapper scripts**。
+- **wrapper scripts with executable bit set (target: 25)**。
+- `"wrappers": { "expected": 25 }`
+- MCP：**10 tool-server** configs / **10 tool servers**；**tool-server snippet files written (target: 10)**；`"snippets_expected": 10`；`"mcp_target": 10`。
+
 ## Loop-Back Rules
 - tool_installation FAIL（python3 缺失）→ 立即升级（所有 Wrapper 均需 python3）`resource_limit`
 - tool_installation FAIL（Python 模块未加载）→ escalate: "resource_limit: Python 由 <python_env.module_name> 模块提供，请 source load-modules.sh 后重跑。"
@@ -140,6 +146,8 @@ Each stage must return:
 ```
 
 上方 `qor` 块列出了所有阶段可能返回的键。每个阶段**只**返回 Skill 中自身 `### QoR Metrics to Evaluate` 声明的键，省略其他键。不能为不属于本阶段的键返回 `0` 或 `null`，因为占位 `0` 与实际测量为零无法区分。例如，`dialect_conflicts` 仅由 `environment_validation` 返回，`install_scripts_generated` 仅由 `tool_installation` 返回。
+
+- 每个 stage 只返回自己负责计算的 QoR key；其他 key **omit**，不要伪造 0/null 来占位。
 
 ## Behaviour Rules
 1. 每 stage 前读取 infrastructure Skill。
