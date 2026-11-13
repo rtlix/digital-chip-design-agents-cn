@@ -2,21 +2,24 @@
 
 ## Known Failure Patterns
 
-- **Over-constrained environment 导致 空洞证明（vacuous proof）**：`environment_setup` 的 `assume` 让 input space 不可达时会出现 空洞证明（vacuous proof）。每次 environment iteration 后运行 vacuity check（`sby --vacuity`）。发现 vacuity 时一次只放宽一个 constraint，不要全部删除后重建，以免丢失上下文。
-- **Bound depth 不足**：SymbiYosys `--depth` 至少应为 `pipeline_depth + 2`，才能覆盖全部 pipeline stage。Bound 太浅可能让只在 pipeline 尾部触发的 property 出现假 “PASS”。
-- **Synthesis 后 LEC fail**：常见原因是 clock-gating cell 缺 equivalence mapping（`set_dont_touch` 或显式 mapping script）。运行 LEC 前把 synthesis tool 的 clock-gating cell list 提供给 LEC tool。
+- **Over-constrained environment 导致 vacuous proof**：assumption 让合法 input space 不可达时，property 会“空洞通过”。每次 environment 变化后都做独立 vacuity/reachability 检查。
+- **Bound depth 不足**：SymbiYosys 的 bound/multiclock 属于 `.sby` 配置的 `[options]`，不是随意拼到 `sby` 命令行上的 flag。Bound 太浅只能算 bounded result，不能写 PROVEN。
+- **Synthesis 后 LEC fail**：clock gating、constant propagation、register merge/retiming 都需要正确 mapping；DC→Formality 流程尤其依赖 **SVF**。
+- **Mutant anchor 失效**：flat/post-route netlist 的 literal instance/net name 会因优化、resize、route 改变。Negative-control mutator 应按结构和 cell family 找 **anchor**，找不到时 fail loudly。
 
-## Successful Tool Flags
+## Successful Tool Flags / Setup
 
-- `sby -f <task>.sby --depth <N>`：始终显式设置 `--depth`，不要依赖默认 bound。
-- `sby --multiclock`：多 clock domain 必需；single-clock mode 可能静默忽略跨域路径。
-- `jg -allow_empty_cex`：防止 JasperGold 把空 CEX set 误当 vacuity proof；同时配合显式 vacuity check。
+- SymbiYosys：把 `depth`、`multiclock on` 写入 `.sby` 的 `[options]`；vacuity 通过 cover/reachability/assumption-disable 方法验证，而不是依赖不存在的 CLI shortcut。
+- Formality：DC compile 前保存 SVF；Formality 读取 reference/implementation library 与 netlist 后执行 match/verify，并对 deliberately mutated netlist 做 negative control。
+- Conformal：需要高级 mapping flow 时使用对应许可（实测流程为 `lec -nogui -xl -dofile <lec.do>`）；guided compare 之外再做 direct compare。
 
 ## PDK / Tool Quirks
 
-- **Z3 vs Boolector**：重 arithmetic 的 bitvector 设计 Z3 通常更快；纯 Boolean problem Boolector 常更好。Proof 超过 30 分钟无结果时可切换 solver。
-- **Yosys `prep` before sby**：先运行 `yosys -p "prep -top <top>"` 可提前捕获 elaboration error，并显著减少 formal setup time。
+- **Z3 vs Boolector**：算术较重的 bit-vector problem 可尝试 Z3；偏 Boolean 的问题 Boolector 往往更合适。长时间 inconclusive 时应记录 solver/bound 后切换，而不是把 timeout 当 PASS。
+- **Post-route diode blackbox**：antenna/protection diode 可能产生 implementation-only unmatched point。保留原 compare，同时在副本中剥离这些 functionless diode，要求核心逻辑 0 unmatched。
 
 ## Notes
 
-- P0 property 出现 CEX 是 hard blocker。暂停 formal flow，携带完整 counterexample trace 交给 RTL team；确认 RTL fix 前不要继续重试。
+- P0 property 出现 CEX 是 hard blocker。
+- LEC 的 EQUIVALENT 只有在同一 setup 能抓到 structural mutant 时才可信。
+- _Measured commercial notes: Formality X-2025.06 / Conformal LEC 24.10-p100._
