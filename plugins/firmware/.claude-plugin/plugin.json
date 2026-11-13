@@ -1,6 +1,6 @@
 {
   "name": "chip-design-firmware",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "嵌入式固件——BSP、外设驱动、RTOS 集成与验证",
   "author": {
     "name": "chuanseng-ng",
