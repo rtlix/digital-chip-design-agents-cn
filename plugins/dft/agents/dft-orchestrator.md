@@ -42,8 +42,8 @@ dft_architecture → scan_insertion → atpg → bist_insertion → jtag_setup �
 - dft_signoff FAIL （BIST 失败）                    → bist_insertion  （最多 2×） `functional`
 - dft_signoff FAIL （JTAG 连接失败）        → jtag_setup      （最多 2×） `connectivity`
 
-- scan_insertion FAIL (Scan DRC error caused by design: unscannable clock/reset/black-box connectivity) → escalate `functional`；不得重跑 insertion 掩盖设计缺陷
-- scan_insertion FAIL (tool/setup error before DRC actually ran) → scan_insertion (max 2×) `tool_error`
+- scan_insertion FAIL (Scan DRC error caused by the design: unscannable clock/reset/black-box connectivity) → escalate `functional`；不得重跑 insertion 掩盖设计缺陷
+- scan_insertion FAIL (tool/setup error repairable by insertion retry before DRC actually ran) → scan_insertion (max 2×) `tool_error`
 
 ## Sign-off Criteria
 
