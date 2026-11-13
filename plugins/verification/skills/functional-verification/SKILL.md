@@ -329,6 +329,9 @@ priority:     P0
 
 ---
 
+### Report-only mode
+当用户只要求 review/audit/list coverage hole 时，设置 `coverage_mode: report_only`。此模式不自动写 test/constraint/waiver，**the two `coverage_analysis` loop-backs** 不触发；coverage 低于 target 只记 WARN(`coverage_gap`)，不得 sign-off。
+
 ## Stage: formal_assist
 
 ### Formal 使用场景
