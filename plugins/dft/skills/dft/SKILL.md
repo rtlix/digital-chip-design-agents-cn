@@ -290,3 +290,32 @@ last_stage:  null
 如果当前会话存在 `mcp__plugin_ecc_memory__add_observations`，在写入
 `experiences.jsonl` 后，将每个 applied fix 作为 observation 写入实体
 `chip-design-dft-fixes`。工具不存在则静默跳过；JSONL 是权威记录。
+
+
+## Tool Notes: Siemens Tessent
+
+Tessent 新流程采用 context-based 模式；legacy `add_scan_groups/add_scan_chains` 脚本即使退出码为 0，也可能什么都没插入，因此必须检查实际 inserted-cell 数量。以下规则基于 Tessent 2025.4。
+
+### Running it
+- Batch 推荐：`tessent -shell -dofile <f>.do -log <f>.log -replace < /dev/null`。其中 `< /dev/null` 防止 dofile 中止后 shell 等待 stdin；`-replace` 防止旧日志被误认为本次结果。
+- 每次 scan insertion 前清理旧 TSDB；licensed algorithm/library 文件只读，修改版复制到项目目录。
+- **a chain count the project's DFT architecture fixes**：如果项目架构已经冻结 scan-port/tester-channel/chain count，就以架构决定为准，不得用 √FF 的经验值覆盖。
+
+### Cell library / LibComp
+- `read_liberty` 只提供 cell attribute；ATPG/scan 行为模型需用 **LibComp** 编译 Verilog model 形成 `.atpglib`，再通过 `read_cell_library` 读入。
+- 自动生成的 `dft_cell_selection` 可能选到特殊 low-power cell；buffer/inverter/2:1 mux/lockup latch 应显式指定。
+- Bare `assign y=a` buffer 可能被工具当成 wire，模型应使用 gate primitive。
+
+### Scan insertion and ATPG
+1. `set_context dft -scan -no_rtl -design_id gate`，读取 cell library 和 gate netlist，定义 clock/scan-enable，再进入 analysis/system mode。
+2. 通过 scan mode 绑定现有 scan port，执行 chain analysis、test logic insertion、TSDB 写出。
+3. ATPG 使用新 session：`set_context patterns -scan`，读取 design，然后 `import_scan_mode` 再按 fault model 生成 pattern。
+4. **Demoting a Scan DRC rule from error to warning** 只允许用于架构明确要求不上链的 flop/domain；必须记录 rule ID、instance 数和架构理由，其他情况仍算 open finding。
+5. **Prove the pattern testbench can fail**：good-machine PASS 之前，必须故意断开一条 scan link 或翻转 pattern bit，确认 pattern testbench 能报告 mismatch；否则 PASS 无证据。
+
+### MemoryBIST
+1. `set_context dft -rtl -design_id rtl1`，读取 RTL 与 memory TCD。
+2. `check_design_rules` 后 `create_dft_specification`，必要时用 `set_config_value` 修改，再 `process_dft_specification`。
+3. 继续 ICL/pattern specification 与仿真。
+4. **Prove detection per fault class, not by a passing run**：对 stuck-at、transition、coupling、write-mask/byte-enable、address-decoder 等 fault class 分别注入并统计 detected/injected。
+5. Fault-proof 必须覆盖完整地址空间；Tessent 的 `reduced_address_count` 若开启，会漏掉 reduced range 之外的故障，因此 sign-off proof 中必须关闭或明确标记非完整覆盖。
