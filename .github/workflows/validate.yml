@@ -1,4 +1,4 @@
-name: 校验插件
+name: Validate Plugin
 
 on:
   push:
@@ -9,23 +9,23 @@ on:
 
 jobs:
   validate:
-    name: 校验 Skills、Agents 与 Manifests
+    name: Validate Skills, Agents & Manifests
     runs-on: ubuntu-latest
 
     steps:
-      - name: 检出仓库
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # This workflow runs on pull_request and executes repo code
           # (distill.py via exec_module), so don't leave the token in git config.
           persist-credentials: false
 
-      - name: 配置 Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
-      - name: 校验 plugin.json
+      - name: Validate plugin.json
         run: |
           python3 -c "
           import json, os, glob, sys
@@ -50,7 +50,7 @@ jobs:
           print(f'All {len(manifests)} plugin.json files validated')
           "
 
-      - name: 校验 marketplace.json
+      - name: Validate marketplace.json
         run: |
           python3 -c "
           import json, os, sys
@@ -77,7 +77,7 @@ jobs:
           print(f'marketplace.json OK — {n} plugins, all paths verified')
           "
 
-      - name: 校验全部 SKILL.md 文件
+      - name: Validate all SKILL.md files
         run: |
           python3 << 'PYEOF'
           import os, sys, glob
@@ -98,7 +98,7 @@ jobs:
           print(f"All {len(paths)} skill files validated")
           PYEOF
 
-      - name: 校验全部 Agent Markdown 文件
+      - name: Validate all agent .md files
         run: |
           python3 << 'PYEOF'
           import os, sys, glob
@@ -126,10 +126,10 @@ jobs:
           print(f"All {len(paths)} agent files validated")
           PYEOF
 
-      - name: 检查 Orchestrator 共享区块是否同步
+      - name: Check shared orchestrator sections are in sync
         run: python3 tools/sync_agent_sections.py --check
 
-      - name: 检查 Skill 数量与 Marketplace 注册是否一致
+      - name: Check skill count matches marketplace registrations
         run: |
           python3 << 'PYEOF'
           import json, glob
@@ -148,10 +148,10 @@ jobs:
           print("Count check PASSED")
           PYEOF
 
-      - name: 安装 Schema 校验器
+      - name: Install schema validator
         run: pip install --quiet "jsonschema==4.23.0"
 
-      - name: 使用 Schema 校验 design_state.json
+      - name: Validate design_state.json against schema
         run: |
           # The machine-readable contract lives in docs/design_state.schema.json
           # (enums, required fields, and the failure_class -> retry_strategy map are
@@ -197,7 +197,7 @@ jobs:
           sys.exit(rc)
           PYEOF
 
-      - name: 校验 IDE 配置文件
+      - name: Validate IDE config files
         run: |
           python3 << 'PYEOF'
           import json, os, sys
@@ -270,7 +270,7 @@ jobs:
           print("IDE config files OK")
           PYEOF
 
-      - name: 校验 Infrastructure Memory 集成
+      - name: Validate infrastructure memory integration
         run: |
           python3 << 'PYEOF'
           import os, sys, importlib.util
@@ -307,24 +307,24 @@ jobs:
           PYEOF
 
   tests:
-    name: Python 工具测试（pytest）
+    name: Python tool tests (pytest)
     runs-on: ubuntu-latest
 
     steps:
-      - name: 检出仓库
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # This job executes repo code (the tool scripts under test), so don't
           # leave the token in git config.
           persist-credentials: false
 
-      - name: 配置 Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
-      - name: 安装测试依赖
+      - name: Install test dependencies
         run: pip install --quiet "pytest==8.3.4"
 
-      - name: 运行 pytest
+      - name: Run pytest
         run: python3 -m pytest tests/ -q
