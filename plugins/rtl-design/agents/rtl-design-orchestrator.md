@@ -62,6 +62,9 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 - synth_check FAIL (black box or undefined module that resolves to first-party RTL) → rtl_coding (add source-list entry; max 1×) `connectivity`
 - synth_check FAIL (black box with no first-party RTL: missing library/macro/IP view) → escalate `input_setup`
 
+### Input-set safety
+**Never delete a port, signal or declaration** merely to make lint/elaboration pass. If the checker is reading the wrong source tree, include, generated file, filelist or config, fix the input setup instead and edit no RTL.
+
 ## Sign-off Criteria
 - lint_errors: 0
 - cdc_violations_unwaived: 0
