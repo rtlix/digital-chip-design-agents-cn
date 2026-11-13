@@ -65,6 +65,34 @@ openroad -no_init -exit sta.tcl > sta.log 2>&1
 
 ---
 
+## Tool Notes: Synopsys PrimeTime (multi-corner) and PrimePower
+
+以下规则来自 **PrimeTime X-2025.06** / PrimePower 在 StarRC SPEF 上的多 corner 实测。
+
+1. 公平比较时每个 (library corner, RC corner) 使用 **one `pt_shell` per (library corner, RC corner)**，避免状态泄漏；输入 library 包括 every macro `.db`。
+2. 每个 run 在脚本内校验 **SDC md5**，然后 `read_sdc`；real clock 执行 `set_propagated_clock`，但 propagated **virtual** clock ignores its network latency。
+3. RC 用 `read_parasitics -format spef <spef>`。保存 SPEF md5；Annotation gate 使用 `report_annotated_parasitics`，包括 `-pin_to_pin_nets`。PrimeTime 自己的读取摘要写入 **parasitics_command.log**；SPEF 中 net 不存在可见 **PARA-124**。
+4. 更新 timing 后运行 `check_timing -verbose`、`report_global_timing`、`report_qor`。设 `report_default_significant_digits 4`，否则极小负 slack 会被舍入成 0。
+5. Clean setup 时 `report_global_timing` 可能打印 **No setup violations found.**；脚本必须仍提取 **non-empty setup and hold WNS**，空 metric 不能 PASS。
+6. **`read_sdc` stops at the first unsupported command**，但 shell 可能继续执行，造成看似正常却约束不完整的结果。**Innovus-exported SDC is not PT-readable** as-is；必须转换/对比并重新校验 md5。
+7. ICC2 写出的 SDC 可能带 `set_clock_latency 1.77814` 等 useful-skew/I/O latency；只能作为 diagnostic variant，公平排名使用 shared SDC。
+8. PrimePower vectorless：`power_default_toggle_rate 0.1`，并明确 register output activity。与 OpenSTA 的默认 register-output handling 可产生约 **15 % difference**；必要时对 `[all_registers -output_pins]` 显式设置 activity。
+9. SRAM output load 超 Liberty table 范围时，不同 engine 会 **extrapolate**，必须检查 load range，不直接把 engine 差异当 implementation 差异。
+10. **Annotation gate.** 超过 1% signal net 未 annotation，或任何 clock net 未 annotation，stage 直接 FAIL(`input_setup`)。**Tempus may be absent**；此时可以 PrimeTime/OpenSTA 做 judge，但必须记录 engine/version。
+
+## Fair Cross-Tool Comparison
+
+不同 P&R/STA 工具之间比较时，必须保证是在比较 implementation，而不是比较“裁判”：
+
+1. **Same SDC.** 每个 flow 读取完全相同的 SDC；结果旁记录 **md5**。
+2. **Same extractor and tech.** 用同一个 extractor 与同一个 tech file 对每个最终 DEF/GDS 重新提取相同 RC corner。
+3. **Same STA engine.** 使用同一个 sign-off STA engine/version、同一 library/corner/derate。
+4. **Same activity assumptions** 用于 power；同一 vectorless default 或同一 SAIF。
+5. 工具自己的 timing/power 仍记录，但必须 **labelled `native`**，不能和其他 flow 的 judged number 直接排名。
+6. 不满足 1–4 的比较只能写 **indicative**。
+7. **Prove each judged run used the inputs it claims.** 每次记录 netlist/SPEF/SDC md5，并与 flow 交付物核对。
+8. **Close the implementation in the corners you judge in.** 如果 implementation 只在 tt closure，却拿 ss/ff 去 judge，这测的是 corner scope 缺失，而不只是工具能力。
+
 ## Stage: constraint_validation
 
 ### Domain Rules
@@ -118,6 +146,11 @@ Corner 来自 `design_state.constraints.pvt_corners[]`。
 1. AOCV：按 logic depth 与 location derate。
 2. POCV：按 foundry agreement 使用 sigma-based variation。
 3. Clock uncertainty：pre-CTS ideal → post-CTS propagated。
+
+### Annotation and engine rules
+1. 每个 corner 使用与其匹配的 library 与 RC SPEF，并在报告头记录映射。
+2. **Annotation gate.** timing slack 输出前检查 parasitic annotation；>1% signal net 或任一 clock net unannotated 都是 `input_setup` FAIL。
+3. Tempus may be absent；可以 PrimeTime/OpenSTA 替代，但每个数字都写明 engine/version。
 
 ### Path Analysis Priority
 1. 每 corner 的 WNS path
