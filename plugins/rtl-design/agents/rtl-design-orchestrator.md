@@ -42,7 +42,7 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 - design_input_check FAIL (registration only: a module this run added is missing from a tool's source list) → rtl_coding（补齐各个工具缺失的源文件列表，edit no RTL; max 1×），`connectivity`。
 - lint_check FAIL (rule check did not complete; cause in the input set or not attributed to RTL this run wrote) → escalate，`input_setup`；规则未开始执行时，不得据此判断 RTL 有错误。
 - lint_check FAIL (rule check did not complete; parse error confined to RTL this run wrote, design_input_check PASS) → rtl_coding（计入 5 次回退上限；never `functional`），`tool_error`。
-- lint_check FAIL（规则已完成，错误数大于 0）→ rtl_coding（最多 5 次），`functional`。
+- lint_check FAIL (errors > 0, rule check completed) → rtl_coding（最多 5 次），`functional`；只适用于规则已经完整执行的检查结果。
 - lint_check FAIL (front-end check: converted RTL does not parse in the downstream tool) → rtl_coding（修改源文件中的问题结构，不修改转换产物；计入上述最多 5 次），`tool_error`。
 - cdc_rdc_analysis FAIL（存在未豁免的 CDC/RDC 违规）→ rtl_coding（最多 3 次），`connectivity`。
 - synth_check FAIL (parse or elaboration error in the synthesis front-end) → rtl_coding（修复原始 RTL，随后重新执行 lint 前端检查；最多 2 次），`tool_error`。
