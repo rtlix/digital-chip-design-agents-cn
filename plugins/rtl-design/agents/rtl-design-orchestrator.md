@@ -53,6 +53,15 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 - rtl_signoff FAIL (missing modules)         → module_planning   （最多 1×） `spec_gap`
 - rtl_signoff FAIL (quality issues)          → rtl_coding        （最多 2×） `functional`
 
+- design_input_check FAIL (input set wrong: duplicate include basename, stale or sibling generated tree, missing path, shadowing config) → escalate: "input_setup: repoint the filelist/include/config; no RTL was edited"
+- design_input_check FAIL (registration only: a module this run added is missing from a tool's source list) → rtl_coding (add the file to each list that misses it; edit no RTL; max 1×) `connectivity`
+- lint_check FAIL (rule check did not complete; cause in input set or not attributed to RTL this run wrote) → escalate `input_setup`
+- lint_check FAIL (rule check did not complete; parse error confined to RTL this run wrote, design_input_check PASS) → rtl_coding `tool_error`
+- lint_check FAIL (front-end check: converted RTL does not parse in the downstream tool) → rtl_coding `tool_error`
+- synth_check FAIL (parse or elaboration error in the synthesis front-end) → rtl_coding (max 2×) `tool_error`
+- synth_check FAIL (black box or undefined module that resolves to first-party RTL) → rtl_coding (add source-list entry; max 1×) `connectivity`
+- synth_check FAIL (black box with no first-party RTL: missing library/macro/IP view) → escalate `input_setup`
+
 ## Sign-off Criteria
 - lint_errors: 0
 - cdc_violations_unwaived: 0
@@ -91,6 +100,9 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 
 11. 输入集合门控：首次 lint_check 前运行 design_input_check；之后每次 lint_check 前，若 filelist、include 路径、生成头文件树或工具项目/配置文件自上次通过后改变，则重新检查，包括处理 fix_request 模式。仅工具读取预期文件且规则检查完成，lint 才构成 RTL 证据。design_input_check FAIL（本次新增模块仅缺列表注册的例外除外），或 lint_check 因非本次写入 RTL 解析错误的原因未完成时，不编辑任何 .v/.sv；追加终止 history[]，包含 decision=escalate、failure_class=input_setup、retry_strategy=escalate、suggested_next_step=escalate，reason 指出文件、工具实际路径、预期路径、应改行。处理修复请求时保持 claimed。输入集合通过前，绝不删除端口、信号或声明来消除重复声明/未声明标识符消息。
 
+10. Fix-request gate: in fix-request-servicing mode, run **every gate the edit could affect** before closing the request. Always run `lint_check`, including the **front-end check** wherever a downstream flow converts RTL; re-run `cdc_rdc_analysis` when clock/reset crossing or synchronizer/reset logic changed；re-run `synth_check` when timed logic depth/state/module/file changes。任何 affected gate 无法执行时必须 **reported NOT RUN with the reason**。全部 affected gate 通过后才可 `status=fixed`。
+11. Input-set gate: first `lint_check` 前运行 `design_input_check`；filelist/include/generated-tree/project config 改变后再次运行。除“本次新增 module 尚未登记到 source list”这一 registration-only case 外，input-set FAIL 均升级为 `input_setup`，不修改 RTL。
+12. Hand-off：**Write it on every termination path**。`rtl.files[]` is the block's complete current file set；lint/cdc/front-end 等状态只有在本次 run **`true` only when measured clean in this run**，否则 false/null 并在 notes 说明。
 <!-- BEGIN SHARED:failure-classification (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
 ## Failure Classification & Retry Strategy
 每条 `history[]` 记录都携带两个字段：`failure_class` 表示发生了什么故障，
