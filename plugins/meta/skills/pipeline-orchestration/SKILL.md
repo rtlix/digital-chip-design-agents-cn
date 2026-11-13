@@ -481,5 +481,5 @@ Spawn：
 
 - 当前 pipeline session 的 fix_request 最终达到 fixed 或 abandoned
 - `cross_domain_iteration_count` 更新
-- 写入 `memory/meta/experiences.jsonl`
+- 写入 `<MEM>/meta/experiences.jsonl`
 - Console summary：处理了哪些 request、用了多少轮、结果为 converged / escalated / no open requests

@@ -18,9 +18,11 @@ allowed-tools: Read, Write, Bash
 - 由 physical-design-orchestrator 中途调用：不要再次启动 Agent；本文件只作为规则库。
 
 ## Pre-run Context
+
+`<MEM>` below is the resolved memory root（以下 `<MEM>` 表示已经解析出的 Memory 根目录），never the literal `memory/` directory。解析优先级为显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库 seed；可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径。
 任何 stage 前，如存在则读取：
-1. `memory/pd/knowledge.md`
-2. `memory/pd/run_state.md`
+1. `<MEM>/pd/knowledge.md`
+2. `<MEM>/pd/run_state.md`
 并应用已知 failure pattern、tool flag、PDK quirk 和 run state。
 
 ## Purpose
@@ -292,10 +294,10 @@ Optional timing/area/power threshold 使用 schema default。
 ## Memory
 
 ### Run state
-任何工具前第一步写 `memory/pd/run_state.md`，包含 run_id/design_name/pdk/tool/start_time/last_stage。
+任何工具前第一步写 `<MEM>/pd/run_state.md`，包含 run_id/design_name/pdk/tool/start_time/last_stage。
 
 ### Write on stage completion
-每 stage 完成后按 `run_id` upsert `memory/pd/experiences.jsonl`，
+每 stage 完成后按 `run_id` upsert `<MEM>/pd/experiences.jsonl`，
 不得同一 run 追加第二行。最终 sign-off 前 `signoff_achieved:false`。
 Record 必须在 JSON object 内包含顶层 `run_id`。
 

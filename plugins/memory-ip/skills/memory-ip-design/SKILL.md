@@ -19,9 +19,11 @@ allowed-tools: Read, Write, Bash
 不要直接执行 stage。被 Orchestrator 中途调用时，本文件只作为只读规则库使用。
 
 ## Pre-run Context
+
+`<MEM>` below is the resolved memory root（以下 `<MEM>` 表示已经解析出的 Memory 根目录），never the literal `memory/` directory。解析优先级为显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库 seed；可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径。
 任何 stage 前，如存在则读取：
-1. `memory/memory-ip/knowledge.md`
-2. `memory/memory-ip/run_state.md`
+1. `<MEM>/memory-ip/knowledge.md`
+2. `<MEM>/memory-ip/run_state.md`
 利用历史 failure pattern、tool flag、PDK/compiler quirks 与当前 run state。
 
 ## Purpose
@@ -261,12 +263,12 @@ Optional：
 ## Memory
 
 ### Write on stage completion
-每 stage 后按 `run_id` upsert `memory/memory-ip/experiences.jsonl`。
+每 stage 后按 `run_id` upsert `<MEM>/memory-ip/experiences.jsonl`。
 `run_id = memory-ip_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。
 最终 sign-off 前 `signoff_achieved:false`。
 
 ### Run state
-工具前第一步写 `memory/memory-ip/run_state.md`；成功完成 stage 后才更新 `last_stage`。
+工具前第一步写 `<MEM>/memory-ip/run_state.md`；成功完成 stage 后才更新 `last_stage`。
 
 ### Optional: claude-mem index
 如 `mcp__plugin_ecc_memory__add_observations` 可用，把 applied fix 写入

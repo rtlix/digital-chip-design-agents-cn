@@ -19,9 +19,11 @@ allowed-tools: Read, Write, Bash
   sign-off criteria 或 loop-back guidance。
 
 ## Pre-run Context
+
+`<MEM>` below is the resolved memory root（以下 `<MEM>` 表示已经解析出的 Memory 根目录），never the literal `memory/` directory。解析优先级为显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库 seed；可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径。
 任何 stage 前，如存在则读取：
-1. `memory/hls/knowledge.md`
-2. `memory/hls/run_state.md`
+1. `<MEM>/hls/knowledge.md`
+2. `<MEM>/hls/run_state.md`
 并利用其中历史 failure pattern、tool flag 和当前 run state。
 
 ## Purpose
@@ -224,12 +226,12 @@ Optional：`hls.cosim_tolerance_pct` 默认 5；`clock.clk_mhz` 如有则作为 
 ## Memory
 
 ### Write on stage completion
-每 stage 完成后按 `run_id` upsert `memory/hls/experiences.jsonl`。
+每 stage 完成后按 `run_id` upsert `<MEM>/hls/experiences.jsonl`。
 `run_id = hls_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用；
 每条 JSON 必须包含匹配的顶层 `run_id`，最终 sign-off 前保持 `signoff_achieved:false`。
 
 ### Run state
-工具执行前第一步写 `memory/hls/run_state.md`：
+工具执行前第一步写 `<MEM>/hls/run_state.md`：
 ```markdown
 run_id:      hls_<YYYYMMDD>_<HHMMSS>
 design_name: <design>
