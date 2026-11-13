@@ -121,6 +121,31 @@ ORFS/LibreLane 中典型 Yosys log：
 
 ---
 
+
+### Tool Notes: commercial synthesis (measured)
+
+以下经验来自 Sky130 commercial-flow 实测：**Synopsys DC-NXT X-2025.06-SP3** 与 **Cadence Genus 23.14-s090_1**。
+
+**Design Compiler / DC-NXT：**
+- 传统 `dc_shell -topographical_mode` 走 Milkyway 路径；使用 NDM 的 topographical flow 应运行 `dcnxt_shell -topographical_mode`。
+- 使用 `set_tlu_plus_files` 并紧接 `check_tlu_plus_files`；在该 shell 中 `read_parasitic_tech` does not exist。
+- Physical constraint 可通过 `extract_physical_constraints` 导入；需要固定位置时使用 `set_cell_location -fixed`。
+- **`set_svf <file>` **before** `analyze`**，让后续 Formality 能解释 constant/merge/retiming 变换。
+- 高性能映射可使用 `compile_ultra -spg`。实测只用 tt + area recovery 时可能形成 ripple-carry adder，在 ss 角出现 **-10.5 ns at ss**；应使用 **MCMM** scenario，并在 hold scenario 配置 `set_fix_hold`。
+
+**Cadence Genus：**
+- Physical-aware flow：`read_mmmc`、`read_physical`、`syn_generic -physical`、`syn_map -physical`、`syn_opt`。
+- Genus 的 MMMC 常用 `create_timing_condition`；同一 MMMC 文件直接给 Innovus 可能触发 **TCLCMD-992**，需按工具方言拆分。
+- iSpatial/physical optimization 缺 `qrcTechFile` 时可触发 **PHYS-1015**；此时只能使用已具备的 physical-aware flow 并明确记录限制。
+- Genus 对 SDC 中 `set_max_area 0` 可能给出 **SDC-200**，不能照搬 DC 语义。
+- `write_do_lec` 生成的 Conformal 脚本仍需 negative control 验证。
+
+**Fusion Compiler：**
+- FC 的 compile 命令是 `compile_fusion`，不是 `compile_ultra`。
+- 需要导入已有 placement 时可使用 `read_def -incremental`，并记录 runtime 与 **peak RSS**。
+
+比较/benchmark 模式下，如果 area/power target 未提供，在 history reason 写 **comparison run, no target**，只记录实测值，不把缺目标升级为 spec_gap；clock target 仍必须一致。
+
 ## Stage: compile_final
 
 ### Domain Rules
