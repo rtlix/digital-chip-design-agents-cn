@@ -175,6 +175,119 @@ Agent 流程：
 
 ---
 
+
+## Stage: extraction
+
+### Domain Rules
+1. 最终 routed DEF/GDS 使用独立 extractor 生成 sign-off parasitics；实现工具自己的 RC 只作为 native 诊断值。
+2. 每个 PVT/RC corner 都记录 extractor、版本、tech file、layer map、netlist/DEF md5。
+3. Sign-off library 必须完整，**including every macro's `.lib`**；SRAM/macro 缺 view 属于 `input_setup`，不能靠重跑 extraction 修复。
+4. Commercial extractor tech 必须与 open/reference extractor 相关性验证。StarRC 常见路径为 **`grdgenxo` → `nxtgrd`**；Quantus 为 **`Techgen` → `qrcTech`**。
+5. **Correlate** commercial vs reference extractor 的 total C、coupling C、critical-net R/C。超过约定 tolerance 时继续只能标记 **`indicative`**，不得静默选一个。
+6. SPEF 缺失、空、stale 属于 tool result failure；layer/tech/corner 映射错误属于 input_setup。
+7. Open PDK sign-off 可使用 OpenRCX/Magic extraction；商业工具没有 foundry deck 时不能伪称 foundry sign-off。
+
+### QoR Metrics to Evaluate
+- 每个 required RC corner 均有非空 SPEF
+- Clock/timing nets annotation 完整
+- Commercial/reference RC correlation 在约定 tolerance 内，或明确标记 indicative
+- SPEF provenance/md5 完整
+
+### Output Required
+- 每 corner SPEF
+- extractor/tech/corner mapping report
+- correlation report
+- `pd.spef` (a list of extracted parasitic files, one per RC corner)
+
+---
+
+## Stage: ir_em
+
+### Domain Rules
+1. 在最终 routed database 与最终 power grid 上运行 static IR；有 activity/vector 时再跑 dynamic IR。
+2. 最坏 IR drop 必须低于 `constraints.power.ir_drop_pct_max`。
+3. Signal/PG EM violation 都必须为 0；没有正确 EM rule/current model 时结果只能 NOT RUN。
+4. Power grid 为空、macro PG pin floating、strap/via 缺失属于 connectivity/floorplan 问题，不是 power-optimization 数字调参问题。
+5. Power sign-off 与 timing 一样使用 extracted parasitics 和统一 activity assumptions。
+6. RedHawk/Voltus 结果必须能追溯到 grid、power file、tech rule 和 activity source。
+
+### QoR Metrics to Evaluate
+- static_ir_drop_pct < target
+- dynamic_ir_drop_pct < target（若运行）
+- em_violations = 0
+- power_mw 已记录
+
+### Output Required
+- Static/dynamic IR report
+- EM report
+- power-grid connectivity evidence
+- per-domain power summary
+
+---
+
+## PDK Enablement
+
+商业工具使用 open PDK 时，很多 view 需要自己构建，不能假设 PDK 原生提供 NDM、TLU+、nxtgrd、qrcTech、Calibre deck。
+
+### Measured on Sky130
+- Liberty Compiler 在部分库构建结束时 **segfaults at process exit**，但在此前已经写出有效 DB；必须验证输出而不是只看进程退出。缺失 cell/pin 可见 **LIB-007**。
+- NDM workspace 需要 gapless site/row 定义；不完整 physical view 可能触发 **DPUI-924**。Timing library 建议 **one pane per corner**，并运行 `check_workspace -allow_missing`；PVT metadata 问题可出现 **PVT-030**。
+- Tech/import 过程中遇到单位或 attribute 问题可见 **UID-109**。
+- StarRC：用 **grdgenxo** 和 `-itf2TLUPlus` 生成 TLU+/nxtgrd；实测需处理 **LBMISC-215479**。
+- Quantus/Techgen：实测碰到 **IMPEXT-6091**、**IMPEXT-3548**；Sky130 layer 名需把 **`li1` → `met0`** 映射。相关 extraction threshold 使用 `COUPLING_ABS_THRESHOLD: 0.1`。
+- Calibre 不一定有 foundry deck；仅有 `.calibre` 环境文件不能等价于 sign-off deck。
+- Innovus tech import 可能出现 **TEC-011**；MMMC 构造使用 `create_timing_condition`。
+- ICC2 导入 floorplan 时可先使用 **TRACKS-only DEF**；server/feature 问题可能出现 **SVR-4**。
+- Open PDK sign-off 主路径仍是 **Magic and KLayout for DRC, Netgen for LVS**，除非确实拿到商业 foundry deck。
+
+## Tool Notes: Cadence Innovus
+
+以下为 **23.14-s088_1** 实测要点：
+- Analysis view 要带 `-latency_file`，修改 view 后运行 `update_constraint_mode`；使用 `set_ccopt_property update_io_latency false` 时注意 **virtual ideal I/O clock** 的语义。
+- 部分命令/对象错误可见 **TCLCMD-997**。Hold closure 实测使用 `setOptMode -holdTargetSlack 0.2`；native timing 曾比统一 judge **0.17 ns optimistic**。
+- Power comparison 必须统一 activity；实测 Innovus 默认/设置 **activity 0.2**，可用 `set_default_switching_activity`。
+- **`create_inst` returned without placing anything** 的场景改用 `addInst`，并按需要 `-physical`。
+- **`create_shape` does not exist**；某些版本里 **`editAddRoute` did nothing**，PG/metal shape 使用 `add_shape` 等实际支持命令。
+- ECO 后先 **`refinePlace` before `ecoRoute`**。Antenna 运行 `check_antennas`，修复策略包括 **Taps at the source**。
+- 常见 rule/message：**npc.2**、**IMPCCOPT-2440**、**IMPOPT-7027**、**PIN**。
+
+## Tool Notes: Synopsys ICC2 / Fusion Compiler
+
+以下为 **X-2025.06-SP1** 实测：
+- 首次启动/载入复杂库可能 **30-65 min**。Layer policy 使用 `global_min_layer_mode`；必要约束应设为 **`hard`**，不能依赖 soft preference。
+- PG via 定义用 `set_pg_via_master_rule`；scenario PVT 用 `set_process_number`、`set_voltage`、`set_temperature`。
+- 多对象命令注意 `-object_list`；错误用法可触发 **CHF-002**；STA/power 报告按 `-scenarios`。
+- Hold repair 避免只用 weak **`ZBUF`/`ZINV`**；通过 `set_lib_cell_purpose -include hold` 明确可用 cell。**`add_buffer` drops the new cell off the row grid** 时必须合法化。
+- Fat wire 使用 **fat_table**；实测为避免 strap spacing DRC，需要 **0.1 um met4 routing blockages**；相关 rule 如 **m4.5ab**。
+- Pin access 可用 `set_routing_rule -min_routing_layer met3 -min_layer_mode allow_pin_connection`。
+- Antenna ECO：`diode_mode 1`，可 **drive the antenna ECO from the OpenROAD list**，但需重新 DRC。
+- 名称匹配可能需 `-case_insensitive`；sign-off netlist 可用 `write_verilog -exclude supply_statements`。
+- GDS merge 使用 `-merge_gds_top_cell`；block/version 管理可用 `copy_block`。
+
+## Tool Notes: Synopsys StarRC
+
+**X-2025.06-SP1** 实测：
+- DEF 输入用 `TOP_DEF_FILE`；常见诊断 **SX-0271**、**SX-1907**、**SX-2064**。
+- 为和 reference extractor 做可比 correlation，可设置 `COUPLING_REL_THRESHOLD: 0`；必要时 `LEF_USE_OBS: NO`。
+- 大量短路报告要设置合理 `SHORTS_LIMIT`，但不能用 limit 掩盖真实 extraction setup 问题。
+
+## Tool Notes: Ansys RedHawk
+
+**2025 R2.2** 实测：
+- **`INSTANCE_POWER_FILES` must be plural**；单数形式可能被 **accepted silently and ignored**。
+- Instance naming/input 建议 **escape-free**；缺 power mapping 可在报告中看到 **ipfMissing**。
+- IR 输出可用 `write_rh_file -filetype irdrop`；DEF 容错可见 `IGNORE_DEF_ERROR 1`，但 **ITG-016** 等连接错误必须 root-cause。
+- Pad/location 文件常为 **`.ploc`**；自动 EM 可配置 `ENABLE_AUTO_EM 1`。
+- 以 PEAK current 对 DC limit 跑出的 EM 数字 **not a valid pass/fail**；sign-off 应 `perform emcheck -mode AVG` 或按 foundry rule 对应 mode。
+- `DECAP_CELL` 列表与 power-grid 结果会 **depend on decap** 配置，比较时必须一致。
+
+## Tool Notes: Magic, KLayout and Netgen on a commercial GDS
+
+实测版本包括 Magic **8.3.489**、KLayout **0.29.4**、Netgen **1.5.278**。
+- Full-chip Magic DRC 可能需要 **11 GiB** 以上内存；不要只凭某一个工具 **alone** 宣告 clean。
+- Open-PDK macro/black-box 边界的 DRC 要特别确认 **inside the SRAM footprints** 是否由 macro deck/waiver 正确处理。
+- Sky130 常见 well rule 如 **`nwell.4`**；LVS/抽取时端口必要时通过 `port make` 明确化。
+
 ## Stage: timing_optimization
 
 ### Domain Rules
