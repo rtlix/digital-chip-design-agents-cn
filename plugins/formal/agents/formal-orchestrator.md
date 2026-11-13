@@ -175,17 +175,17 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
    它是唯一的停止条件。在替代 artifact 完成测量之前，保留上一次测得更好的 artifact。
    每次回退迭代后，将当前测量结果（QoR 数值或故障集合，而不只是故障个数）与上一轮比较：
    - **Regression（退步）**：结果更差或出现新故障。恢复上一版 artifact；本轮仍计入上限。
-   - **No progress（无进展）**：连续两轮结果未改善。停止再次运行并升级处理。
+   - **No progress（无进展）**：**two consecutive iterations** leave the result where it was（连续两轮结果未改善）。停止再次运行并升级处理。
    - **Moved target（目标改变）**：改善来自被检查对象改变，例如放宽约束、添加 waiver/
      exception/exclusion、弱化检查/测试/假设，或改变设计行为以消除工具告警。
-     靠改变目标获得的 PASS 无效。撤销改动；只有目标本身确实错误时，才在 `history[]`
+     **A pass obtained by changing the target is not a pass.**（靠改变目标获得的 PASS 无效。）撤销改动；只有目标本身确实错误时，才在 `history[]`
      的 `reason` 和该阶段 waiver/exception 记录中引用证明这一点的规格条款或约束来源。
      其他领域或用户拥有的目标（`design_state.constraints`、规格、上游 artifact）不能自行修改，
      应按第 4 条处理。如果只能改变目标才能通过，则升级处理。
 
    本条升级时追加终止 `history[]`：`decision: "escalate"`、观察到的 `failure_class`
    及映射的 `retry_strategy`、`suggested_next_step: "escalate"`；`reason` 指出三种情况
-   中触发了哪一种、各轮测量结果及用户需要决定什么。此时未达到上限，不记录 `resource_limit`。
+   中触发了哪一种、各轮测量结果及用户需要决定什么。此时 **`resource_limit` — the cap was not reached**（未达到上限，因此不记录 resource_limit）。
 <!-- END SHARED:stage-gating -->
 
 <!-- BEGIN SHARED:long-running-jobs (synced from tools/agent_shared_sections.md - edit there, then run tools/sync_agent_sections.py) -->
@@ -193,13 +193,13 @@ WARN 的规则若允许 `proceed`，映射的 `regenerate` 不会覆盖它；规
 构建、仿真以及 PD/formal/verification 流程通常会超出单次 turn。
 
 1. **后台运行，并记录恢复定位方法。** 将 stdout/stderr 重定向到日志，保存 job id。
-   不在前台执行长任务，也不使用紧密循环忙轮询；等待循环同样消耗 turn budget，却不产出结果。
+   不在前台执行长任务；**never busy-poll it**（绝不使用紧密循环忙轮询）。等待循环同样消耗 turn budget，却不产出结果。
 2. **按任务时长选择检查间隔。** 编译或仿真以分钟为单位检查，而非秒。
    每次检查都消耗 turn，检查频率应符合预计运行时长。
-3. **日志安静不代表任务挂起。** 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
+3. **A quiet log is not a hung job.**（日志安静不代表任务挂起。） 编译/仿真日志可能数分钟不变，但进程仍正常消耗 CPU。
    判断挂起前先确认存活性（进程仍运行并消耗 CPU，或输出文件仍增长）；
    仅凭日志静默无法判断运行或挂起。
-4. **任务预计超过 turn budget 时，停止等待并交接。** 报告正在运行什么、job id、日志路径、
+4. **If the job will outlive your turn budget, stop and hand it over.**（任务预计超过 turn budget 时，停止等待并交接。） 报告正在运行什么、job id、日志路径、
    启动命令、完成判定方法，以及尚未完成的具体阶段和 Sign-off Criteria。
    列出任务的阶段性报告比未经验证的成功声明更有用。
 5. **不报告未读取的结果。** 任务仍运行的 gate 按 Reporting Contract 标为 NOT RUN。
