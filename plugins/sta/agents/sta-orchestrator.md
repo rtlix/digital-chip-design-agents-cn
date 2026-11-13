@@ -45,6 +45,8 @@ Multi-corner ECO loop 会在同一个已加载 design 上反复查询 timing，�
 - eco_guidance：ECO applied → multi_corner_analysis（总计最多 10×）
 - eco_guidance: ECO cell count > 2%          → escalate to PD team `power_area`
 
+- multi_corner_analysis FAIL (unannotated parasitics >1% or any clock net unannotated) → escalate `input_setup`
+
 ## Sign-off Criteria
 - setup_wns_ns: >= `design_state.constraints.timing.wns_ns_target`，全部 corner
 - setup_tns_ps: <= `design_state.constraints.timing.tns_ns_target * 1000`
