@@ -629,6 +629,8 @@ module load cadence/xcelium/20.09
 
 ---
 
+- `tools_via_modules: []` 可能为空 **because the listing failed**, not because no modules exist；必须结合 `module_listing` 判断。
+
 ## Stage: tool_installation
 
 ### Domain Rules
@@ -732,7 +734,7 @@ echo "Modulefile written: ${MODFILE_DIR}/${TOOL_VERSION}"
 **Modulefile 内容规则：**
 - 每个 modulefile 至少设置 `PATH`、`LD_LIBRARY_PATH`
 - 适用时添加 `MANPATH`、`PKG_CONFIG_PATH`、`PYTHONPATH`
-- 工具特有根变量（存在时设置）：按命令名，即 `tool-status.json` 中的 `tool` 值匹配，不按括号中的产品名匹配。Python 包使用包名，所以 cocotb 行匹配 `cocotb`，而非探测命令 `cocotb-config`：
+- **Tool-specific root vars**（存在时设置）：按命令名，即 `tool-status.json` 中的 `tool` 值匹配，不按括号中的产品名匹配。Python 包使用包名，所以 cocotb 行匹配 `cocotb`，而非探测命令 `cocotb-config`：
   - `verilator` (Verilator) → `VERILATOR_ROOT`
   - `yosys` (Yosys) → `YOSYS_DATDIR`
   - `llvm-config` (LLVM) → `LLVM_DIR`
@@ -922,6 +924,7 @@ Memory (optional) — `mcp-memory.py` is the server itself:
 ## Stage: environment_validation
 
 ### Domain Rules
+**critical-path tools (`yosys`, `verilator`, `openroad`, `sta`)** are keyed by command, not product name。
 
 **关键路径工具**指 `tool-status.json` 中 `tool` 为 `yosys`、`verilator`、`openroad` 或 `sta` 的条目，分别对应 Yosys、Verilator、OpenROAD、OpenSTA。下方规则均匹配**该命令键而非产品名**。OpenSTA 命令为 `sta`，匹配 `"OpenSTA"` 会找不到条目，无法判断工具缺失；用于 FAIL 门控时会导致静默通过。
 
