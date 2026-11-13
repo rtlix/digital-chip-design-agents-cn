@@ -165,6 +165,28 @@ lint 通过不能证明以下事项。只要相应结构存在，就必须检查
 5. Synthesis 引入的不等价应路由给 synthesis domain；V1 不通过 RTL fix_request 处理。
 6. Sign-off LEC 必须使用最终交付 netlist 与对应 RTL。
 
+
+### Tool Notes: Formality and Conformal LEC (measured)
+
+以下是 Sky130 CPU macro 上的实测经验：**Formality X-2025.06** 与 **Conformal LEC 24.10-p100**。Conformal 推荐调用为 `lec -nogui -xl -dofile <lec.do>`；所有真实 EQUIVALENT 结果必须先通过结构性 negative control。
+
+**Formality：**
+- 读取顺序很重要：先 reference library/RTL 和 `set_top`，再 implementation library/netlist；顺序错误可出现 **FM-236** 与 unlinked cell。
+- 设置 `set_app_var hdlin_unresolved_modules error`，防止缺失模块被静默 black-box。
+- **A DC netlist needs DC's SVF**。在实测中，没有 SVF 时有 **143 reference registers** 无法匹配；SVF 需在 DC 中 `set_svf <file>` 并由 Formality 消费。
+- `report_*` 输出使用 `redirect -file <f> { report_... }`，而不是 shell 重定向。
+- Post-route diode 可能作为无功能 black box；同时运行一个 **diode-stripped** copy，要求该副本 unmatched=0。
+
+**Conformal：**
+- Genus 的自动 dofile 可能依赖 **Conformal_Ultra** license；因此使用 `-xl`。
+- 首行必须保持 `tclmode`；需要退出时可切 `vpxmode`。
+- 除 guided compare 外，再运行一个 **direct** compare，避免 implementation-information/SVF-like hint 掩盖问题。
+
+**Negative controls on flat netlists：**
+- **Negative control before trusting EQUIVALENT**：在 revised netlist 上故意反相一个 flop D 或交换一个逻辑门输入，要求 Formality/Conformal 都报告不等价。
+- **Anchor mutants on structure, not on literal names**：优化/重布线会改名甚至 resize，例如 `a211o_1` → `a211o_2`；mutator 应按 cell family/net role 查找，并在找不到 anchor 时 **fail loudly**。
+- Formality 的成功 verdict 是 `Verification SUCCEEDED`；FAILED/INCONCLUSIVE 都不能当作等价。
+
 ### QoR Metrics to Evaluate
 - Unmatched compare point：0
 - Non-equivalent point：0
