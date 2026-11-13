@@ -21,3 +21,9 @@
 ## Notes
 
 - STA sign-off 要求所有 corner 同时满足 setup WNS/TNS 与 hold WNS/TNS 目标；任一 corner fail 都阻止 tape-out。
+
+
+## Commercial STA Measured Notes
+- PrimeTime `read_sdc` 遇到第一个 unsupported command 时可能停止读取余下 SDC，但 shell 继续；因此每次 run 都记录 shared SDC 的 **md5**，并验证关键 clock/I/O constraint 实际存在。
+- SPEF 同样记录 md5，并在 slack 前运行 parasitic annotation gate。空/半读 SDC 或大面积未 annotation 产生的 clean timing 不可信。
+- Cross-tool benchmark 必须统一 SDC、extractor/tech、STA engine 和 activity assumptions；native 数字只作诊断。
