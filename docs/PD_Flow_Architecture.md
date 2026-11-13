@@ -84,7 +84,7 @@
 ## 3. Stage Sequence
 
 ```text
-floorplan → placement → cts → routing → timing_optimization → power_optimization → area_optimization → signoff
+floorplan → placement → cts → routing → extraction → timing_optimization → power_optimization → area_optimization → ir_em → signoff
 ```
 
 回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`physical-design-orchestrator.md`](../plugins/pd/agents/physical-design-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
