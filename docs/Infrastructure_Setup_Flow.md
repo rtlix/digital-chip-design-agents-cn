@@ -41,12 +41,12 @@ host ──► tool_discovery ──► module_discovery ──► tool_installa
 
 | 文件 | 写入方 | 读取方 | 内容 |
 |---|---|---|---|
-| `tool-status.json` | `tool_discovery` 创建，`module_discovery` 原地更新 | 所有后续阶段 | **唯一**的逐工具记录：`tool`/`command`（必须是可执行命令名，而非产品名）、`status`、`version`、`path`、`role`、`dialect`、模块字段及 `python_env` |
+| `tool-status.json` | `tool_discovery` 创建，`module_discovery` 原地更新 | 所有后续阶段 | **唯一**的逐工具记录：`tool`/`command`（必须是可执行命令名，而非产品名）、`status`、`version`、`path`、`role`、`dialect`、模块字段、`python_env` 与 `coverage_reporting_gaps` |
 | `module-status.json` | `module_discovery` | `tool_installation`、`environment_validation` | 模块系统类型（`module_system`）与其列表是否可信（`module_listing`），两者独立 |
 | `load-modules.sh` | `module_discovery`，仅在有符合条件的工具时生成 | 用户 | 加载所选版本的 `module load` 命令 |
-| `install-missing-tools/install-<tool>.sh` | `tool_installation` | 用户 | 每个 `MISSING` 工具对应一个脚本；**流程绝不执行这些脚本** |
+| `install-missing-tools/install-<tool>.sh` | `tool_installation` | 用户 | 每个 `MISSING` 工具对应一个脚本；需要 project venv 时另生成 `install-python-venv.sh`；**流程绝不执行这些脚本** |
 | `plugins/infrastructure/mcp/mcp-*.json` | `mcp_configuration` | 用户，复制到 `.claude/settings.json` | 使用已解析绝对路径的 MCP 配置 |
-| `tool-manifest.json` | `environment_validation` | 用户、后续重新运行 | 验证**凭据**：Python 环境存活情况、Wrapper 可执行权限、MCP 文件存在性、命令方言冲突及结论；引用 `tool-status.json`，不复制其内容 |
+| `tool-manifest.json` | `environment_validation` | 用户、后续重新运行 | 验证**凭据**：Python 环境存活情况、Wrapper 可执行权限、MCP 文件存在性、命令方言冲突、simulator compile-and-run smoke、regression job bound、`SIM_BUILD` free space 及最终结论；引用 `tool-status.json`，不复制其内容 |
 | `design_state.json` | 编排器，会话结束时 | 流水线 | `environment.{tools_validated, pdk_installed, signoff}` 和一条 `history[]` 记录 |
 
 各数据结构定义见 Skill 中对应阶段的 **Output Required**。
@@ -67,12 +67,12 @@ tool_discovery → module_discovery → tool_installation → wrapper_deployment
 
 每个阶段的详细规则位于 Skill 的 `## Stage: <name>` 下。
 
-- **`tool_discovery`。** 探测所有开源和专有工具，并记录当前 Python 环境（`module`、`custom` 或 `system`）。每项记录包含 `role`（工具功能）和 `dialect`（工具使用哪一家的命令词汇）。专有工具只检测并探测版本，绝不安装。
+- **`tool_discovery`。** 探测所有开源和专有工具，并记录当前 Python 环境（`module`、`system`、`custom` 或 `venv`）。PATH 中第一个 `python3` 只算 candidate：EDA vendor tree 内的解释器标记为 `bundled`，永不选为 `PYTHON_EXEC`（参考主机的裸 `python3` 曾是 Calibre 自带 3.8.16）；选择满足 cocotb `Requires-Python` 的最新 `python3.N`，并优先 project-local venv。每个工具记录 `role` 与 `dialect`。商业工具用非交互 bash 的 `command -v` 解析，绝不依赖用户 alias，只检测/探测版本、不安装；例如 `xrun` 存在但 `imc` 缺失时记入 coverage-reporting gap。
 - **`module_discovery`。** 分类模块系统，通过逐级尝试调用方式证明可以获取列表，再将仅通过模块提供的工具映射回 `tool-status.json`（`FOUND_PREFER_MODULE`、`MISSING_LOAD_MODULE`）。无法列出模块时报告 WARN；若关键路径工具仍缺失，则升级处理，因为这些工具尚未真正检查过。
-- **`tool_installation`。** 根据检测到的操作系统和包管理器，为每个 `MISSING` 工具生成一个安装脚本及 TCL modulefile。Python 包使用 `python_env.exec -m pip` 安装。该阶段不执行任何安装，因此只有用户运行脚本后，`MISSING` 状态才可能改变。
-- **`wrapper_deployment`。** 设置 Wrapper 可执行权限，并使用 `--version` 逐一执行冒烟检查。预期响应为 `WARN` 且 `verified: false`：Wrapper 已运行并输出合法 JSON，但尚无设计结果。
+- **`tool_installation`。** 根据检测到的操作系统和包管理器，为每个 `MISSING` 工具生成一个安装脚本及 TCL modulefile。Python 包通过 `python_env.exec -m pip` 安装，或由 `install-python-venv.sh` 建立 project venv；cocotb 版本从 CI 实际测试行读取，并检查 testbench 使用的是 1.x 还是 2.x API。该阶段不执行任何安装，因此只有用户运行脚本后，`MISSING` 状态才可能改变。
+- **`wrapper_deployment`。** 设置全部 25 个 Wrapper 的可执行权限并执行安全 smoke。没有设计结果时预期 `WARN` + `verified:false`。除 MCP-backed wrapper 外，VCS/Xcelium compile、URG/IMC、cocotb results 和 11 个 PD/signoff wrapper 直接调用；`wrap-cocotb-results.sh` 不运行工具，只从 `results.xml` 得出 verdict，因为 cocotb `make` 可能 testcase 失败但仍 exit 0。
 - **`mcp_configuration`。** 写入使用已解析路径的 MCP 配置并打印出来；不修改 `.claude/settings.json`，服务器注册由用户完成。
-- **`environment_validation`。** 按 `tool_discovery` 的相同方式重新检测，并检查 Python 环境是否仍可用、Wrapper 是否可执行、MCP 文件是否存在。报告同功能但不同命令方言的工具共存情况，并写入 `tool-manifest.json`。若关键路径工具（`yosys`、`verilator`、`openroad`、`sta`）缺失，则升级处理而不继续循环，因为本流程的任何阶段都不能代为安装工具。
+- **`environment_validation`。** 按 `tool_discovery` 相同方式重新检测，确认 Python 仍存活、25 个 Wrapper 可执行、MCP 文件存在，并报告同 role/不同 dialect 的共存。启用 simulator smoke 时，在 timeout 内**编译并运行** trivial module（license queue 可能等待而不是失败）；记录 regression job bound `min(cores, RAM / per-job peak, license seats)` 和 `SIM_BUILD` free space。关键路径工具（`yosys`、`verilator`、`openroad`、`sta`）缺失时直接升级。
 
 ---
 
