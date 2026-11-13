@@ -259,3 +259,7 @@ Read `design_state.json`. 提取： `fix_requests`, `cross_domain_iteration_coun
   "constraint_ref": "<last fix_request.id processed>"
 }
 ```
+
+
+## Memory Seed 缺失处理（上游同步）
+若解析后的 `<MEM>/meta/knowledge.md` 不存在，不得静默跳过；必须 say so in the experience record's `notes`，并提示运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py --init` 初始化中央 Memory seed。
