@@ -129,111 +129,138 @@ allowed-tools: Read, Write, Bash
 | Lauterbach TRACE32 | `t32marm` | `debug_probe` | `lauterbach` | none — UNVERIFIED |
 | Arm Development Studio | `armds` | `debug_probe` | `arm` | none — UNVERIFIED |
 
-**Commercial PD/signoff probes, measured 2026-10-25 on a second EDA host** (stdin `/dev/null`,
-each probe in its own process group, 120 s budget, light load): `lc_shell -version` 30 s,
-`icc2_lm_shell -version` 41 s (`lm_shell version X-2025.06`), `grdgenxo -v` 4 s (StarRC banner
-`Version X-2025.06-SP1`), `quantus -version` 32 s and `Techgen -version` 2 s (`Version        :
-23.1.1-p051`), `fm_shell -version` 38 s, `lec -version` 20 s (`Tool:	lec	24.10-p100`),
-`pvs -version` 36 s (`Version        : 24.12-s015`), `calibre -version` 62 s (`//  Calibre
-v2026.1_17.11`), `redhawk -v` 5 s and `totem -v` 53 s (`2025 R2.2 ...`), `genus -version` 75 s
-(`Version: 23.14-s090_1`), `joules -version` 30 s (`Version: 23.14-s077_1`), `innovus -version`
-**123 s** (`@(#)CDS: Innovus v23.14-s088_1`) and `pt_shell -version` **≈120 s** — all exit 0
-with the named line, and recorded in the table above. **On that host `dc_shell -version`
-printed `dc_shell version    -  X-2025.06-SP3` but exited 1** (twice), so parse the line and
-do not gate on the exit code. `StarXtract -v` printed `Version: X-2025.06-SP1` and also exited 1
-(twice); it stays UNVERIFIED until a clean probe is found. `icc2_shell -version` and
-`fc_shell -version` printed nothing within 120 s and stay UNVERIFIED. An earlier pass at
-load average ~10 with a 60 s budget timed out on `pt_shell`, `genus`, `innovus` and `joules` as
-well — which is why rule 4 below now budgets 180 s. **A vendor launcher is a shell script that execs a
-child (`pt_shell` → `pt_shell_exec`); `timeout` kills only the script and the child survives
-holding a licence.** Run every probe in its own process group (`setsid`) and kill the group
-(`kill -- -<pgid>`) on timeout, then confirm with `ps` that no `*_exec` child remains.
+**商业 PD/签核工具版本探测：2026-10-25 在第二台 EDA 主机上的实测。**
+每条探测都以 `/dev/null` 作为标准输入，在独立进程组中运行；
+主机负载较低，单次探测预算 120 秒：
+`lc_shell -version` 30 秒；
+`icc2_lm_shell -version` 41 秒（`lm_shell version X-2025.06`）；
+`grdgenxo -v` 4 秒（StarRC 标识为 `Version X-2025.06-SP1`）；
+`quantus -version` 32 秒、`Techgen -version` 2 秒（`Version: 23.1.1-p051`）；
+`fm_shell -version` 38 秒；
+`lec -version` 20 秒（`Tool: lec 24.10-p100`）；
+`pvs -version` 36 秒（`Version: 24.12-s015`）；
+`calibre -version` 62 秒（`Calibre v2026.1_17.11`）；
+`redhawk -v` 5 秒、`totem -v` 53 秒（`2025 R2.2`）；
+`genus -version` 75 秒（`Version: 23.14-s090_1`）；
+`joules -version` 30 秒（`Version: 23.14-s077_1`）；
+`innovus -version` **123 秒**（`@(#)CDS: Innovus v23.14-s088_1`）；
+`pt_shell -version` **约 120 秒**。
+这些命令都以退出码 0 结束，并在输出中包含指定版本行，已反映在上表。
 
-**Two command fixes.** Cadence Conformal's batch command is `lec` (the product was listed as
-`conformal`, which is not a binary), and StarRC's is `StarXtract` (`starrc` is not a binary);
-both resolve under their install `bin/` on the second host. `tempus`, `voltus`, `icv` and
-`redhawk_sc` are absent there: Tempus and Voltus are kept as optional rows, and a flow that
-needs signoff STA, power or IR/EM uses PrimeTime / PrimePower and RedHawk/Totem instead.
-`magic` and `netgen` are commonly not on the host PATH at all but inside the LibreLane container
-image; detect them there when the flow runs LibreLane.
+**该主机的特殊情况**：`dc_shell -version` 会输出
+`dc_shell version - X-2025.06-SP3`，但两次探测均以退出码 1 结束，
+因此必须解析版本行，不能只根据退出码判定。
+`StarXtract -v` 也会输出 `Version: X-2025.06-SP1` 但两次退出码均为 1，
+在找到干净的版本探测方法前仍标记为 `UNVERIFIED`。
+`icc2_shell -version` 和 `fc_shell -version` 在 120 秒内没有输出，
+也仍为 `UNVERIFIED`。
+曾在 load average 约 10 的情况下用 60 秒预算测试，
+`pt_shell`、`genus`、`innovus` 和 `joules` 均超时，
+因此下方规则 4 将预算提高到 180 秒。
 
-**`vcs -ID` also prints a FLEXlm host ID.** Parse and store the `Compiler version`
-value only — never write the host ID into `tool-status.json`.
+**注意许可证进程清理**：厂商启动器可能只是启动子进程的 Shell 脚本
+（例如 `pt_shell` 启动 `pt_shell_exec`）。如果只用 `timeout` 结束外层脚本，
+子进程仍可能存活并持续占用许可证。必须用 `setsid` 为每次探测建立独立进程组，
+超时时用 `kill -- -<pgid>` 结束整个进程组，之后通过 `ps`
+确认没有遗留的 `*_exec` 进程。
 
-**A probe flag is listed only once confirmed on a real install** — a guessed flag can open
-an interactive shell or check out a license. The flags above were each measured: exit 0
-with the named line present, in 1–26 s, no license queue. `dc_shell -version` prints an
-unrelated ASLR advisory first, so parse the line containing `version`, never the first line
-of output. `genus -version` was measured the same way: 26 s cold, 12 s warm, which is why
-rule 4 below sets the probe timeout at 180 s (originally 10 s, then 60 s): `innovus` and
-`pt_shell` took about 2 minutes on the second host.
+**两个命令名纠正**：Cadence Conformal 的批处理可执行命令为 `lec`
+（`conformal` 是产品名而不是二进制命令）；StarRC 使用 `StarXtract`
+（不存在名为 `starrc` 的二进制命令）。两者均位于第二台主机相应安装目录的 `bin/`。
+该主机未安装 `tempus`、`voltus`、`icv`、`redhawk_sc`：
+Tempus/Voltus 因而仍列为可选工具；需要签核 STA、功耗或 IR/EM 时使用
+PrimeTime/PrimePower 和 RedHawk/Totem。
+`magic` 与 `netgen` 往往不在主机 PATH 中，而是在 LibreLane 容器镜像内，
+因此使用 LibreLane 时应在容器内检测。
 
-**The two original `UNVERIFIED` rows were unverified upstream, not an oversight** (Innovus has
-since been measured on a second host; see the commercial-probe paragraph above). Neither
-could be confirmed on the reference host, and in both cases the obstacle was the install
-rather than the flag: `innovus -version` exits 0 reporting an expired build authorisation,
-and `vsim -version` exits 0 failing to load `libXext.so.6`. A site with a working install of
-either should confirm the flag and contribute it here.
+**`vcs -ID` 也会打印 FLEXlm 主机 ID。**
+只解析并保存 `Compiler version` 字段，绝不能把主机 ID 写入 `tool-status.json`。
 
-**The remaining `UNVERIFIED` rows above have no probe evidence at all, which is worth
-recording precisely so a later contributor does not re-measure it blind:**
-`voltus -version` and `tempus -version` each exit 0 but with `cds_plat.dat` absent, the
-same shape as the `innovus` failure. `joules`, `conformal`, `starrc`, `liberate`, and `jg`
-did not resolve to a binary under `<root>/linux/<version>/bin/` on the reference host at
-all. Three of the exit-0 cases print no version line, which is exactly why rule 4's WARN
-conditions below treat "exits 0, no version line" as its own case rather than a pass.
+**只有在真实安装环境验证过的版本探测选项才能写进表格。**
+未经验证的参数可能打开交互式 Shell 或占用许可证。
+上面的探测选项均经过实测：含预期版本行、退出码为 0、
+原始参考主机耗时 1–26 秒、无许可证排队。
+`dc_shell -version` 会先打印与版本无关的 ASLR 提示，
+因此要匹配包含 `version` 的行，不能盲取第一行。
+`genus -version` 冷启动实测 26 秒、热启动 12 秒。
+第二台主机上的 `innovus` 和 `pt_shell` 则可能耗时约两分钟，
+所以规则 4 的超时预算从最初 10 秒、后来的 60 秒提高至 180 秒。
 
-**`urg` and `imc` read the coverage databases their simulator writes, and nothing else.** `urg`
-ships in the VCS tree (`$VCS_HOME/bin/urg`); `urg -version` was measured on the reference host:
-exit 0 in under 1 s, `URG Version Y-2026.03`, no license checkout. `imc` is **not** reliably
-installed with Xcelium: it ships under `$XCELIUM_HOME/tools/bin` on some installs and with
-vManager/IMC on others, and is often off PATH even when `xrun` is on it. On the reference host
-the Xcelium 24.03 tree holds only `tools/bin/launch_rmi_imc.sh` and no `imc` binary anywhere,
-which is why `imc` has no measured probe. `tool_discovery` rule 4 searches for it off PATH and
-records a missing one as a coverage-reporting gap, not as a coverage failure.
-The two share the role `coverage_report` and are not substitutable: each reads only its own
-simulator's database (`.vdb` vs `cov_work/**/*.ucd`), so a VCS database cannot be reported by
-`imc`, nor an Xcelium one by `urg`.
+**最初两项 `UNVERIFIED` 是上游真实状态，并非漏测。**
+Innovus 已在第二台主机补测，见上文实测记录。
+在原始参考主机上，`innovus -version` 虽退出码为 0，
+却提示构建授权过期；`vsim -version` 虽退出码为 0，
+却因缺少 `libXext.so.6` 无法加载。
+有可用安装环境的站点应重新验证选项并贡献实测结果。
 
-Note on Formality: the primary command is `fm_shell`. `formality` is the legacy GUI wrapper
-and is absent from recent installs, so it is listed as the alternate.
+**其余 `UNVERIFIED` 项也确实没有可靠探测证据**，应明确保留原因，
+避免后续贡献者重复无效测试。`voltus -version` 和 `tempus -version`
+均退出码为 0，但报告缺少 `cds_plat.dat`，与 Innovus 故障相似。
+参考主机的 `<root>/linux/<version>/bin/` 中找不到
+`joules`、`conformal`、`starrc`、`liberate` 和 `jg` 二进制文件。
+此外，有三个退出码为 0 的探测没有输出任何版本行，所以规则 4
+必须将“退出码为 0 但无版本信息”单独标为 WARN，不能判 PASS。
 
-Same `role` with a different `dialect` means the two tools are not interchangeable
-however similar their purpose. `environment_validation` reports such coexistence.
+**`urg` 与 `imc` 只读取各自仿真器生成的覆盖率数据库。**
+`urg` 随 VCS 发布（`$VCS_HOME/bin/urg`）；参考主机实测
+`urg -version` 在 1 秒内以退出码 0 返回 `URG Version Y-2026.03`，
+不触发许可证 checkout。
+`imc` 并不保证随 Xcelium 一起安装：部分环境位于
+`$XCELIUM_HOME/tools/bin`，另一些则通过 vManager/IMC 提供；
+即便 `xrun` 在 PATH 中，`imc` 也经常不在。
+参考主机的 Xcelium 24.03 目录只包含
+`tools/bin/launch_rmi_imc.sh`，完全没有 `imc` 可执行文件，
+因此没有可证实的 `imc` 探测结果。
+`tool_discovery` 规则 4 会搜索 PATH 外的安装位置；
+缺少 IMC 应记录为**覆盖率报告工具缺失**，不是覆盖率测试失败。
+两者虽然都是 `coverage_report` 角色，却不能互换：
+`urg` 只读取 VCS 的 `.vdb`，`imc` 只读取 Xcelium 的
+`cov_work/**/*.ucd`。
 
-**Single-member roles are intentional, not an oversight** — each is a role whose only
-plausible peers are already claimed by their primary role, so the role can never produce a
-dialect-conflict WARN today:
-- `lint_cdc` holds only `spyglass`. `jg` and `vsim` also do clock-domain-crossing work, but
-  `jg` is recorded under `formal` and `vsim` under `rtl_simulator` — a tool carries one
-  `role` in `tool-status.json`, and each already does its primary job elsewhere.
-- `mem_compiler` holds only `artisan`. Synopsys's memory compiler shares a binary with
-  `siliconsmart`, which is recorded under `characterisation` — the job that binary performs.
-- `extraction` holds `StarXtract` (synopsys) and `quantus` (cadence): two dialects, and their
-  tech files (`nxtgrd` vs `qrcTech`) are not interchangeable either. `extraction_tech` holds the
-  two tech-file generators, `grdgenxo` and `Techgen`, kept apart from the extractors because they
-  run once per PDK, not once per design.
-- `library_prep` holds `lc_shell` and `icc2_lm_shell`, both synopsys: `.lib`→`.db` and the NDM
-  reference library. The Cadence flows read `.lib`/LEF directly and need no peer.
-- `ir_em` holds `redhawk` and `totem` (ansys). Voltus would be its cadence peer but is filed under
-  `power_analysis`, the job it is used for here.
-- `power_analysis` has three single-command peers plus three commandless ones (below); none
-  of `voltus`, `primepower`, `joules`, or `powerpro` has a second same-dialect alternative.
-- `embedded_compiler` holds only `armcc` with a command; Green Hills and IAR are its
-  commandless peers.
+**Formality 说明**：首选命令是 `fm_shell`；
+`formality` 属于旧版 GUI wrapper，在近期安装版本中可能不存在，
+因此仅列为备用项。
 
-**Products named in domain skills with no documented command, so not detectable by this
-table** (the table is keyed on `which <command>`; a row with no command cannot be probed):
-Synopsys Platform Architect (`arch_simulator`/`synopsys`), ARM Performance Models
-(`arch_simulator`/`arm`), Cadence Virtual System Platform (`arch_simulator`/`cadence`),
-Green Hills MULTI (`embedded_compiler`/`greenhills`), IAR Embedded Workbench
-(`embedded_compiler`/`iar`), Synopsys Synplify (`synthesis`/`synopsys`), Siemens Aprisa
-(`physical_design`/`siemens`), Synopsys PrimePower (it runs inside `pt_shell`, so detecting
-PrimeTime is detecting it) and Siemens Questa PowerPro (both `power_analysis`; Cadence Joules
-now has its `joules` row above), Synopsys VC Static (`lint_cdc`/`synopsys`). A command name
-is not guessed here any more than a probe flag is above; each is instead given its `role`
-and `dialect` at the point of use in its domain skill.
+**相同 `role` 不代表工具可互换。** 如果 `dialect` 不同，
+即使功能看起来相似也不应互换，`environment_validation` 必须报告这种共存情况。
 
+**只有一个成员的角色是有意设计，不是遗漏。**
+它们可能的同类工具通常已按自己的主要职责归入其他角色，
+所以目前不会产生 dialect-conflict WARN：
+
+- `lint_cdc` 只包含 `spyglass`。`jg` 和 `vsim` 虽也具备 CDC 能力，
+  但已分别归入 `formal` 与 `rtl_simulator`；
+  `tool-status.json` 中每个工具只能有一个主 `role`。
+- `mem_compiler` 只包含 `artisan`。Synopsys 内存编译器与
+  `siliconsmart` 共享二进制文件，而后者按主要用途归于 `characterisation`。
+- `extraction` 包含 Synopsys 的 `StarXtract` 和 Cadence 的 `quantus`；
+  其技术文件 `nxtgrd` 与 `qrcTech` 同样不能互换。
+  `extraction_tech` 单列 `grdgenxo`、`Techgen`，
+  因为技术文件生成通常每个 PDK 执行一次，而不是每个设计都执行。
+- `library_prep` 包含同属 Synopsys 方言的 `lc_shell`、
+  `icc2_lm_shell`，分别用于 `.lib`→`.db` 和 NDM 参考库准备；
+  Cadence 直接读取 `.lib`/LEF，无需同类工具。
+- `ir_em` 包含 Ansys 的 `redhawk`、`totem`。
+  Cadence Voltus 在本项目按主要用途归入 `power_analysis`。
+- `power_analysis` 有三个单一命令成员及三个无已知命令成员；
+  `voltus`、`primepower`、`joules` 和 `powerpro` 各自都没有第二个同方言替代项。
+- `embedded_compiler` 只有 `armcc` 有明确命令；
+  Green Hills 与 IAR 属于无已知命令的同类工具。
+
+**领域 Skill 提到了产品，但没有文档化命令，故无法通过此表自动探测**：
+此表按 `which <command>` 查询；无命令的项无法执行探测。
+包括 Synopsys Platform Architect（`arch_simulator`/`synopsys`）、
+ARM Performance Models（`arch_simulator`/`arm`）、
+Cadence Virtual System Platform（`arch_simulator`/`cadence`）、
+Green Hills MULTI（`embedded_compiler`/`greenhills`）、
+IAR Embedded Workbench（`embedded_compiler`/`iar`）、
+Synopsys Synplify（`synthesis`/`synopsys`）、
+Siemens Aprisa（`physical_design`/`siemens`）、
+Synopsys PrimePower（在 `pt_shell` 内运行，检测 PrimeTime 即可同时覆盖）、
+Siemens Questa PowerPro（`power_analysis`；Cadence Joules 现已在上表有独立行）、
+Synopsys VC Static（`lint_cdc`/`synopsys`）。
+与版本探测选项一样，不允许猜测二进制命令名；
+仅在领域 Skill 中标明这些产品的 `role`、`dialect`。
 ---
 
 ## MCP Architecture — Two Tiers
@@ -778,9 +805,9 @@ echo "Modulefile written: ${MODFILE_DIR}/${TOOL_VERSION}"
 ## Stage: wrapper_deployment
 
 ### Domain Rules
-- Inventory contract: **all 25 wrappers** must be present; **25 executable wrapper scripts** are expected.
-- Validation contract: **wrapper scripts with executable bit set (target: 25)**; a clean install therefore has **all 25 wrappers** and **25 executable wrapper scripts**.
-- `wrap-verilator-sim.sh` takes a simulation binary; its smoke result must be **never a mis-invocation** of `--version` as a simulator binary.
+- **清单契约**：全部 25 个 Wrapper 必须齐全；预期恰有 **25 个可执行 Wrapper 脚本**。
+- **验证契约**：检查 Wrapper 脚本的可执行权限（目标数量 25）。干净安装应同时具备 **25 个 Wrapper 文件**和**25 个具有执行权限的脚本**。
+- `wrap-verilator-sim.sh` 需要接收已编译的仿真可执行文件；其冒烟测试**绝不能**把 `--version` 当作仿真二进制文件错误传入。
 1. 将全部 25 个 Wrapper 脚本部署到 `plugins/infrastructure/tools/`
 2. 对每个 Wrapper 运行 `chmod +x`；权限被拒绝时判为 FAIL，并以 `sudo chmod +x` 指引升级处理
 3. 无论退出码如何，每个 Wrapper 均须输出符合下方数据结构的 JSON
