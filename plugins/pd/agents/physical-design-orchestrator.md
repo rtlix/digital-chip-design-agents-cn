@@ -15,51 +15,64 @@ skills:
 ## Stage Sequence
 floorplan → placement → cts → routing → extraction → timing_optimization → power_optimization → area_optimization → ir_em → signoff
 
-## Tool Options
+## Tool Options（工具选项）
 
-### Open-Source
-- OpenROAD / ORFS
-- LibreLane / OpenLane2
-- KLayout
+### 开源
+- **OpenROAD / ORFS**（`make DESIGN_CONFIG=...`）：按顺序运行完整 PD 流程；结束后逐阶段读取日志（见 Skill 的 sequential flow 说明）。
+- **LibreLane / OpenLane 2**（`openlane <config.json>`）：顺序执行流程，完成后逐阶段读取日志。
+- **KLayout**（`klayout`）：DRC、LVS 和 GDS 查看。
+- **Magic**（`magic`）与 **Netgen**（`netgen`）：Sky130 开源流程的 DRC/寄生参数提取及 LVS；通常在 LibreLane 容器中运行。
+- **OpenRCX**（OpenROAD 内置）：开源寄生参数提取器，也是为开放 PDK 构建商业提取 tech 时的相关性对照基准（见 Skill 的 `## PDK Enablement`）。
 
-### Proprietary
-- Cadence Innovus (`innovus`，命令方言 `cadence`）
-- Synopsys IC Compiler 2 (`icc2_shell`，命令方言 `synopsys`）
-- Siemens Aprisa （命令方言 `siemens`）
+### 商业
+- **Cadence Innovus**（`innovus`，命令方言 `cadence`）：`wrap-innovus.sh`。
+- **Synopsys ICC2 / Fusion Compiler**（`icc2_shell` / `fc_shell`，命令方言 `synopsys`）：`wrap-icc2.sh`，FC 使用 `WRAP_ICC2_TOOL=fc_shell`。
+- **寄生参数提取**：Synopsys StarRC（`StarXtract`、`wrap-starrc.sh`）和 Cadence Quantus（`quantus`）。
+- **IR/EM**：Ansys RedHawk / Totem（`redhawk` / `totem`、`wrap-redhawk.sh`）；Cadence Voltus 为可选项，某些主机并未安装。
+- **提取与签核的 STA/功耗判定**：PrimeTime + PrimePower（`pt_shell`、`wrap-pt.sh`）；由 STA Skill 的跨工具公平比较规则指定判定引擎。
+- **DRC/LVS**：Siemens Calibre（`calibre`）、Cadence PVS（`pvs`）；仅当 PDK 提供相应检查 deck 时使用。开放 PDK 通常只包含 Magic/KLayout/Netgen deck。
+- **Siemens Aprisa**（命令方言 `siemens`）。
 
-### MCP Preference
-- 交互式 timing/DRC/ECO loop 优先使用 OpenROAD/OpenSTA session MCP。
-- 短 stage 可使用 batch MCP。
-- MCP 不可用时使用 wrapper。
-- ORFS/LibreLane 等长 full-flow 直接通过 Bash 启动，并读取其结构化 metrics/log，而不是把完整 raw log 塞入 context。
+### MCP 优先级
+**完整 ORFS/LibreLane 流程不通过 MCP 运行**，因为执行时间长并生成结构化输出文件。完成
+`make ... finish` 或 `openlane config.json` 后，读取 ORFS 的 `reports/.../metrics.json`，
+或 LibreLane 的 `runs/<design>/<tag>/metrics.json`。
 
-## Loop-Back Rules
-- placement FAIL (WNS < −0.5 ns)              → floorplan             （最多 2×） `timing`
-- routing FAIL （DRC 违规数 > 0）            → routing               （最多 3×） `drc_lvs`
-- routing FAIL (WNS < 0)                       → timing_optimization   （最多 3×） `timing`
-- timing_optimization FAIL (ECO > 2% cells)   → routing               （最多 1×） `power_area`
-- signoff FAIL (timing)                        → timing_optimization   （最多 2×） `timing`
-- signoff FAIL (DRC/LVS)                       → routing               （最多 2×） `drc_lvs`
-- signoff FAIL （功耗/电迁移 EM）                      → power_optimization    （最多 1×） `power_area`
+对于布局布线完成后的 timing_optimization / signoff ECO 迭代，按顺序选择：
+1. **`openroad-session` MCP（Tier 2）**：调用 `load_design` 后反复执行 `query_timing` / `query_drc`，避免每次重新载入。
+2. **`openroad` batch MCP（Tier 1）**：适用于一次性单阶段操作。
+3. **Wrapper**：MCP 未配置时使用 `wrap-openroad.sh` / `wrap-klayout.sh`。
+4. **直接执行**：最后手段。
 
-- extraction FAIL (tech file, layer map or corner mapping does not match the PDK stack; unannotated nets above 1 %) → escalate `input_setup`
-- extraction FAIL (parasitics file missing, stale or empty) → extraction (max 1×) `tool_error`
-- extraction WARN (commercial vs reference extractor correlation outside tolerance) → proceed；所有下游 timing/power 数字标记 `indicative`
-- ir_em FAIL (static or dynamic IR drop above limit) → power_optimization (max 1×) `power_area`
-- ir_em FAIL (EM violations on signal nets) → routing (max 1×) `drc_lvs`
-- ir_em FAIL (power grid missing/empty/unconnected) → floorplan (max 1×) `connectivity`
-- ir_em FAIL (缺少 PDK IR tech/rule file 或工具无法读取 grid) → escalate `input_setup`
+## Loop-Back Rules（失败回退规则）
+- `placement` FAIL（WNS 小于 −0.5 ns）→ `floorplan`（最多 2 次），`timing`。
+- `routing` FAIL（DRC 违规数大于 0）→ `routing`（最多 3 次），`drc_lvs`。
+- `routing` FAIL（WNS 小于 0）→ `timing_optimization`（最多 3 次），`timing`。
+- `timing_optimization` FAIL（ECO 超过总 cell 的 2%）→ `routing`（最多 1 次），`power_area`。
+- `signoff` FAIL（时序未通过）→ `timing_optimization`（最多 2 次），`timing`。
+- `signoff` FAIL（DRC/LVS 未通过）→ `routing`（最多 2 次），`drc_lvs`。
+- `signoff` FAIL（功耗或 EM 问题）→ `power_optimization`（最多 1 次），`power_area`。
+- `extraction` FAIL（tech file、layer map 或 corner mapping 与 PDK 不匹配，未注释网络比例大于 1%）→ escalate，`input_setup`。提取器是在错误输入上正常运行，直接重跑只会复现错误。
+- `extraction` FAIL（寄生参数文件缺失、过期或为空）→ `extraction`（最多 1 次），`tool_error`。
+- `extraction` WARN（商业与参考提取器的相关性超出规定容差）→ proceed；所有后续时序/功耗指标标为 `indicative`，记录实测偏差，不得默默接受任一结果。
+- `ir_em` FAIL（静态或动态 IR drop 超限）→ `power_optimization`（最多 1 次），`power_area`。
+- `ir_em` FAIL（信号线存在 EM 违规）→ `routing`（最多 1 次），`drc_lvs`。
+- `ir_em` FAIL（电源网格缺失、为空或断开，包括 PG shapes 为 0、macro pin 悬空）→ `floorplan`（最多 1 次），`connectivity`。
+- `ir_em` FAIL（PDK 缺少 IR tech/rule file 或工具无法读取电源网格）→ escalate，`input_setup`。
 
-## Sign-off Criteria
-- setup_wns_ns: >= `constraints.timing.wns_ns_target`
-- setup_tns_ns: = `constraints.timing.tns_ns_target`
-- hold_wns_ns: >= target
-- drc_violations: 0
-- lvs_errors: 0
-- antenna_violations: 0
-- ir_drop_pct: < `constraints.power.ir_drop_pct_max`
-
-- em_violations: 0
+## Sign-off Criteria（所有条件均必须满足）
+- `setup_wns_ns`：≥ `design_state.constraints.timing.wns_ns_target`（默认 0）。
+- `hold_wns_ps`：≥ `design_state.constraints.timing.hold_ps_target * 1000`（默认 0 ps）。
+- `setup_tns_ps`：≤ `design_state.constraints.timing.tns_ns_target * 1000`（默认 0 ps）。
+- `drc_violations`：0。
+- `lvs_errors`：0。
+- `antenna_violations`：0。
+- `core_area_util_pct`：≤ `design_state.constraints.area.utilization_pct_max`（默认 85%）。
+- `ir_drop_pct`：小于 `design_state.constraints.power.ir_drop_pct_max`（默认 5%）；取最终布线数据库的 `ir_em` 阶段测得的静态/动态最差值。
+- `em_violations`：0。
+- `power_mw`：若存在功耗预算，则必须 ≤ `design_state.constraints.power.power_mw`；没有目标预算的对比运行仅记录结果，不用于判定，并标注 `comparison run, no target`。
+- `metal_density`：处于晶圆厂规定的窗口内。
+- 上述时序和功耗指标必须来自**提取寄生参数后的签核 STA 引擎**（`extraction` 阶段），不得采用实施工具自己的估计作为判定依据；可保留实施工具数字，但必须标为 `native`（见 STA Skill 跨工具公平比较规则）。
 
 ## Stage Agent Output Format
 每个 stage 保持标准机器字段：
