@@ -49,14 +49,14 @@ simulator_portability → coverage_analysis → regression_signoff
 - coverage_analysis: functional_coverage < 100%     → constrained_random  （最多 5×） `coverage_gap`
 - coverage_analysis: code_line_coverage < 95%       → directed_tests      （最多 3×） `coverage_gap`
 - regression_signoff FAIL (failure rate > 0%)       → constrained_random  （最多 3×） `functional`
-- simulator_portability FAIL (tool-dialect compile error, or a flag missing from the translation include) → simulator_portability (max 3×) `tool_error`
-- simulator_portability: RTL defect (LRM violation the new simulator rejects) → write fix_request (status=open, failure_class=functional) → ESCALATE awaiting pipeline-orchestrator `functional`
-- simulator_portability FAIL (cross-simulator result difference not yet root-caused) → simulator_portability (max 3×) `functional`
-- simulator_portability FAIL (negative control reported PASS) → simulator_portability (max 2×) `tool_error`
-- simulator_portability FAIL (reference simulator's `make -n` output changed) → simulator_portability (max 2×) `tool_error`
-- simulator_portability / regression_signoff FAIL (license checkout smoke fails or times out) → escalate `resource_limit`
-- regression_signoff FAIL (port mode, failure rate > 0%) → simulator_portability (max 3×) `functional`
-- coverage_analysis WARN (report-only mode, coverage below target) → proceed `coverage_gap` — the two `coverage_analysis` loop-backs do not fire in report-only mode
+- simulator_portability FAIL（工具方言导致的编译错误，或转换 include 中缺少必要选项）→ simulator_portability（最多 3 次），`tool_error`
+- simulator_portability（发现新仿真器拒绝的 LRM 违规等 RTL 缺陷）→ 写入 `fix_request`（`status=open`、`failure_class=functional`），升级并等待 pipeline-orchestrator 处理，`functional`
+- simulator_portability FAIL（不同仿真器的结果存在差异且尚未定位根因）→ simulator_portability（最多 3 次），`functional`
+- simulator_portability FAIL（负向对照测试竟然报告 PASS）→ simulator_portability（最多 2 次），`tool_error`
+- simulator_portability FAIL（参考仿真器的 `make -n` 输出发生变化）→ simulator_portability（最多 2 次），`tool_error`
+- simulator_portability / regression_signoff FAIL（许可证 checkout 冒烟测试失败或超时）→ escalate，`resource_limit`
+- regression_signoff FAIL（移植模式，失败率大于 0%）→ simulator_portability（最多 3 次），`functional`；移植模式不得回退到 constrained_random
+- coverage_analysis WARN（仅生成报告模式，覆盖率未达目标）→ proceed，`coverage_gap`；此模式不触发上述两条 coverage_analysis 回退规则（见 Behaviour Rule 14）
 
 ## Sign-off Criteria
 - functional_coverage_pct: 100
