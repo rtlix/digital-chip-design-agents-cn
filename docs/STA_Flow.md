@@ -49,6 +49,8 @@ constraint_validation → multi_corner_analysis → path_analysis → exception_
 
 回退规则（目标阶段、迭代上限以及需要升级处理而非继续循环的失败）见 [`sta-orchestrator.md`](../plugins/sta/agents/sta-orchestrator.md) 的 `## Loop-Back Rules`。以该文件为准，本文不重复这些规则。
 
+比较不同 implementation tool 时，遵循 Skill 中的 **Fair Cross-Tool Comparison**：所有 flow 使用相同 SDC（记录 md5）、相同 extractor 与 tech、相同 STA engine，以及相同 activity assumption；工具自己的报告只标为 `native`。每次 judge 还要通过 md5 证明实际使用了所声称的输入，并要求 implementation 在被 judge 的 corner 中完成 closure。Skill 中的 PrimeTime multi-corner / PrimePower Tool Notes 来自 PrimeTime X-2025.06 对三条 Sky130 flow 的实测；Cadence Tempus 是 optional，主机可能没有安装。
+
 ---
 
 ## 3. Skill 文件说明
