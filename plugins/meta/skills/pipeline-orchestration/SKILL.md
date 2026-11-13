@@ -439,7 +439,7 @@ Pipeline Orchestrator 遇到任何非 null pending_approval 都先停止：
 | any | `resource_limit` | `escalate` | any | 通过 pending_approval 升级 |
 | `low` | any | any | `escalate` | 升级，结果不可靠 |
 | `low` | any | any | 非 escalate | 仍升级，low confidence 优先 |
-| any | `input_setup` | `escalate` | any | **never re-dispatch**； 通过 pending_approval 升级，绝不重新派发或开启 fix_request，reason 指出需要重新指向的输入 |
+| any | `input_setup` | `escalate` | any | **never re-dispatch**；通过 pending_approval 升级，**never open a `fix_request`**，reason 指出需要重新指向的输入，reason 指出需要重新指向的输入 |
 | any | `tool_error` | `regenerate` | `retry_stage` | 同一 Orchestrator 重试一次，仍失败则升级 |
 | any | `drc_lvs` \| `connectivity` | `refine` | `loop_back_to:<stage>` | 带 error log 重跑 generating Orchestrator |
 | any | `functional` \| `coverage_gap` | `refine` | `escalate` | 新建 fix_request，经 RTL 闭环 |
