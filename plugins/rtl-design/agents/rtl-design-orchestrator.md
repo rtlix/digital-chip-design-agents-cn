@@ -38,26 +38,25 @@ module_planning → rtl_coding → design_input_check → lint_check → cdc_rdc
 3. **直接执行** —— 最后手段；Verilator lint 输出在多轮 loop-back 后会快速膨胀
 
 ## Loop-Back Rules（失败回退规则）
-- `design_input_check` FAIL（输入集合错误：include 文件同名、过期/同级生成目录、路径缺失或配置遮蔽）→ escalate，归类为 `input_setup`。说明错误文件如何从错误路径优先解析，要求修正 filelist、include 路径或配置；**不得编辑 RTL**。
-- `design_input_check` FAIL（仅注册问题：本轮新增模块没有出现在某个工具的源文件列表中）→ `rtl_coding`：只向缺失的各工具列表添加文件，**不得修改 RTL**；最多 1 次，`connectivity`。
-- `lint_check` FAIL（规则检查尚未开始执行，原因属于输入集合或无法归因于本轮写入的 RTL）→ escalate，`input_setup`；明确说明尚未评估 RTL，也没有修改 RTL。
-- `lint_check` FAIL（规则检查未执行完成，但解析错误只来自本轮编写的 RTL，且 `design_input_check` PASS）→ `rtl_coding`；计入下述最多 5 次的限制，属于 `tool_error`，不得误记为 `functional`。
-- `lint_check` FAIL（规则已执行完成，且错误数大于 0）→ `rtl_coding`；最多 5 次，`functional`。
-- `lint_check` FAIL（前端兼容检查发现转换后的 RTL 无法由下游工具解析）→ `rtl_coding`：修复源 RTL 结构，不修改转换生成文件；计入上述最多 5 次限制，`tool_error`。
-- `cdc_rdc_analysis` FAIL（存在未豁免违规）→ `rtl_coding`；最多 3 次，`connectivity`。
-- `synth_check` FAIL（综合前端解析或展开错误，例如 Yosys 无法解析 sv2v 产物）→ `rtl_coding`：修复源 RTL，并重新执行 lint 门控的前端检查；最多 2 次，`tool_error`。
-- `synth_check` FAIL（黑盒/未定义模块实际上存在项目自有 RTL）→ `rtl_coding`：补齐综合源文件列表，**不编辑 RTL**；最多 1 次，`connectivity`。
-- `synth_check` FAIL（没有项目自有 RTL 定义，缺失库、宏或 IP 视图）→ escalate，`input_setup`，要求提供对应库文件或 stub view。
-- `synth_check` FAIL（WNS 小于 −0.5 ns）→ `rtl_coding`；最多 2 次，`timing`。
-- `synth_check` FAIL（面积超过估计的 120%）→ `module_planning`；最多 1 次，`power_area`。
-- `rtl_signoff` FAIL（缺少模块）→ `module_planning`；最多 1 次，`spec_gap`。
-- `rtl_signoff` FAIL（质量问题）→ `rtl_coding`；最多 2 次，`functional`。
+- design_input_check FAIL (input set wrong: duplicate include basename, stale or sibling generated tree, missing path, shadowing config) → escalate，`input_setup`；输入集合错误时应修正 filelist、include 路径或配置，明确指出读取的错误路径；**不修改 RTL**。
+- design_input_check FAIL (registration only: a module this run added is missing from a tool's source list) → rtl_coding（补齐各个工具缺失的源文件列表，edit no RTL; max 1×），`connectivity`。
+- lint_check FAIL (rule check did not complete; cause in the input set or not attributed to RTL this run wrote) → escalate，`input_setup`；规则未开始执行时，不得据此判断 RTL 有错误。
+- lint_check FAIL (rule check did not complete; parse error confined to RTL this run wrote, design_input_check PASS) → rtl_coding（计入 5 次回退上限；never `functional`），`tool_error`。
+- lint_check FAIL（规则已完成，错误数大于 0）→ rtl_coding（最多 5 次），`functional`。
+- lint_check FAIL (front-end check: converted RTL does not parse in the downstream tool) → rtl_coding（修改源文件中的问题结构，不修改转换产物；计入上述最多 5 次），`tool_error`。
+- cdc_rdc_analysis FAIL（存在未豁免的 CDC/RDC 违规）→ rtl_coding（最多 3 次），`connectivity`。
+- synth_check FAIL (parse or elaboration error in the synthesis front-end) → rtl_coding（修复原始 RTL，随后重新执行 lint 前端检查；最多 2 次），`tool_error`。
+- synth_check FAIL (black box or undefined module that resolves to first-party RTL) → rtl_coding（补齐综合源文件列表，不编辑 RTL；最多 1 次），`connectivity`。
+- synth_check FAIL (black box with no first-party RTL: missing library, macro or IP view) → escalate，`input_setup`；要求提供库、宏或 IP 的 stub view。
+- synth_check FAIL（WNS 小于 −0.5 ns）→ rtl_coding（最多 2 次），`timing`。
+- synth_check FAIL（面积超过估计值的 120%）→ module_planning（最多 1 次），`power_area`。
+- rtl_signoff FAIL（模块缺失）→ module_planning（最多 1 次），`spec_gap`。
+- rtl_signoff FAIL（设计质量问题）→ rtl_coding（最多 2 次），`functional`。
 
 ### 输入集合安全原则
-
-**严禁仅为了让 lint/elaboration 通过而删除端口、信号或声明。**
-如果检查器读取了错误的 RTL 源文件树、include、生成文件、filelist 或配置，
-必须修正输入集合；不得通过修改 `.v`/`.sv` 文件掩盖配置错误。
+**不得为了让 lint/elaboration 通过就删除端口、信号或声明。**
+当工具读取了错误的 RTL 树、include、生成文件、filelist 或配置时，
+应先纠正输入集合；不能修改 `.v`/`.sv` 来掩盖配置问题。
 
 ## Sign-off Criteria
 - lint_errors: 0
