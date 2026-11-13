@@ -21,9 +21,11 @@ Orchestrator 负责 stage sequence、loop-back 和 sign-off。
 才直接使用本文件中的 domain rule。
 
 ## Pre-run Context
+
+`<MEM>` below is the resolved memory root（以下 `<MEM>` 表示已经解析出的 Memory 根目录），never the literal `memory/` directory。解析优先级为显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库 seed；可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径。
 执行或建议任何 stage 前，如存在则读取：
-1. `memory/firmware/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
-2. `memory/firmware/run_state.md` —— 当前 `run_id/design_name/tool/last_stage`，用于恢复中断流程。
+1. `<MEM>/firmware/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
+2. `<MEM>/firmware/run_state.md` —— 当前 `run_id/design_name/tool/last_stage`，用于恢复中断流程。
 
 ## Purpose
 指导 BSP 创建、外设驱动开发、RTOS 集成与系统级 firmware validation。
@@ -225,13 +227,13 @@ void     PERIPH_HandleIRQ(PERIPH_Type *base, periph_handle_t *handle);
 ## Memory
 
 ### Write on stage completion
-每个 stage 完成后按 `run_id` 在 `memory/firmware/experiences.jsonl`
+每个 stage 完成后按 `run_id` 在 `<MEM>/firmware/experiences.jsonl`
 写入/覆盖一条 JSON record。即使流程中断或单独调用 stage，也能持久化。
 `run_id = firmware_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。
 最终 sign-off 前保持 `signoff_achieved:false`。
 
 ### Run state
-任何工具启动前第一步写 `memory/firmware/run_state.md`：
+任何工具启动前第一步写 `<MEM>/firmware/run_state.md`：
 ```markdown
 run_id:      firmware_<YYYYMMDD>_<HHMMSS>
 design_name: <design>

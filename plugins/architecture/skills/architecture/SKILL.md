@@ -20,9 +20,11 @@ allowed-tools: Read, Write, Bash
 在已运行的 Orchestrator 内再次启动自身会造成递归委派，必须禁止。
 
 ## Pre-run Context
+
+`<MEM>` below is the resolved memory root（以下 `<MEM>` 表示已经解析出的 Memory 根目录），never the literal `memory/` directory。解析优先级为显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库 seed；可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径。
 执行或建议**任何** stage 前，若以下文件存在，先读取：
-1. `memory/architecture/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
-2. `memory/architecture/run_state.md` —— 当前 `run_id`、`design_name`、`tool`、`last_stage`，用于中断后恢复。
+1. `<MEM>/architecture/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
+2. `<MEM>/architecture/run_state.md` —— 当前 `run_id`、`design_name`、`tool`、`last_stage`，用于中断后恢复。
 
 无论本 Skill 由用户加载还是 Orchestrator 中途读取，都执行该预读。
 
@@ -253,12 +255,12 @@ allowed-tools: Read, Write, Bash
 ## Memory
 
 ### Write on stage completion
-每个 stage 完成后都以 `run_id` 为键在 `memory/architecture/experiences.jsonl` 写入/覆盖一条 JSON record，使中断或单独 stage 调用也能保存数据。
+每个 stage 完成后都以 `run_id` 为键在 `<MEM>/architecture/experiences.jsonl` 写入/覆盖一条 JSON record，使中断或单独 stage 调用也能保存数据。
 
 `run_id = architecture_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。最终 sign-off 前保持 `signoff_achieved:false`。
 
 ### Run state
-启动任何工具前第一步写 `memory/architecture/run_state.md`：
+启动任何工具前第一步写 `<MEM>/architecture/run_state.md`：
 
 ```markdown
 run_id:      architecture_<YYYYMMDD>_<HHMMSS>

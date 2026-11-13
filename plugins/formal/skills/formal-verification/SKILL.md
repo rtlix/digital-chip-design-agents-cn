@@ -18,9 +18,11 @@ allowed-tools: Read, Write, Bash
 才直接使用本文件规则。
 
 ## Pre-run Context
+
+`<MEM>` below is the resolved memory root（以下 `<MEM>` 表示已经解析出的 Memory 根目录），never the literal `memory/` directory。解析优先级为显式 `--memory-root` → `$CHIP_DESIGN_MEMORY_ROOT` → 中央默认路径 → 仓库 seed；可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py` 查看实际路径。
 任何 stage 前，如存在则读取：
-1. `memory/formal/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
-2. `memory/formal/run_state.md` —— 当前 `run_id/design_name/tool/last_stage`，用于中断恢复。
+1. `<MEM>/formal/knowledge.md` —— 已知 failure pattern、有效 tool flag、PDK/tool quirks。
+2. `<MEM>/formal/run_state.md` —— 当前 `run_id/design_name/tool/last_stage`，用于中断恢复。
 
 ## Purpose
 利用形式方法穷尽证明设计属性与等价性，补充 simulation-based verification，
@@ -205,12 +207,12 @@ Formal domain 没有必填 design constraint；缺失 optional constraint 时使
 ## Memory
 
 ### Write on stage completion
-每个 stage 完成后，按 `run_id` 在 `memory/formal/experiences.jsonl` 写入/覆盖记录。
+每个 stage 完成后，按 `run_id` 在 `<MEM>/formal/experiences.jsonl` 写入/覆盖记录。
 `run_id = formal_<YYYYMMDD>_<HHMMSS>`，流程开始时生成一次并复用。
 最终 sign-off 前保持 `signoff_achieved:false`。
 
 ### Run state
-任何工具运行前第一步写 `memory/formal/run_state.md`，每 stage 成功后更新 `last_stage`。
+任何工具运行前第一步写 `<MEM>/formal/run_state.md`，每 stage 成功后更新 `last_stage`。
 
 ### Optional: claude-mem index
 如果 `mcp__plugin_ecc_memory__add_observations` 可用，把 applied fix 写入

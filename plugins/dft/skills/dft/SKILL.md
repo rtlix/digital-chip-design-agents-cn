@@ -26,9 +26,9 @@ allowed-tools: Read, Write, Bash
 
 在执行或建议**任何** stage 前，如果以下文件存在，应先读取：
 
-1. `memory/dft/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。
+1. `<MEM>/dft/knowledge.md` —— 已知失败模式、有效工具参数、PDK/工具特殊行为。
    每个 stage 的决策都应吸收其中经验；若不存在则继续。
-2. `memory/dft/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`）。
+2. `<MEM>/dft/run_state.md` —— 当前运行身份（`run_id`、`design_name`、`tool`、`last_stage`）。
    用于中断后的正确恢复；若不存在，表示新运行开始，Orchestrator 会在第一阶段前创建。
 
 无论本 Skill 是由用户直接加载，还是由 Orchestrator 中途读取，都必须执行上述预读，以确保任何诊断前都已经查询历史修复经验。
@@ -262,7 +262,7 @@ allowed-tools: Read, Write, Bash
 ### Stage 完成后写入
 
 每个 stage 完成后，无论当前是否运行完整 Orchestrator，都在
-`memory/dft/experiences.jsonl` 中以 `run_id` 为键写入或覆盖一条 JSON 记录。
+`<MEM>/dft/experiences.jsonl` 中以 `run_id` 为键写入或覆盖一条 JSON 记录。
 即使流程被中断或只调用单独 stage，也能持久保存结果。
 
 `run_id` 使用 `dft_<YYYYMMDD>_<HHMMSS>`，在流程开始时只生成一次，后续 stage 复用。
@@ -271,7 +271,7 @@ allowed-tools: Read, Write, Bash
 
 ### Run state
 
-启动任何工具前，第一件事写入 `memory/dft/run_state.md`：
+启动任何工具前，第一件事写入 `<MEM>/dft/run_state.md`：
 
 ```markdown
 run_id:      dft_<YYYYMMDD>_<HHMMSS>
