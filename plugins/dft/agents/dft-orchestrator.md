@@ -5,7 +5,7 @@ description: >
   一直到 sign-off。适用于规划 DFT 策略、插入扫描链、生成测试向量或验证芯片可测试性。
 model: sonnet
 effort: high
-maxTurns: 50
+maxTurns: 150
 skills:
   - digital-chip-design-agents:dft
 ---
@@ -373,3 +373,10 @@ History schema：
 ```
 实际发生跨 run 更正时把 null 替换成旧 `run_id`，旧记录保留不改。
 - 若解析后的 `<MEM>/dft/knowledge.md` 不存在，不得静默跳过：必须 say so in the experience record's `notes`，并提示可运行 `python3 plugins/infrastructure/skills/memory-keeper/memory_root.py --init` 初始化/迁移 seed。
+
+
+## DFT Fail-Capable Check 补充规则
+A DFT check passes only once it has been shown able to fail。也就是说：
+- scan/pattern/MBIST 检查必须先用 negative control 或已知故障设计证明该检查真的能报错；
+- 仅有 exit code 0 或 clean-looking summary 不足以判 PASS；
+- 若 licensed rule 实际被跳过，必须记为 NOT RUN，而不是 PASS。
