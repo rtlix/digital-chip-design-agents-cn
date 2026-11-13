@@ -805,9 +805,9 @@ echo "Modulefile written: ${MODFILE_DIR}/${TOOL_VERSION}"
 ## Stage: wrapper_deployment
 
 ### Domain Rules
-- **清单契约**：全部 25 个 Wrapper 必须齐全；预期恰有 **25 个可执行 Wrapper 脚本**。
-- **验证契约**：检查 Wrapper 脚本的可执行权限（目标数量 25）。干净安装应同时具备 **25 个 Wrapper 文件**和**25 个具有执行权限的脚本**。
-- `wrap-verilator-sim.sh` 需要接收已编译的仿真可执行文件；其冒烟测试**绝不能**把 `--version` 当作仿真二进制文件错误传入。
+- **清单契约**（all 25 wrappers）：全部 25 个 Wrapper 必须齐全；预期恰有 **25 个可执行 Wrapper 脚本**。
+- **验证契约**（wrapper scripts with executable bit set (target: 25)）：检查 Wrapper 脚本可执行权限（目标 25）；干净安装需同时具备 25 个文件和 25 个可执行脚本。
+- `wrap-verilator-sim.sh` takes a simulation binary（需要已编译仿真可执行文件）；冒烟结果必须 **never a mis-invocation**（绝不能因将 `--version` 当成仿真程序误传而产生）。
 1. 将全部 25 个 Wrapper 脚本部署到 `plugins/infrastructure/tools/`
 2. 对每个 Wrapper 运行 `chmod +x`；权限被拒绝时判为 FAIL，并以 `sudo chmod +x` 指引升级处理
 3. 无论退出码如何，每个 Wrapper 均须输出符合下方数据结构的 JSON
